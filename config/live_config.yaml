@@ -1,0 +1,104 @@
+# 🔥 LIVE MEXC CONFIGURATION
+# Updated config to use REAL-TIME market data instead of demo data
+
+exchanges:
+  mexc:
+    enabled: true
+    api_key: "${MEXC_API_KEY}"
+    secret_key: "${MEXC_SECRET_KEY}"
+    passphrase: ""
+    testnet: false                    # ✅ Live MEXC (not testnet)
+    use_live_data: true              # ✅ Force live data
+    use_demo_data: false             # ❌ Disable demo data
+    websocket_enabled: true          # ✅ Enable real-time WebSocket
+    trading_pairs:
+      - "BTC/USDT"
+      - "ETH/USDT"  
+      - "SOL/USDT"
+      - "AVAX/USDT"
+      - "ADA/USDT"
+      - "DOT/USDT"
+      - "LINK/USDT"
+    default_pair: "BTC/USDT"
+
+# 🧠 Strategy Configuration (using live data)
+strategies:
+  paper_trading: true               # ✅ Keep paper trading for safety
+  use_live_prices: true             # ✅ Use real market prices
+  
+  intelligent_engine:
+    enabled: true
+    initial_capital: 5000
+    auto_trading: true
+    max_simultaneous_strategies: 3
+    rebalance_frequency_hours: 6
+    
+    # Strategy weights
+    strategy_allocation_weights:
+      dca: 0.4                      # Focus on working strategies
+      grid: 0.3
+      scalping: 0.2
+      breakout: 0.1
+
+# ⚖️ Risk Management (for live data)
+risk:
+  max_daily_loss: 0.03              # 3% max daily loss
+  max_position_size: 0.15           # 15% max per position  
+  stop_loss_pct: 0.02              # 2% stop loss
+  portfolio_heat: 0.6               # Max 60% portfolio exposure
+
+# 🤖 Automation (live data safe mode)
+automation:
+  enabled: true
+  auto_start: true
+  stealth_mode: true
+  market_hours_only: false          # Trade 24/7
+  
+  # Emergency controls for live data
+  emergency_shutdown:
+    enabled: true
+    max_consecutive_losses: 5
+    max_daily_loss_pct: 5.0
+    
+  # Profit management
+  profit_management:
+    auto_compound: true
+    compound_percentage: 80
+    profit_target_daily_pct: 2.0
+
+# 📡 Data Feed Configuration
+data_feeds:
+  primary_feed: "mexc_live"         # ✅ Use live MEXC feed
+  backup_feed: "mexc_rest"          # ✅ REST API backup
+  demo_mode: false                  # ❌ No demo data
+  cache_prices: true                # ✅ Cache for performance
+  update_frequency_ms: 1000         # 1 second updates
+  
+  quality_control:
+    min_data_quality: 0.95          # 95% data quality required
+    max_latency_ms: 100            # Max 100ms latency
+    price_sanity_check: true       # Validate price movements
+
+# 🛡️ Security & Safety
+security:
+  paper_trading_only: true          # ✅ KEEP PAPER TRADING FOR NOW
+  max_api_calls_per_minute: 60      # Rate limiting
+  encrypt_logs: true                # Encrypt sensitive logs
+  
+# 🖥️ System Configuration  
+system:
+  log_level: INFO
+  max_workers: 4
+  process_name: "Poise Trader Live"
+  data_retention_days: 30
+  
+  # Performance optimizations for live data
+  cpu_affinity: [0, 1, 2, 3]
+  memory_limit_mb: 2048
+  
+# 📊 Monitoring
+monitoring:
+  live_dashboard: true
+  performance_alerts: true
+  price_deviation_alerts: true     # Alert on unusual price movements
+  connection_monitoring: true      # Monitor data feed health

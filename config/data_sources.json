@@ -1,0 +1,74 @@
+{
+  "twitter": {
+    "name": "Twitter API v2",
+    "api_key": "YOUR_TWITTER_BEARER_TOKEN",
+    "api_secret": "",
+    "base_url": "https://api.twitter.com/2",
+    "rate_limit": 300,
+    "enabled": false,
+    "backup_sources": ["reddit"]
+  },
+  "reddit": {
+    "name": "Reddit API",
+    "api_key": "YOUR_REDDIT_CLIENT_ID",
+    "api_secret": "YOUR_REDDIT_CLIENT_SECRET",
+    "base_url": "https://www.reddit.com",
+    "rate_limit": 60,
+    "enabled": false,
+    "backup_sources": []
+  },
+  "glassnode": {
+    "name": "Glassnode API",
+    "api_key": "YOUR_GLASSNODE_API_KEY",
+    "api_secret": "",
+    "base_url": "https://api.glassnode.com/v1",
+    "rate_limit": 100,
+    "enabled": false,
+    "backup_sources": ["intotheblock"]
+  },
+  "intotheblock": {
+    "name": "IntoTheBlock API",
+    "api_key": "YOUR_ITB_API_KEY",
+    "api_secret": "",
+    "base_url": "https://api.intotheblock.com/v1",
+    "rate_limit": 100,
+    "enabled": false,
+    "backup_sources": []
+  },
+  "forexfactory": {
+    "name": "ForexFactory Calendar",
+    "api_key": "",
+    "api_secret": "",
+    "base_url": "https://www.forexfactory.com",
+    "rate_limit": 60,
+    "enabled": true,
+    "backup_sources": ["tradingeconomics"]
+  },
+  "tradingeconomics": {
+    "name": "TradingEconomics API",
+    "api_key": "YOUR_TE_API_KEY",
+    "api_secret": "",
+    "base_url": "https://api.tradingeconomics.com",
+    "rate_limit": 100,
+    "enabled": false,
+    "backup_sources": []
+  },
+  "cboe": {
+    "name": "CBOE Options Data",
+    "api_key": "",
+    "api_secret": "",
+    "base_url": "https://www.cboe.com/us/options/market_statistics",
+    "rate_limit": 60,
+    "enabled": true,
+    "backup_sources": []
+  },
+  "deribit": {
+    "name": "Deribit Options Exchange",
+    "api_key": "",
+    "api_secret": "",
+    "base_url": "https://www.deribit.com/api/v2",
+    "rate_limit": 120,
+    "enabled": true,
+    "backup_sources": []
+  }
+}

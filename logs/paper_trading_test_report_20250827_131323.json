@@ -1,0 +1,91 @@
+{
+  "test_summary": {
+    "total_tests": 8,
+    "passed_tests": 6,
+    "failed_tests": 2,
+    "success_rate": 0.75,
+    "validation_passed": false
+  },
+  "test_results": [
+    {
+      "test_name": "Paper Trading Initialization",
+      "passed": true,
+      "details": "Paper trading manager initialized successfully",
+      "timestamp": "2025-08-27T13:13:22.512987"
+    },
+    {
+      "test_name": "Basic Trade Execution",
+      "passed": true,
+      "details": "Buy and sell trades executed successfully",
+      "timestamp": "2025-08-27T13:13:22.521986"
+    },
+    {
+      "test_name": "Strategy Integration",
+      "passed": false,
+      "details": "'str' object has no attribute 'get'",
+      "timestamp": "2025-08-27T13:13:22.552126"
+    },
+    {
+      "test_name": "Risk Management",
+      "passed": true,
+      "details": "Risk management controls working",
+      "timestamp": "2025-08-27T13:13:22.560145"
+    },
+    {
+      "test_name": "Performance Tracking",
+      "passed": true,
+      "details": "Performance tracking working correctly",
+      "timestamp": "2025-08-27T13:13:22.570004"
+    },
+    {
+      "test_name": "Portfolio Management",
+      "passed": true,
+      "details": "Portfolio management working correctly",
+      "timestamp": "2025-08-27T13:13:22.591534"
+    },
+    {
+      "test_name": "System Recovery",
+      "passed": true,
+      "details": "Handled 1 errors gracefully",
+      "timestamp": "2025-08-27T13:13:22.602073"
+    },
+    {
+      "test_name": "Long-term Simulation",
+      "passed": false,
+      "details": "Success rate too low: 50.0%",
+      "timestamp": "2025-08-27T13:13:23.451265"
+    }
+  ],
+  "portfolio_final_state": {
+    "portfolio_value": 3991.839931312951,
+    "cash_balance": 3147.2240749999996,
+    "total_return": -0.20163201373740977,
+    "total_return_pct": -20.16320137374098,
+    "total_pnl": -1008.1600686870488,
+    "total_trades": 25,
+    "winning_trades": 0,
+    "win_rate": 0.0,
+    "win_rate_pct": 0.0,
+    "max_drawdown": 0.20163201373740977,
+    "max_drawdown_pct": 20.16320137374098,
+    "active_positions": 2,
+    "positions": {
+      "BTC/USDT": {
+        "quantity": 0.022287066208347472,
+        "avg_price": 43185.63022168926,
+        "total_cost": 963.4434809999999,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      },
+      "SOL/USDT": {
+        "quantity": 8.42387149692117,
+        "avg_price": 105.4674208082016,
+        "total_cost": 889.332444,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      }
+    }
+  }
+}

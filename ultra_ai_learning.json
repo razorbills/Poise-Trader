@@ -1,0 +1,24 @@
+{
+  "last_updated": "2025-10-18T19:58:56.789199",
+  "current_win_rate": 0.0,
+  "total_trades": 0,
+  "win_streak": 0,
+  "loss_streak": 20,
+  "strategy_weights": {
+    "momentum": 0.5,
+    "mean_reversion": 0.5314410000000002,
+    "breakout": 0.7290000000000001,
+    "scalping": 1.0,
+    "trend_following": 1.0
+  },
+  "best_trading_hours": {
+    "10": {
+      "trades": 20,
+      "wins": 0,
+      "win_rate": 0.0
+    }
+  },
+  "recent_trades": [],
+  "winning_patterns_count": 0,
+  "losing_patterns_count": 0
+}

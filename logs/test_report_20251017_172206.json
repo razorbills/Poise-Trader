@@ -1,0 +1,296 @@
+{
+  "test_summary": {
+    "total_tests": 35,
+    "passed": 35,
+    "failed": 0,
+    "warnings": 0,
+    "pass_rate": "100.0%",
+    "duration_seconds": 19.017937
+  },
+  "test_details": [
+    {
+      "test_name": "Import numpy",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "numpy available",
+      "timestamp": "2025-10-17T17:21:48.589148"
+    },
+    {
+      "test_name": "Import pandas",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "pandas available",
+      "timestamp": "2025-10-17T17:21:50.946191"
+    },
+    {
+      "test_name": "Import ccxt",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "ccxt available",
+      "timestamp": "2025-10-17T17:21:52.758646"
+    },
+    {
+      "test_name": "Import aiohttp",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "aiohttp available",
+      "timestamp": "2025-10-17T17:21:53.275658"
+    },
+    {
+      "test_name": "Import websockets",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "websockets available",
+      "timestamp": "2025-10-17T17:21:53.282691"
+    },
+    {
+      "test_name": "Import matplotlib",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "matplotlib available",
+      "timestamp": "2025-10-17T17:21:53.738968"
+    },
+    {
+      "test_name": "Import ta",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "ta available",
+      "timestamp": "2025-10-17T17:21:53.754053"
+    },
+    {
+      "test_name": "Import requests",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "requests available",
+      "timestamp": "2025-10-17T17:21:53.757576"
+    },
+    {
+      "test_name": "Import psutil",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "psutil available",
+      "timestamp": "2025-10-17T17:21:53.817672"
+    },
+    {
+      "test_name": "MEXC Connection",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Connected successfully",
+      "timestamp": "2025-10-17T17:22:05.885572"
+    },
+    {
+      "test_name": "Data Feed: live_paper_trading_test.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "File exists",
+      "timestamp": "2025-10-17T17:22:05.906810"
+    },
+    {
+      "test_name": "Data Feed: core/feeds/mexc_feed.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "File exists",
+      "timestamp": "2025-10-17T17:22:05.916752"
+    },
+    {
+      "test_name": "Data Feed: core/feeds/real_time_data_manager.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "File exists",
+      "timestamp": "2025-10-17T17:22:05.919397"
+    },
+    {
+      "test_name": "AI System: Meta-Learning Brain",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "ai_brain.py available",
+      "timestamp": "2025-10-17T17:22:05.927517"
+    },
+    {
+      "test_name": "AI System: AI Trading Engine",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "ai_trading_engine.py available",
+      "timestamp": "2025-10-17T17:22:05.935422"
+    },
+    {
+      "test_name": "AI System: Enhanced AI Learning",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "enhanced_ai_learning_system.py available",
+      "timestamp": "2025-10-17T17:22:05.939339"
+    },
+    {
+      "test_name": "AI System: Win Rate Optimizer",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "win_rate_optimizer.py available",
+      "timestamp": "2025-10-17T17:22:05.942927"
+    },
+    {
+      "test_name": "AI System: ML Feature Engineering",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "core/enhanced_ml_system.py available",
+      "timestamp": "2025-10-17T17:22:05.951199"
+    },
+    {
+      "test_name": "Strategy: compound_beast_strategy.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Available",
+      "timestamp": "2025-10-17T17:22:05.956733"
+    },
+    {
+      "test_name": "Strategy: daily_sats_strategy.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Available",
+      "timestamp": "2025-10-17T17:22:05.967408"
+    },
+    {
+      "test_name": "Strategy: growth_focused_strategy.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Available",
+      "timestamp": "2025-10-17T17:22:05.972064"
+    },
+    {
+      "test_name": "Strategy: professional_strategies.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Available",
+      "timestamp": "2025-10-17T17:22:05.975634"
+    },
+    {
+      "test_name": "Strategy: multi_strategy_ensemble.py",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Available",
+      "timestamp": "2025-10-17T17:22:05.983855"
+    },
+    {
+      "test_name": "Risk Module: Dynamic Risk Management",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "dynamic_risk_management.py available",
+      "timestamp": "2025-10-17T17:22:05.989784"
+    },
+    {
+      "test_name": "Risk Module: Position Management",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "advanced_position_management.py available",
+      "timestamp": "2025-10-17T17:22:05.992814"
+    },
+    {
+      "test_name": "Risk Module: Performance Analytics",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "core/performance_analytics.py available",
+      "timestamp": "2025-10-17T17:22:06.000353"
+    },
+    {
+      "test_name": "Win Rate Optimizer Init",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Initialized successfully",
+      "timestamp": "2025-10-17T17:22:06.026196"
+    },
+    {
+      "test_name": "Quality Score Calculation",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Score: 90.5",
+      "timestamp": "2025-10-17T17:22:06.031060"
+    },
+    {
+      "test_name": "Trade Decision Logic",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Decision: True - Trade approved with quality score: 90.5",
+      "timestamp": "2025-10-17T17:22:06.042696"
+    },
+    {
+      "test_name": "Performance Analyzer Init",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Initialized successfully",
+      "timestamp": "2025-10-17T17:22:06.156625"
+    },
+    {
+      "test_name": "Trade Recording",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Trade recorded successfully",
+      "timestamp": "2025-10-17T17:22:06.156625"
+    },
+    {
+      "test_name": "Metrics Calculation",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Metrics calculated successfully",
+      "timestamp": "2025-10-17T17:22:06.156625"
+    },
+    {
+      "test_name": "Memory Manager Init",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Initialized successfully",
+      "timestamp": "2025-10-17T17:22:06.638976"
+    },
+    {
+      "test_name": "Memory Stats",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Memory: 74.5%",
+      "timestamp": "2025-10-17T17:22:06.642518"
+    },
+    {
+      "test_name": "Error Handling Framework",
+      "status": "\u2705 PASSED",
+      "passed": true,
+      "warning": false,
+      "message": "Try-except blocks in place",
+      "timestamp": "2025-10-17T17:22:06.652318"
+    }
+  ],
+  "system_readiness": "\ud83d\udfe2 EXCELLENT - System fully operational",
+  "recommendations": [
+    "\u2705 All critical tests passed - system ready for trading"
+  ]
+}

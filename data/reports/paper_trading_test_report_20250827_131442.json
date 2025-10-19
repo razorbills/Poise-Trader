@@ -1,0 +1,75 @@
+{
+  "timestamp": "2025-08-27T13:14:42.924377",
+  "test_results": [
+    {
+      "test_name": "Paper Trading Initialization",
+      "passed": true,
+      "message": "Paper trading manager initialized successfully",
+      "timestamp": "2025-08-27T13:14:42.918715"
+    },
+    {
+      "test_name": "Basic Trade Execution",
+      "passed": true,
+      "message": "Buy and sell trades executed successfully",
+      "timestamp": "2025-08-27T13:14:42.919713"
+    },
+    {
+      "test_name": "Portfolio Management",
+      "passed": true,
+      "message": "Portfolio management working correctly",
+      "timestamp": "2025-08-27T13:14:42.922379"
+    },
+    {
+      "test_name": "Performance Tracking",
+      "passed": false,
+      "message": "'PaperTradingManager' object has no attribute 'get_trade_history'",
+      "timestamp": "2025-08-27T13:14:42.923380"
+    }
+  ],
+  "summary": {
+    "total_tests": 4,
+    "passed": 3,
+    "failed": 1,
+    "success_rate": 75.0
+  },
+  "portfolio_state": {
+    "portfolio_value": 4749.232176338928,
+    "cash_balance": 4598.349799999999,
+    "total_return": -0.05015356473221436,
+    "total_return_pct": -5.015356473221436,
+    "total_pnl": -250.76782366107182,
+    "total_trades": 6,
+    "winning_trades": 0,
+    "win_rate": 0.0,
+    "win_rate_pct": 0.0,
+    "max_drawdown": 0.10992543185192571,
+    "max_drawdown_pct": 10.992543185192572,
+    "active_positions": 3,
+    "positions": {
+      "BTC/USDT": {
+        "quantity": 0.0012808940901249581,
+        "avg_price": 42845.68574665493,
+        "total_cost": 400.6002,
+        "unrealized_pnl": 0,
+        "stop_loss": 42000.0,
+        "take_profit": 45000.0
+      },
+      "ETH/USDT": {
+        "quantity": 0.07586871381772267,
+        "avg_price": 2637.4508006125884,
+        "total_cost": 200.30010000000001,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      },
+      "SOL/USDT": {
+        "quantity": 1.4316741554814445,
+        "avg_price": 104.82483002532979,
+        "total_cost": 150.22507499999998,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      }
+    }
+  }
+}

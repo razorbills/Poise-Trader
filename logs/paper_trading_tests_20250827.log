@@ -1,0 +1,6 @@
+2025-08-27 13:13:22,570 [PaperTrading] [ERROR] Error generating daily report: 'charmap' codec can't encode character '\U0001f4ca' in position 2: character maps to <undefined>
+2025-08-27 13:13:22,609 [IntelligentStrategyEngine] [INFO] ============================================================
+2025-08-27 13:13:23,449 [PaperTrading] [ERROR] Error generating daily report: 'charmap' codec can't encode character '\U0001f4ca' in position 2: character maps to <undefined>
+2025-08-27 18:20:14,866 [PaperTrading] [ERROR] Error generating daily report: 'charmap' codec can't encode character '\U0001f4ca' in position 2: character maps to <undefined>
+2025-08-27 18:20:14,886 [IntelligentStrategyEngine] [INFO] ============================================================
+2025-08-27 18:20:15,738 [PaperTrading] [ERROR] Error generating daily report: 'charmap' codec can't encode character '\U0001f4ca' in position 2: character maps to <undefined>

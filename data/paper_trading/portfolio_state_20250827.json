@@ -1,0 +1,215 @@
+{
+  "timestamp": "2025-08-27T18:20:14.869704",
+  "portfolio_summary": {
+    "portfolio_value": 4458.784538667536,
+    "cash_balance": 3850.335300665577,
+    "total_return": -0.10824309226649274,
+    "total_return_pct": -10.824309226649275,
+    "total_pnl": -541.2154613324637,
+    "total_trades": 8,
+    "winning_trades": 0,
+    "win_rate": 0.0,
+    "win_rate_pct": 0.0,
+    "max_drawdown": 0.10824309226649274,
+    "max_drawdown_pct": 10.824309226649275,
+    "active_positions": 5,
+    "positions": {
+      "BTC/USDT": {
+        "quantity": 0.0011988207602978685,
+        "avg_price": 42549.1988576694,
+        "total_cost": 100.15005000000001,
+        "unrealized_pnl": 0,
+        "stop_loss": 42000.0,
+        "take_profit": 45000.0
+      },
+      "ETH/USDT": {
+        "quantity": 0.18705954579981654,
+        "avg_price": 2647.483069270568,
+        "total_cost": 495.73221743090716,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      },
+      "SOL/USDT": {
+        "quantity": 1.9246725665593283,
+        "avg_price": 103.96573603047294,
+        "total_cost": 200.3001,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      },
+      "TEST1/USDT": {
+        "quantity": 1.9767048420853297,
+        "avg_price": 101.22907362785837,
+        "total_cost": 200.3001,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      },
+      "TEST2/USDT": {
+        "quantity": 1.9948566048148266,
+        "avg_price": 100.30796174373363,
+        "total_cost": 200.3001,
+        "unrealized_pnl": 0,
+        "stop_loss": null,
+        "take_profit": null
+      }
+    }
+  },
+  "positions": {
+    "BTC/USDT": {
+      "quantity": 0.0011988207602978685,
+      "avg_price": 42549.1988576694,
+      "total_cost": 100.15005000000001,
+      "unrealized_pnl": 0,
+      "stop_loss": 42000.0,
+      "take_profit": 45000.0
+    },
+    "ETH/USDT": {
+      "quantity": 0.18705954579981654,
+      "avg_price": 2647.483069270568,
+      "total_cost": 495.73221743090716,
+      "unrealized_pnl": 0,
+      "stop_loss": null,
+      "take_profit": null
+    },
+    "SOL/USDT": {
+      "quantity": 1.9246725665593283,
+      "avg_price": 103.96573603047294,
+      "total_cost": 200.3001,
+      "unrealized_pnl": 0,
+      "stop_loss": null,
+      "take_profit": null
+    },
+    "TEST1/USDT": {
+      "quantity": 1.9767048420853297,
+      "avg_price": 101.22907362785837,
+      "total_cost": 200.3001,
+      "unrealized_pnl": 0,
+      "stop_loss": null,
+      "take_profit": null
+    },
+    "TEST2/USDT": {
+      "quantity": 1.9948566048148266,
+      "avg_price": 100.30796174373363,
+      "total_cost": 200.3001,
+      "unrealized_pnl": 0,
+      "stop_loss": null,
+      "take_profit": null
+    }
+  },
+  "trade_history": [
+    {
+      "trade_id": "35c2703f",
+      "timestamp": "2025-08-27T18:20:14.826251",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "position_size": 0.002351395624032207,
+      "execution_price": 42549.1988576694,
+      "market_price": 42527.934890224285,
+      "slippage": 21.26396744511294,
+      "commission": 0.10005000000000001,
+      "strategy": "test_strategy",
+      "confidence": 0.8,
+      "success": true
+    },
+    {
+      "trade_id": "4d89e0ba",
+      "timestamp": "2025-08-27T18:20:14.827250",
+      "symbol": "BTC/USDT",
+      "action": "SELL",
+      "position_size": 0.0011525748637343386,
+      "execution_price": 43359.439436394765,
+      "market_price": 43381.13000139546,
+      "slippage": -21.690565000695642,
+      "commission": 0.049975000000000006,
+      "strategy": "test_strategy",
+      "confidence": 0,
+      "success": true
+    },
+    {
+      "trade_id": "8a7f28ef",
+      "timestamp": "2025-08-27T18:20:14.855401",
+      "symbol": "ETH/USDT",
+      "action": "BUY",
+      "position_size": 0.18705954579981654,
+      "execution_price": 2647.483069270568,
+      "market_price": 2646.1599892759305,
+      "slippage": 1.3230799946377374,
+      "commission": 0.4952369804504567,
+      "strategy": "test_large_position",
+      "confidence": 0,
+      "success": true
+    },
+    {
+      "trade_id": "864cf9f1",
+      "timestamp": "2025-08-27T18:20:14.856401",
+      "symbol": "SOL/USDT",
+      "action": "BUY",
+      "position_size": 1.9246725665593283,
+      "execution_price": 103.96573603047294,
+      "market_price": 103.91377914090249,
+      "slippage": 0.051956889570448084,
+      "commission": 0.2001,
+      "strategy": "test_small_0",
+      "confidence": 0,
+      "success": true
+    },
+    {
+      "trade_id": "b2cfb687",
+      "timestamp": "2025-08-27T18:20:14.858398",
+      "symbol": "TEST1/USDT",
+      "action": "BUY",
+      "position_size": 1.9767048420853297,
+      "execution_price": 101.22907362785837,
+      "market_price": 101.17848438566554,
+      "slippage": 0.05058924219282801,
+      "commission": 0.2001,
+      "strategy": "test_small_1",
+      "confidence": 0,
+      "success": true
+    },
+    {
+      "trade_id": "d7aac59c",
+      "timestamp": "2025-08-27T18:20:14.859398",
+      "symbol": "TEST2/USDT",
+      "action": "BUY",
+      "position_size": 1.9948566048148266,
+      "execution_price": 100.30796174373363,
+      "market_price": 100.25783282731997,
+      "slippage": 0.050128916413655134,
+      "commission": 0.2001,
+      "strategy": "test_small_2",
+      "confidence": 0,
+      "success": true
+    },
+    {
+      "trade_id": "8bffe8e6",
+      "timestamp": "2025-08-27T18:20:14.862398",
+      "symbol": "AVAX/USDT",
+      "action": "BUY",
+      "position_size": 7.94427218141757,
+      "execution_price": 37.78193812418464,
+      "market_price": 37.7630565958867,
+      "slippage": 0.0188815282979391,
+      "commission": 0.30015,
+      "strategy": "performance_test",
+      "confidence": 0,
+      "success": true
+    },
+    {
+      "trade_id": "30224b20",
+      "timestamp": "2025-08-27T18:20:14.865399",
+      "symbol": "AVAX/USDT",
+      "action": "SELL",
+      "position_size": 7.99517535698561,
+      "execution_price": 37.503867846752435,
+      "market_price": 37.5226291613331,
+      "slippage": -0.0187613145806651,
+      "commission": 0.2979409340305162,
+      "strategy": "performance_test",
+      "confidence": 0,
+      "success": true
+    }
+  ]
+}

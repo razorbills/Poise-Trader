@@ -1,0 +1,294 @@
+{
+  "total_tests": 30,
+  "pass_rate": 76.66666666666667,
+  "status_counts": {
+    "PASS": 23,
+    "FAIL": 4,
+    "WARNING": 3,
+    "SKIP": 0
+  },
+  "component_summary": {
+    "CORE": {
+      "pass": 10,
+      "fail": 0,
+      "warning": 0,
+      "skip": 0
+    },
+    "INSTITUTIONAL": {
+      "pass": 1,
+      "fail": 0,
+      "warning": 2,
+      "skip": 0
+    },
+    "SYSTEM": {
+      "pass": 0,
+      "fail": 1,
+      "warning": 0,
+      "skip": 0
+    },
+    "AI_ML": {
+      "pass": 3,
+      "fail": 0,
+      "warning": 1,
+      "skip": 0
+    },
+    "TRADING": {
+      "pass": 0,
+      "fail": 1,
+      "warning": 0,
+      "skip": 0
+    },
+    "DATA_FEEDS": {
+      "pass": 0,
+      "fail": 1,
+      "warning": 0,
+      "skip": 0
+    },
+    "RISK": {
+      "pass": 2,
+      "fail": 0,
+      "warning": 0,
+      "skip": 0
+    },
+    "CONFIG": {
+      "pass": 4,
+      "fail": 0,
+      "warning": 0,
+      "skip": 0
+    },
+    "INTEGRATION": {
+      "pass": 1,
+      "fail": 0,
+      "warning": 0,
+      "skip": 0
+    },
+    "PERFORMANCE": {
+      "pass": 2,
+      "fail": 0,
+      "warning": 0,
+      "skip": 0
+    },
+    "MOCK_TRADING": {
+      "pass": 0,
+      "fail": 1,
+      "warning": 0,
+      "skip": 0
+    }
+  },
+  "execution_time": 8.385285,
+  "assessment": "\ud83d\udfe1 GOOD - System ready with minor warnings",
+  "institutional_available": false,
+  "critical_failures": 4,
+  "results": [
+    {
+      "component": "CORE",
+      "test_name": "ccxt import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 1.014512538909912
+    },
+    {
+      "component": "CORE",
+      "test_name": "numpy import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.10575985908508301
+    },
+    {
+      "component": "CORE",
+      "test_name": "pandas import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.3984661102294922
+    },
+    {
+      "component": "CORE",
+      "test_name": "asyncio import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CORE",
+      "test_name": "datetime import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CORE",
+      "test_name": "json import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CORE",
+      "test_name": "os import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CORE",
+      "test_name": "sys import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CORE",
+      "test_name": "time import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CORE",
+      "test_name": "logging import",
+      "status": "PASS",
+      "message": "Successfully imported",
+      "execution_time": 0.0
+    },
+    {
+      "component": "INSTITUTIONAL",
+      "test_name": "MultiVenueConnector availability",
+      "status": "PASS",
+      "message": "Component available",
+      "execution_time": 0.467423677444458
+    },
+    {
+      "component": "INSTITUTIONAL",
+      "test_name": "PortfolioOptimizer availability",
+      "status": "WARNING",
+      "message": "Module not available: No module named 'core.portfolio_optimizer'",
+      "execution_time": 0.0
+    },
+    {
+      "component": "INSTITUTIONAL",
+      "test_name": "AlternativeDataManager availability",
+      "status": "WARNING",
+      "message": "Module not available: No module named 'core.alternative_data'",
+      "execution_time": 0.0012707710266113281
+    },
+    {
+      "component": "SYSTEM",
+      "test_name": "Institutional Components",
+      "status": "FAIL",
+      "message": "Test suite crashed: name 'defaultdict' is not defined",
+      "execution_time": 0.0
+    },
+    {
+      "component": "AI_ML",
+      "test_name": "ai_brain.py validation",
+      "status": "PASS",
+      "message": "AI/ML component loaded successfully",
+      "execution_time": 4.435921669006348
+    },
+    {
+      "component": "AI_ML",
+      "test_name": "ml_components.py validation",
+      "status": "PASS",
+      "message": "AI/ML component loaded successfully",
+      "execution_time": 0.0749967098236084
+    },
+    {
+      "component": "AI_ML",
+      "test_name": "enhanced_ai_learning_system.py validation",
+      "status": "PASS",
+      "message": "AI/ML component loaded successfully",
+      "execution_time": 0.010555505752563477
+    },
+    {
+      "component": "AI_ML",
+      "test_name": "AIBrain functionality",
+      "status": "WARNING",
+      "message": "Some AI Brain methods missing",
+      "execution_time": 0.01095890998840332
+    },
+    {
+      "component": "TRADING",
+      "test_name": "MicroTradingBot instantiation",
+      "status": "FAIL",
+      "message": "Bot creation failed: cannot import name 'MicroTradingBot' from 'micro_trading_bot' (C:\\Users\\OM\\Desktop\\Poise Trader\\micro_trading_bot.py)",
+      "execution_time": 0.9880220890045166
+    },
+    {
+      "component": "DATA_FEEDS",
+      "test_name": "LiveMEXCDataFeed instantiation",
+      "status": "FAIL",
+      "message": "Data feed test failed: cannot import name 'LiveMEXCDataFeed' from 'live_paper_trading_test' (C:\\Users\\OM\\Desktop\\Poise Trader\\live_paper_trading_test.py)",
+      "execution_time": 0.0
+    },
+    {
+      "component": "RISK",
+      "test_name": "Position sizing calculation",
+      "status": "PASS",
+      "message": "Calculated position size: $0.0200",
+      "execution_time": 0.0
+    },
+    {
+      "component": "RISK",
+      "test_name": "Risk limits validation",
+      "status": "PASS",
+      "message": "Risk per trade within limits: 2.0%",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CONFIG",
+      "test_name": "config/config.yaml availability",
+      "status": "PASS",
+      "message": "Configuration file found",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CONFIG",
+      "test_name": ".env availability",
+      "status": "PASS",
+      "message": "Configuration file found",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CONFIG",
+      "test_name": "Files/.env availability",
+      "status": "PASS",
+      "message": "Configuration file found",
+      "execution_time": 0.0
+    },
+    {
+      "component": "CONFIG",
+      "test_name": "Overall configuration",
+      "status": "PASS",
+      "message": "Found 3 config files",
+      "execution_time": 0.0
+    },
+    {
+      "component": "INTEGRATION",
+      "test_name": "Overall integration",
+      "status": "PASS",
+      "message": "All integration tests passed",
+      "execution_time": 0.0
+    },
+    {
+      "component": "PERFORMANCE",
+      "test_name": "Import speed",
+      "status": "PASS",
+      "message": "Fast imports: 0.000s",
+      "execution_time": 0.0
+    },
+    {
+      "component": "PERFORMANCE",
+      "test_name": "Calculation speed",
+      "status": "PASS",
+      "message": "Fast calculations: 0.0000s",
+      "execution_time": 0.0
+    },
+    {
+      "component": "MOCK_TRADING",
+      "test_name": "Overall mock trading",
+      "status": "FAIL",
+      "message": "Mock trading test failed: cannot import name 'MicroTradingBot' from 'micro_trading_bot' (C:\\Users\\OM\\Desktop\\Poise Trader\\micro_trading_bot.py)",
+      "execution_time": 0.0
+    }
+  ]
+}

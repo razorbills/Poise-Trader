@@ -1,0 +1,54 @@
+# Systemd service file for Poise Trader
+# Copy this to /etc/systemd/system/poise-trader.service
+# 
+# Installation:
+#   sudo cp poise-trader.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable poise-trader
+#   sudo systemctl start poise-trader
+#
+# Commands:
+#   Start:   sudo systemctl start poise-trader
+#   Stop:    sudo systemctl stop poise-trader
+#   Restart: sudo systemctl restart poise-trader
+#   Status:  sudo systemctl status poise-trader
+#   Logs:    sudo journalctl -u poise-trader -f
+
+[Unit]
+Description=Poise Trader - Ultra-Advanced AI Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/home/YOUR_USERNAME/poise-trader
+ExecStart=/home/YOUR_USERNAME/poise-trader/venv/bin/python cloud_launcher.py
+
+# Auto-restart on failure
+Restart=always
+RestartSec=10
+
+# Environment variables
+Environment="TRADING_MODE=PRECISION"
+Environment="PYTHONUNBUFFERED=1"
+
+# Optional: Add Telegram credentials
+# Environment="TELEGRAM_BOT_TOKEN=your_bot_token_here"
+# Environment="TELEGRAM_CHAT_ID=your_chat_id_here"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=poise-trader
+
+# Resource limits (optional)
+MemoryLimit=512M
+CPUQuota=50%
+
+# Security (optional - tighten as needed)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

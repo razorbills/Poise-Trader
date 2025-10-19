@@ -1,0 +1,23 @@
+{
+  "postgres": {
+    "enabled": false,
+    "dsn": "postgresql://postgres:postgres@localhost:5432/poise",
+    "timescaledb": true
+  },
+  "redis": {
+    "enabled": false,
+    "url": "redis://localhost:6379/0"
+  },
+  "kafka": {
+    "enabled": false,
+    "bootstrap_servers": "localhost:9092",
+    "client_id": "poise_trader"
+  },
+  "clickhouse": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 8123,
+    "username": "default",
+    "password": ""
+  }
+}

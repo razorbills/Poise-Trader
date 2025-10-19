@@ -1,0 +1,36 @@
+2025-08-27 13:14:42,917 [SimplePaperTests] [INFO] Starting simplified paper trading tests...
+2025-08-27 13:14:42,917 [SimplePaperTests] [INFO] Running Test 1: Paper Trading Initialization
+2025-08-27 13:14:42,918 [PaperTrading] [INFO] 📊 Paper Trading Manager initialized with $5,000.00 virtual capital
+2025-08-27 13:14:42,918 [SimplePaperTests] [INFO] Test 1 PASSED: Paper Trading Initialization
+2025-08-27 13:14:42,918 [SimplePaperTests] [INFO] Running Test 2: Basic Trade Execution
+2025-08-27 13:14:42,918 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 0.0024 BTC/USDT @ $42226.871467
+2025-08-27 13:14:42,919 [PaperTrading] [INFO] 📈 PAPER TRADE: SELL 0.0012 BTC/USDT @ $42774.620442
+2025-08-27 13:14:42,919 [SimplePaperTests] [INFO] Test 2 PASSED: Basic Trade Execution
+2025-08-27 13:14:42,920 [SimplePaperTests] [INFO] Running Test 3: Portfolio Management
+2025-08-27 13:14:42,920 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 0.0759 ETH/USDT @ $2637.450801
+2025-08-27 13:14:42,920 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 1.4317 SOL/USDT @ $104.824830
+2025-08-27 13:14:42,922 [PaperTrading] [INFO] 💾 Portfolio state saved to data\paper_trading\portfolio_state_20250827.json
+2025-08-27 13:14:42,922 [SimplePaperTests] [INFO] Test 3 PASSED: Portfolio Management
+2025-08-27 13:14:42,922 [SimplePaperTests] [INFO] Running Test 4: Performance Tracking
+2025-08-27 13:14:42,922 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 0.0070 BTC/USDT @ $42952.039517
+2025-08-27 13:14:42,923 [PaperTrading] [INFO] 📈 PAPER TRADE: SELL 0.0069 BTC/USDT @ $43405.290824
+2025-08-27 13:14:42,923 [SimplePaperTests] [ERROR] Test 4 FAILED: Performance Tracking - 'PaperTradingManager' object has no attribute 'get_trade_history'
+2025-08-27 13:14:42,923 [SimplePaperTests] [WARNING] 1 tests failed. Review before going live!
+2025-08-27 13:15:07,285 [SimplePaperTests] [INFO] Starting simplified paper trading tests...
+2025-08-27 13:15:07,285 [SimplePaperTests] [INFO] Running Test 1: Paper Trading Initialization
+2025-08-27 13:15:07,286 [PaperTrading] [INFO] 📊 Paper Trading Manager initialized with $5,000.00 virtual capital
+2025-08-27 13:15:07,286 [SimplePaperTests] [INFO] Test 1 PASSED: Paper Trading Initialization
+2025-08-27 13:15:07,286 [SimplePaperTests] [INFO] Running Test 2: Basic Trade Execution
+2025-08-27 13:15:07,286 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 0.0023 BTC/USDT @ $43069.924595
+2025-08-27 13:15:07,287 [PaperTrading] [INFO] 📈 PAPER TRADE: SELL 0.0012 BTC/USDT @ $42206.419900
+2025-08-27 13:15:07,287 [SimplePaperTests] [INFO] Test 2 PASSED: Basic Trade Execution
+2025-08-27 13:15:07,287 [SimplePaperTests] [INFO] Running Test 3: Portfolio Management
+2025-08-27 13:15:07,287 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 0.0778 ETH/USDT @ $2571.025449
+2025-08-27 13:15:07,287 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 1.4428 SOL/USDT @ $104.014253
+2025-08-27 13:15:07,288 [PaperTrading] [INFO] 💾 Portfolio state saved to data\paper_trading\portfolio_state_20250827.json
+2025-08-27 13:15:07,288 [SimplePaperTests] [INFO] Test 3 PASSED: Portfolio Management
+2025-08-27 13:15:07,288 [SimplePaperTests] [INFO] Running Test 4: Performance Tracking
+2025-08-27 13:15:07,289 [PaperTrading] [INFO] 📈 PAPER TRADE: BUY 0.0069 BTC/USDT @ $43611.056183
+2025-08-27 13:15:07,289 [PaperTrading] [INFO] 📈 PAPER TRADE: SELL 0.0068 BTC/USDT @ $43788.787658
+2025-08-27 13:15:07,289 [SimplePaperTests] [INFO] Test 4 PASSED: Performance Tracking
+2025-08-27 13:15:07,290 [SimplePaperTests] [INFO] All paper trading tests completed successfully!

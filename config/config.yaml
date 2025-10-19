@@ -1,0 +1,124 @@
+# 🏛️ MEXC Exchange Configuration
+exchanges:
+  mexc:
+    enabled: true
+    api_key: "${MEXC_API_KEY}"
+    secret_key: "${MEXC_SECRET_KEY}"
+    passphrase: ""
+    testnet: false
+    trading_pairs:
+      - "BTCUSDT"
+      - "ETHUSDT"
+      - "ADAUSDT"
+      - "DOTUSDT"
+      - "LINKUSDT"
+      - "SOLUSDT"
+      - "AVAXUSDT"
+    default_pair: "BTCUSDT"
+
+# 🧠 Intelligent Strategy Configuration
+strategies:
+  intelligent_engine:
+    enabled: true
+    initial_capital: 5000
+    auto_trading: true
+    max_simultaneous_strategies: 3
+    rebalance_frequency_hours: 6
+    strategy_allocation_weights:
+      compound_beast: 0.4
+      professional_momentum: 0.3
+      mean_reversion: 0.2
+      arbitrage: 0.1
+    profit_optimization:
+      enabled: true
+      target_daily_profit_pct: 2.0
+      auto_reinvest: true
+      reinvest_profit_pct: 80
+      withdraw_profit_pct: 20
+    
+  # Individual Strategy Configs
+  compound_beast:
+    enabled: true
+    initial_capital_sats: 2000
+    min_profit_threshold: 0.015
+    max_position_duration_hours: 24
+    
+  professional_momentum:
+    enabled: true
+    capital_allocation: 1500
+    momentum_threshold: 0.02
+    volatility_factor: 1.5
+    
+  mean_reversion:
+    enabled: true
+    capital_allocation: 1000
+    oversold_threshold: 30
+    overbought_threshold: 70
+    
+  arbitrage:
+    enabled: true
+    capital_allocation: 500
+    min_profit_bps: 15
+    max_latency_ms: 100
+
+# ⚖️ Advanced Risk Management
+risk:
+  max_daily_loss: 0.03  # 3% max daily loss
+  max_position_size: 0.15  # 15% max per position
+  stop_loss_pct: 0.02  # 2% stop loss
+  portfolio_heat: 0.6  # Max 60% portfolio exposure
+  correlation_limit: 0.7  # Max correlation between positions
+  drawdown_limit: 0.10  # 10% max drawdown
+  risk_free_rate: 0.02  # 2% annual risk-free rate
+  volatility_adjustment: true
+  dynamic_position_sizing: true
+
+# 🤖 Full Automation Settings
+automation:
+  enabled: true
+  auto_start: true
+  stealth_mode: true
+  auto_restart: true
+  restart_delay_minutes: 5
+  market_hours_only: false  # Trade 24/7
+  emergency_shutdown:
+    enabled: true
+    max_consecutive_losses: 5
+    max_daily_loss_pct: 5.0
+  profit_management:
+    auto_compound: true
+    compound_percentage: 80
+    profit_target_daily_pct: 2.0
+    auto_withdraw:
+      enabled: false  # Set to true when ready
+      threshold_amount: 1000
+      target_wallet: "${WITHDRAWAL_WALLET_ADDRESS}"
+
+# 🔌 Plugin System
+plugins:
+  telegram_alerts:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  discord_alerts:
+    enabled: false
+    webhook_url: "${DISCORD_WEBHOOK_URL}"
+  performance_dashboard:
+    enabled: true
+    port: 8080
+    host: "127.0.0.1"
+
+# 🖥️ System Configuration
+system:
+  log_level: INFO
+  max_workers: 6
+  stealth_mode: true
+  process_name: "Windows Audio Service"
+  cpu_affinity: [0, 1, 2, 3]  # Use first 4 CPU cores
+  memory_limit_mb: 2048
+  data_retention_days: 30
+  backup_frequency_hours: 12
+  encryption:
+    enabled: true
+    key_file: "config/.encryption_key"
+    salt_file: "config/.salt"

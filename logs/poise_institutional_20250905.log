@@ -1,0 +1,127 @@
+2025-09-05 11:02:31,223 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:02:50,448 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:19.226943
+2025-09-05 11:09:54,087 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:10:00,997 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:06.911652
+2025-09-05 11:10:20,940 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:10:27,565 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:06.624733
+2025-09-05 11:11:16,812 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:11:22,391 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:05.579096
+2025-09-05 11:15:36,452 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:16:14,218 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:37.766591
+2025-09-05 11:31:33,568 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:32:03,675 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 561, in launch_trading_bot
+    from micro_trading_bot import MicroTradingBot
+ImportError: cannot import name 'MicroTradingBot' from 'micro_trading_bot' (C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py)
+2025-09-05 11:32:03,682 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:30.113451
+2025-09-05 11:33:53,832 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:34:27,707 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 564, in launch_trading_bot
+    self.bot_instance = LegendaryCryptoTitanBot(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LegendaryCryptoTitanBot.__init__() got an unexpected keyword argument 'symbols'
+2025-09-05 11:34:27,709 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:33.877290
+2025-09-05 11:34:43,197 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:35:20,039 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 564, in launch_trading_bot
+    self.bot_instance = LegendaryCryptoTitanBot(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LegendaryCryptoTitanBot.__init__() got an unexpected keyword argument 'symbols'
+2025-09-05 11:35:20,041 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:36.844661
+2025-09-05 11:36:16,936 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:36:51,231 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 564, in launch_trading_bot
+    self.bot_instance = LegendaryCryptoTitanBot(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LegendaryCryptoTitanBot.__init__() got an unexpected keyword argument 'symbols'
+2025-09-05 11:36:51,233 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:34.297986
+2025-09-05 11:38:45,503 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:39:12,996 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:27.536095
+2025-09-05 11:39:35,838 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:40:08,316 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:32.522392
+2025-09-05 11:40:42,954 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:41:20,048 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:37.094964
+2025-09-05 11:42:59,734 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:43:38,156 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 597, in launch_trading_bot
+    await self.bot_instance.run_micro_trading_cycle(
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 1723, in run_micro_trading_cycle
+    if self.enhanced_ai_initialized:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LegendaryCryptoTitanBot' object has no attribute 'enhanced_ai_initialized'
+2025-09-05 11:43:38,176 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:38.442619
+2025-09-05 11:45:35,575 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:46:07,235 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 597, in launch_trading_bot
+    await self.bot_instance.run_micro_trading_cycle(
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 1723, in run_micro_trading_cycle
+    if self.enhanced_ai_initialized:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LegendaryCryptoTitanBot' object has no attribute 'enhanced_ai_initialized'
+2025-09-05 11:46:07,257 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:31.682249
+2025-09-05 11:47:37,142 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 11:48:13,058 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 597, in launch_trading_bot
+    await self.bot_instance.run_micro_trading_cycle(
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 1833, in run_micro_trading_cycle
+    await self._show_final_results()
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 3177, in _show_final_results
+    portfolio = await self.trader.get_portfolio_value()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get_portfolio_value'
+2025-09-05 11:48:13,066 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:35.924997
+2025-09-05 12:17:54,452 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 12:18:29,935 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 597, in launch_trading_bot
+    await self.bot_instance.run_micro_trading_cycle(
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 1833, in run_micro_trading_cycle
+    await self._show_final_results()
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 3177, in _show_final_results
+    portfolio = await self.trader.get_portfolio_value()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get_portfolio_value'
+2025-09-05 12:18:29,947 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:35.494700
+2025-09-05 12:22:15,637 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 12:22:50,861 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 561, in launch_trading_bot
+    from micro_trading_bot import LegendaryCryptoTitanBot
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 2211
+    )
+    ^
+SyntaxError: closing parenthesis ')' does not match opening parenthesis '{' on line 2204
+2025-09-05 12:22:50,867 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:35.254649
+2025-09-05 12:29:14,322 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 12:29:45,973 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:31.652395
+2025-09-05 12:32:07,979 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 12:32:45,636 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 599, in launch_trading_bot
+    await self.bot_instance.run_micro_trading_cycle(
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 1892, in run_micro_trading_cycle
+    await self._show_final_results()
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 3251, in _show_final_results
+    print(f"   🔄 Total Trades Executed: {self.trade_count}")
+                                          ^^^^^^^^^^^^^^^^
+AttributeError: 'LegendaryCryptoTitanBot' object has no attribute 'trade_count'
+2025-09-05 12:32:45,648 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:37.670779
+2025-09-05 12:33:19,973 - PoiseInstitutional - INFO - Starting Poise Institutional Launcher
+2025-09-05 12:33:53,481 - PoiseInstitutional - ERROR - Trading bot launch failed
+Traceback (most recent call last):
+  File "C:\Users\OM\Desktop\Poise Trader\poise_institutional_launcher.py", line 599, in launch_trading_bot
+    await self.bot_instance.run_micro_trading_cycle(
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 1892, in run_micro_trading_cycle
+    await self._show_final_results()
+  File "C:\Users\OM\Desktop\Poise Trader\micro_trading_bot.py", line 3251, in _show_final_results
+    print(f"   🔄 Total Trades Executed: {self.trade_count}")
+                                          ^^^^^^^^^^^^^^^^
+AttributeError: 'LegendaryCryptoTitanBot' object has no attribute 'trade_count'
+2025-09-05 12:33:53,489 - PoiseInstitutional - INFO - Poise Institutional Launcher shutdown completed. Uptime: 0:00:33.517626

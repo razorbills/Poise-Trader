@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poise Trader - Professional Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.15);
+            padding: 25px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+        .btn {
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .btn-start {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-stop {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .btn-mode {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+        .btn-mode.active {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            border-color: #38ef7d;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(0,0,0,0.3);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .chart-container {
+            background: rgba(255,255,255,0.15);
+            padding: 25px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 30px;
+        }
+        .positions-table {
+            background: rgba(255,255,255,0.15);
+            padding: 25px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        th {
+            font-weight: bold;
+            color: #ffd700;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-running { background-color: #00ff00; box-shadow: 0 0 10px #00ff00; }
+        .status-stopped { background-color: #ff0000; box-shadow: 0 0 10px #ff0000; }
+        .profit { color: #00ff00; }
+        .loss { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>🏆 POISE TRADER</h1>
+            <p>Professional Trading Dashboard | 90% Win Rate System</p>
+            <p><span class="status-indicator status-stopped" id="statusIndicator"></span><span id="statusText">Not Running</span></p>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-mode" id="aggressiveBtn" onclick="setMode('AGGRESSIVE')">⚡ Aggressive</button>
+            <button class="btn btn-mode" id="normalBtn" onclick="setMode('PRECISION')">🎯 Normal</button>
+            <button class="btn btn-start" onclick="startBot()">▶️ Start Trading</button>
+            <button class="btn btn-stop" onclick="stopBot()">⏹️ Stop Trading</button>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">💰 Portfolio Value</div>
+                <div class="stat-value" id="portfolioValue">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🏆 Win Rate</div>
+                <div class="stat-value" id="winRate">0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📊 Total Trades</div>
+                <div class="stat-value" id="totalTrades">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🔥 Current Streak</div>
+                <div class="stat-value" id="currentStreak">0</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3>📈 Portfolio Performance</h3>
+            <canvas id="performanceChart"></canvas>
+        </div>
+
+        <div class="positions-table">
+            <h3>📊 Active Positions</h3>
+            <table id="positionsTable">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Size</th>
+                        <th>Entry Price</th>
+                        <th>Current Price</th>
+                        <th>P&L</th>
+                        <th>P&L %</th>
+                    </tr>
+                </thead>
+                <tbody id="positionsBody">
+                    <tr><td colspan="6" style="text-align:center">No active positions</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'AGGRESSIVE';
+        
+        function setMode(mode) {
+            fetch('/api/mode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: mode})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentMode = data.mode;
+                    document.getElementById('aggressiveBtn').classList.toggle('active', mode === 'AGGRESSIVE');
+                    document.getElementById('normalBtn').classList.toggle('active', mode === 'PRECISION');
+                    console.log('✅ Mode set to:', mode);
+                } else {
+                    alert('Error: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(err => console.error('Error setting mode:', err));
+        }
+        
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Portfolio Value',
+                    data: [],
+                    borderColor: '#ffd700',
+                    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { labels: { color: '#fff' } } },
+                scales: {
+                    y: { ticks: { color: '#fff' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    x: { ticks: { color: '#fff' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                }
+            }
+        });
+
+        function updateDashboard() {
+            fetch('/api/status')
+                .then(res => res.json())
+                .then(data => {
+                    // Update status indicator based on actual bot_running flag
+                    if (data.status === 'running') {
+                        document.getElementById('statusIndicator').className = 'status-indicator status-running';
+                        document.getElementById('statusText').textContent = 'Running';
+                    } else if (data.status === 'waiting') {
+                        document.getElementById('statusIndicator').className = 'status-indicator status-stopped';
+                        document.getElementById('statusText').textContent = 'Waiting';
+                    } else {
+                        document.getElementById('statusIndicator').className = 'status-indicator status-stopped';
+                        document.getElementById('statusText').textContent = 'Stopped';
+                    }
+                    
+                    // Always update stats (whether running or not)
+                    if (data.capital !== undefined) {
+                        document.getElementById('portfolioValue').textContent = '$' + data.capital.toFixed(2);
+                        document.getElementById('winRate').textContent = data.win_rate.toFixed(1) + '%';
+                        document.getElementById('totalTrades').textContent = data.total_trades;
+                        document.getElementById('currentStreak').textContent = data.current_streak;
+                        
+                        // Only update chart if bot is actually running
+                        if (data.status === 'running') {
+                            chart.data.labels.push(new Date().toLocaleTimeString());
+                            chart.data.datasets[0].data.push(data.capital);
+                            if (chart.data.labels.length > 20) {
+                                chart.data.labels.shift();
+                                chart.data.datasets[0].data.shift();
+                            }
+                            chart.update();
+                        }
+                    }
+                });
+        }
+
+        function startBot() {
+            fetch('/api/start', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => alert(data.message));
+        }
+
+        function stopBot() {
+            fetch('/api/stop', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    alert(data.message);
+                    document.getElementById('statusIndicator').className = 'status-indicator status-stopped';
+                    document.getElementById('statusText').textContent = 'Stopped';
+                });
+        }
+
+        // DON'T auto-select any mode - let user choose
+        // document.getElementById('aggressiveBtn').classList.add('active');  ← REMOVED
+        
+        // Update dashboard status every 2 seconds
+        setInterval(updateDashboard, 2000);
+        updateDashboard();
+    </script>
+</body>
+</html>
