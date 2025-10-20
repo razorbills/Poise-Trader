@@ -1,7 +1,7 @@
+# Core dependencies for enhanced features
 matplotlib>=3.5.0
-numpy>=1.21.0
-asyncio
-datetime
-decimal
-collections
-tkinter  # Usually comes with Python
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Note: asyncio, datetime, decimal, collections are built-in Python modules
+# Note: tkinter is a system package and should not be installed via pip
