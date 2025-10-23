@@ -57,11 +57,11 @@ def run_bot():
         try:
             print("\n🔄 Initializing trading bot...")
             
-            from micro_trading_bot import MicroTradingBot
+            from micro_trading_bot import LegendaryCryptoTitanBot
             
             # Create bot instance
             initial_capital = 5.0
-            bot_instance = MicroTradingBot(initial_capital=initial_capital)
+            bot_instance = LegendaryCryptoTitanBot(initial_capital=initial_capital)
             
             # Set default mode (can be changed via dashboard)
             default_mode = os.environ.get('TRADING_MODE', 'PRECISION')
