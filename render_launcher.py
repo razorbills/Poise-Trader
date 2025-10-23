@@ -21,28 +21,85 @@ print("🎯 Full features enabled (Dashboard + Bot)")
 print("🌐 Web service mode activated")
 print("-"*70)
 
-# Import dashboard server
-try:
-    from simple_dashboard_server import app, socketio, set_bot_instance
-    print("✅ Dashboard server imported")
-except ImportError:
-    print("⚠️ Dashboard not available, creating basic server...")
-    from flask import Flask, jsonify
-    app = Flask(__name__)
-    
-    @app.route('/')
-    def home():
-        return jsonify({
-            'status': 'alive',
-            'message': 'Poise Trader Bot Running',
+# Create Flask app with dashboard
+from flask import Flask, jsonify, send_file, request
+from flask_socketio import SocketIO
+import os
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'poise_render_2025'
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Global bot reference
+global_bot = None
+
+def set_bot_instance(bot):
+    global global_bot
+    global_bot = bot
+    print("✅ Bot registered with dashboard")
+
+@app.route('/')
+def dashboard():
+    """Serve the dashboard HTML"""
+    try:
+        # Try enhanced dashboard first
+        if os.path.exists('enhanced_simple_dashboard.html'):
+            return send_file('enhanced_simple_dashboard.html')
+        elif os.path.exists('simple_dashboard.html'):
+            return send_file('simple_dashboard.html')
+        else:
+            return """
+            <html>
+            <head><title>Poise Trader</title></head>
+            <body style='font-family: Arial; padding: 20px;'>
+                <h1>🚀 Poise Trader Bot is Running!</h1>
+                <p>✅ Bot Status: Active</p>
+                <p>📊 Connected to MEXC</p>
+                <p>🎯 Mode: AGGRESSIVE</p>
+                <p>💰 Balance: Check logs for details</p>
+                <p><a href='/api/status'>View API Status</a></p>
+            </body>
+            </html>
+            """
+    except Exception as e:
+        return f"Dashboard loading error: {e}", 500
+
+@app.route('/api/status')
+def api_status():
+    """API status endpoint"""
+    try:
+        status = {
+            'bot_running': getattr(global_bot, 'bot_running', False) if global_bot else False,
+            'trading_mode': getattr(global_bot, 'trading_mode', 'UNKNOWN') if global_bot else 'UNKNOWN',
+            'capital': getattr(global_bot, 'current_capital', 0) if global_bot else 0,
             'timestamp': datetime.now().isoformat()
-        })
-    
-    @app.route('/health')
-    def health():
-        return jsonify({'status': 'healthy'})
-    
-    set_bot_instance = lambda x: None
+        }
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/health')
+def health():
+    """Health check"""
+    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+
+@app.route('/api/start', methods=['POST'])
+def start_bot():
+    """Start the bot"""
+    if global_bot:
+        global_bot.bot_running = True
+        return jsonify({'success': True, 'message': 'Bot started'})
+    return jsonify({'success': False, 'message': 'Bot not initialized'}), 400
+
+@app.route('/api/stop', methods=['POST'])
+def stop_bot():
+    """Stop the bot"""
+    if global_bot:
+        global_bot.bot_running = False
+        return jsonify({'success': True, 'message': 'Bot stopped'})
+    return jsonify({'success': False, 'message': 'Bot not initialized'}), 400
+
+print("✅ Dashboard server configured")
 
 # Global bot reference
 bot_instance = None
