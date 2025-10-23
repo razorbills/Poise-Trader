@@ -461,6 +461,10 @@ class MockTrader:
                     "current_value": current_value,
                     "cost_basis": pos["total_cost"],
                     "unrealized_pnl": current_value - pos["total_cost"],
+                    "avg_price": pos["avg_price"],  # Include for calculations
+                    # CRITICAL: Include custom TP/SL from dashboard!
+                    "take_profit": pos.get("take_profit", None),
+                    "stop_loss": pos.get("stop_loss", None),
                 }
         return {
             "total_value": total_value,
@@ -488,6 +492,10 @@ class MockTrader:
                     "current_value": current_value,
                     "cost_basis": pos["total_cost"],
                     "unrealized_pnl": current_value - pos["total_cost"],
+                    "avg_price": pos["avg_price"],  # Include for calculations
+                    # CRITICAL: Include custom TP/SL from dashboard!
+                    "take_profit": pos.get("take_profit", None),
+                    "stop_loss": pos.get("stop_loss", None),
                 }
         return {
             "total_value": total_value,
