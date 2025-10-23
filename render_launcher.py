@@ -24,11 +24,13 @@ print("-"*70)
 # Create Flask app with dashboard
 from flask import Flask, jsonify, send_file, request
 from flask_socketio import SocketIO
+from flask_cors import CORS
 import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'poise_render_2025'
-socketio = SocketIO(app, cors_allowed_origins="*")
+CORS(app)  # Enable CORS for all routes
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Global bot reference
 global_bot = None
@@ -67,16 +69,35 @@ def dashboard():
 @app.route('/api/status')
 def api_status():
     """API status endpoint"""
+    print(f"📡 API Status requested - Bot exists: {global_bot is not None}")
     try:
-        status = {
-            'bot_running': getattr(global_bot, 'bot_running', False) if global_bot else False,
-            'trading_mode': getattr(global_bot, 'trading_mode', 'UNKNOWN') if global_bot else 'UNKNOWN',
-            'capital': getattr(global_bot, 'current_capital', 0) if global_bot else 0,
-            'timestamp': datetime.now().isoformat()
-        }
+        if global_bot:
+            status = {
+                'bot_running': getattr(global_bot, 'bot_running', False),
+                'trading_mode': getattr(global_bot, 'trading_mode', 'PRECISION'),
+                'capital': getattr(global_bot, 'current_capital', 5.0),
+                'positions': len(getattr(global_bot, 'positions', {})),
+                'timestamp': datetime.now().isoformat(),
+                'connected': True
+            }
+        else:
+            status = {
+                'bot_running': False,
+                'trading_mode': 'INITIALIZING',
+                'capital': 0,
+                'positions': 0,
+                'timestamp': datetime.now().isoformat(),
+                'connected': False,
+                'message': 'Bot is still initializing...'
+            }
         return jsonify(status)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e),
+            'connected': False,
+            'bot_running': False,
+            'timestamp': datetime.now().isoformat()
+        }), 200  # Return 200 so dashboard doesn't error
 
 @app.route('/health')
 def health():
