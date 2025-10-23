@@ -5053,13 +5053,11 @@ class LegendaryCryptoTitanBot:
             # STOP LOSS - Check price-based SL first, then percentage-based
             if position_sl_price:  # If custom SL price is set, ONLY use that
                 if current_price <= position_sl_price:
-                    if in_grace_period and pnl_pct > -(position_sl_pct * 2):
-                        # Still in grace period and loss not catastrophic - HOLD
-                        print(f"      ⏳ GRACE PERIOD ACTIVE: Holding despite SL price reached ({time_held:.0f}s/{self.min_hold_time}s)")
-                    else:
-                        should_close = True
-                        reason = f"STOP LOSS (${position_sl_price:.2f})"
-                        print(f"      ❌ CONDITION MET: Custom stop loss triggered")
+                    # CUSTOM SL FROM DASHBOARD - CLOSE IMMEDIATELY, NO GRACE PERIOD
+                    # User explicitly set this price, so respect it!
+                    should_close = True
+                    reason = f"STOP LOSS (${position_sl_price:.2f})"
+                    print(f"      ❌ CONDITION MET: Custom stop loss triggered (no grace period for dashboard SL)")
             elif pnl_pct <= -position_sl_pct:  # Otherwise use percentage
                 if in_grace_period and pnl_pct > -(position_sl_pct * 2):
                     # Still in grace period and loss not catastrophic - HOLD
@@ -8447,10 +8445,11 @@ class LegendaryCryptoTitanBot:
             
             # Legendary stop loss - check custom SL price first, then percentage
             if not should_close:
-                if position_sl_price:  # Custom SL price from dashboard
+                if position_sl_price:  # Custom SL price from dashboard - NO GRACE PERIOD
                     if current_price <= position_sl_price:
                         should_close = True
-                        reason = f"LEGENDARY STOP (${position_sl_price:.2f})"
+                        reason = f"LEGENDARY STOP (${position_sl_price:.2f} - Dashboard SL)"
+                        print(f"   ❌ Custom SL hit - closing immediately (no grace period)")
                 elif pnl_pct <= -position_sl_pct:  # Use configured stop loss percentage
                     should_close = True
                     reason = f"LEGENDARY STOP ({position_sl_pct:.2f}%)"
