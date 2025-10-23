@@ -78,8 +78,11 @@ def run_bot():
             print("-"*70)
             print("🚀 Starting trading loop...\n")
             
+            # Start bot in running state (can be controlled via dashboard)
+            bot_instance.bot_running = True
+            
             # Run bot (this blocks)
-            await bot_instance.run()
+            await bot_instance.run_micro_trading_cycle(cycles=999999)
             
         except Exception as e:
             print(f"❌ Bot error: {e}")
