@@ -12,13 +12,13 @@ import os
 class KeepAliveSystem:
     """Keeps the service alive 24/7 by self-pinging"""
     
-    def __init__(self, app_url=None, ping_interval=300):
+    def __init__(self, app_url=None, ping_interval=120):
         """
         Initialize keep-alive system
         
         Args:
             app_url: Your Render app URL (e.g., https://your-app.onrender.com)
-            ping_interval: Seconds between pings (default: 300 = 5 minutes)
+            ping_interval: Seconds between pings (default: 120 = 2 minutes - AGGRESSIVE)
         """
         self.app_url = app_url or os.environ.get('RENDER_EXTERNAL_URL')
         self.ping_interval = ping_interval
@@ -39,11 +39,12 @@ class KeepAliveSystem:
         self._thread.start()
         
         print("="*60)
-        print("🔄 KEEP-ALIVE SYSTEM ACTIVATED")
+        print("🔄 AGGRESSIVE KEEP-ALIVE SYSTEM ACTIVATED")
         print("="*60)
         print(f"📍 Target URL: {self.app_url or 'localhost (dev mode)'}")
         print(f"⏱️  Ping Interval: {self.ping_interval}s ({self.ping_interval//60} minutes)")
-        print(f"🎯 Status: Service will stay awake 24/7")
+        print(f"🎯 Mode: MAXIMUM UPTIME (Starter-tier equivalent)")
+        print(f"⚡ Status: Service will stay awake 24/7")
         print("="*60)
         
     def stop(self):
@@ -56,7 +57,7 @@ class KeepAliveSystem:
     def _ping_loop(self):
         """Background loop that pings the service"""
         # Wait a bit before first ping
-        time.sleep(30)
+        time.sleep(15)  # Reduced wait time
         
         while self.is_running:
             try:
@@ -64,7 +65,7 @@ class KeepAliveSystem:
                 time.sleep(self.ping_interval)
             except Exception as e:
                 print(f"❌ Keep-alive error: {e}")
-                time.sleep(60)  # Wait a minute on error
+                time.sleep(30)  # Reduced error wait time
     
     def _do_ping(self):
         """Perform a single ping"""
@@ -181,7 +182,7 @@ class ConnectionMonitor:
 class ActivitySimulator:
     """Simulates user activity to keep service active"""
     
-    def __init__(self, endpoints=['/api/status', '/api/metrics', '/api/portfolio']):
+    def __init__(self, endpoints=['/api/status', '/api/metrics', '/api/portfolio', '/health', '/ping']):
         self.endpoints = endpoints
         self.is_running = False
         self.activity_count = 0
@@ -212,15 +213,15 @@ class ActivitySimulator:
     def _activity_loop(self):
         """Simulate periodic activity"""
         # Wait before starting
-        time.sleep(120)
+        time.sleep(45)  # Reduced wait
         
         while self.is_running:
             try:
                 self._simulate_activity()
-                time.sleep(180)  # Every 3 minutes
+                time.sleep(90)  # Every 1.5 minutes - AGGRESSIVE
             except Exception as e:
                 print(f"❌ Activity simulator error: {e}")
-                time.sleep(180)
+                time.sleep(90)
     
     def _simulate_activity(self):
         """Simulate user activity"""

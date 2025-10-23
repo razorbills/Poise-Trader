@@ -27,6 +27,12 @@ import simple_dashboard_server
 # Import keep-alive system
 from keep_alive_system import start_all_systems, stop_all_systems
 
+# Import ultra-aggressive keep-alive for maximum uptime
+from aggressive_keepalive import start_ultra_aggressive_mode, stop_ultra_aggressive_mode
+
+# Import background workers for continuous operation
+from background_worker import start_background_workers, stop_background_workers
+
 app = simple_dashboard_server.app
 socketio = simple_dashboard_server.socketio
 
@@ -118,6 +124,13 @@ def main():
     print("\n🔄 Starting 24/7 keep-alive systems...")
     start_all_systems(app_url=app_url, bot_instance=bot_instance)
     
+    # Start ultra-aggressive mode for maximum uptime
+    print("\n⚡ Activating ULTRA-AGGRESSIVE MODE...")
+    start_ultra_aggressive_mode(app_url=app_url)
+    
+    # Start background workers for continuous operation
+    start_background_workers(bot_instance=bot_instance)
+    
     print(f"\n🌐 Starting web server on port {port}...")
     if app_url:
         print(f"📊 Dashboard URL: {app_url}/")
@@ -134,8 +147,14 @@ def main():
     print(f"   ✅ Update TP/SL")
     print(f"   🔄 24/7 Keep-Alive Active")
     print(f"   💓 Health Monitoring Active")
+    print(f"   ⚡ Ultra-Aggressive Mode Active")
+    print(f"   🔧 3x Background Workers Active")
+    print(f"   💾 Auto-Save Every 5 Minutes")
+    print(f"   🧵 9x Concurrent Threads Running")
     print("="*70)
-    print("✨ BOT IS NOW RUNNING 24/7 ON RENDER!\n")
+    print("✨ BOT RUNNING AT STARTER-TIER PERFORMANCE ON FREE TIER!")
+    print("   (99%+ uptime expected with all systems active)")
+    print("="*70 + "\n")
     
     # Start Flask app with SocketIO
     try:
@@ -149,11 +168,15 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         print("\n👋 Shutting down gracefully...")
+        stop_background_workers()
+        stop_ultra_aggressive_mode()
         stop_all_systems()
         sys.exit(0)
     except Exception as e:
         print(f"\n💥 Fatal error: {e}")
         import traceback
         traceback.print_exc()
+        stop_background_workers()
+        stop_ultra_aggressive_mode()
         stop_all_systems()
         sys.exit(1)
