@@ -10615,12 +10615,14 @@ if __name__ == "__main__":
         def run_dashboard():
             # Run server (bot will be attached later)
             port = int(os.environ.get('PORT', 5000))
-            simple_dashboard_server.app.run(
+            # Use socketio.run() instead of app.run() for proper WebSocket support
+            simple_dashboard_server.socketio.run(
+                simple_dashboard_server.app,
                 host='0.0.0.0', 
                 port=port, 
                 debug=False,
                 use_reloader=False,
-                threaded=True
+                allow_unsafe_werkzeug=True
             )
         
         dashboard_thread = Thread(target=run_dashboard, daemon=True)

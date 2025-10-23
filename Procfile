@@ -1,1 +1,1 @@
-worker: python cloud_launcher.py
+web: python micro_trading_bot.py
