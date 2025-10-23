@@ -21,6 +21,7 @@ bot_instance = None
 current_mode = 'PRECISION'
 pnl_history = []
 max_history_points = 50
+start_time = time.time()
 
 @app.route('/')
 def index():
@@ -30,6 +31,39 @@ def index():
     if os.path.exists('enhanced_simple_dashboard.html'):
         return send_file('enhanced_simple_dashboard.html')
     return send_file('simple_dashboard.html')
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for monitoring services"""
+    global bot_instance
+    
+    health = {
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'bot_connected': bot_instance is not None,
+        'bot_running': False,
+        'uptime': time.time() - start_time if 'start_time' in globals() else 0
+    }
+    
+    if bot_instance:
+        health['bot_running'] = getattr(bot_instance, 'bot_running', False)
+        health['current_capital'] = getattr(bot_instance, 'current_capital', 0)
+    
+    return jsonify(health)
+
+@app.route('/ping')
+def ping():
+    """Simple ping endpoint"""
+    return jsonify({'status': 'alive', 'timestamp': datetime.now().isoformat()})
+
+@app.route('/keep-alive')
+def keep_alive_endpoint():
+    """Keep-alive endpoint"""
+    return jsonify({
+        'status': 'active',
+        'message': 'Service is running 24/7',
+        'timestamp': datetime.now().isoformat()
+    })
 
 @app.route('/api/status')
 def get_status():

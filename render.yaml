@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: poise-trader-bot
+    env: python
+    region: oregon  # or your preferred region
+    plan: free  # Change to 'starter' for $7/month (recommended for 24/7)
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_launcher.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: USE_WEBSOCKETS
+        value: "false"
+      # Add your API keys as secrets in Render dashboard
+      # Don't put actual keys here!

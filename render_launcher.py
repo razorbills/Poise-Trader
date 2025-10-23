@@ -24,6 +24,9 @@ print("-"*70)
 # Import full dashboard server with ALL routes
 import simple_dashboard_server
 
+# Import keep-alive system
+from keep_alive_system import start_all_systems, stop_all_systems
+
 app = simple_dashboard_server.app
 socketio = simple_dashboard_server.socketio
 
@@ -103,8 +106,25 @@ def main():
     # Get port from environment (Render provides this)
     port = int(os.environ.get('PORT', 5000))
     
+    # Get app URL from environment
+    app_url = os.environ.get('RENDER_EXTERNAL_URL')
+    if not app_url:
+        # Try to construct from RENDER_SERVICE_NAME
+        service_name = os.environ.get('RENDER_SERVICE_NAME')
+        if service_name:
+            app_url = f"https://{service_name}.onrender.com"
+    
+    # Start keep-alive systems
+    print("\n🔄 Starting 24/7 keep-alive systems...")
+    start_all_systems(app_url=app_url, bot_instance=bot_instance)
+    
     print(f"\n🌐 Starting web server on port {port}...")
-    print(f"📊 Dashboard will be available at: https://YOUR_APP.onrender.com/")
+    if app_url:
+        print(f"📊 Dashboard URL: {app_url}/")
+        print(f"❤️  Health Check: {app_url}/health")
+    else:
+        print(f"📊 Dashboard will be available at: https://YOUR_APP.onrender.com/")
+    
     print(f"🎯 Features available:")
     print(f"   ✅ Start/Stop bot")
     print(f"   ✅ Switch modes (Aggressive/Precision)")
@@ -112,6 +132,8 @@ def main():
     print(f"   ✅ View P&L chart")
     print(f"   ✅ Manage positions")
     print(f"   ✅ Update TP/SL")
+    print(f"   🔄 24/7 Keep-Alive Active")
+    print(f"   💓 Health Monitoring Active")
     print("="*70)
     print("✨ BOT IS NOW RUNNING 24/7 ON RENDER!\n")
     
@@ -127,9 +149,11 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         print("\n👋 Shutting down gracefully...")
+        stop_all_systems()
         sys.exit(0)
     except Exception as e:
         print(f"\n💥 Fatal error: {e}")
         import traceback
         traceback.print_exc()
+        stop_all_systems()
         sys.exit(1)
