@@ -65,7 +65,7 @@ def run_bot():
             
             # Set default mode (can be changed via dashboard)
             default_mode = os.environ.get('TRADING_MODE', 'PRECISION')
-            bot_instance.set_trading_mode(default_mode)
+            bot_instance.select_trading_mode(default_mode)
             
             # Register bot with dashboard
             set_bot_instance(bot_instance)
