@@ -3705,7 +3705,7 @@ class LegendaryCryptoTitanBot:
                 print(f"   📈 P&L: ${pnl:.2f} ({pnl_pct:+.1f}%)")
                 print(f"   🏆 Win Rate: {self.win_rate:.1%}")
                 print(f"   📊 Total Trades: {self.total_completed_trades}")
-                print(f"   📍 Active Positions: {active_pos_count} {('(' + ', '.join(active_pos_list) + ')') if active_pos_list else ''}")
+                print(f"   📍 Active Positions: {active_pos_count} {f'({', '.join(active_pos_list)})' if active_pos_list else ''}")
                 print(f"   {streak_emoji} Current Streak: {current_streak:+d}")
                 
                 # STEP 6: Update dashboard metrics
