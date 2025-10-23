@@ -47,12 +47,12 @@ export default function Positions({ portfolio }) {
           {positions.map((pos) => (
             <tr key={pos.symbol}>
               <td>{pos.symbol}</td>
-              <td>{Number(pos.quantity).toFixed(6)}</td>
-              <td>${Number(pos.current_price).toFixed(2)}</td>
-              <td>${Number(pos.current_value).toFixed(2)}</td>
-              <td>${Number(pos.cost_basis).toFixed(2)}</td>
-              <td style={{ color: pos.unrealized_pnl >= 0 ? '#4CAF50' : '#f44336' }}>
-                ${Number(pos.unrealized_pnl).toFixed(2)}
+              <td>{Number(pos.quantity || 0).toFixed(6)}</td>
+              <td>${Number(pos.current_price || pos.value / pos.quantity || 0).toFixed(2)}</td>
+              <td>${Number(pos.current_value || pos.value || 0).toFixed(2)}</td>
+              <td>${Number(pos.cost_basis || pos.value || 0).toFixed(2)}</td>
+              <td style={{ color: (pos.unrealized_pnl || 0) >= 0 ? '#4CAF50' : '#f44336' }}>
+                ${Number(pos.unrealized_pnl || 0).toFixed(2)}
               </td>
               <td>
                 <div className="actions">

@@ -13,19 +13,28 @@ export default function ControlPanel() {
   const [cycleSleep, setCycleSleep] = useState('')
 
   useEffect(() => {
-    fetch('/api/status')
-      .then(r => r.json())
-      .then(s => {
-        setStatus(s)
-        if (typeof s.bot_running === 'boolean') setRunning(s.bot_running)
-        if (s.trading_mode) setMode(s.trading_mode)
-        if (Array.isArray(s.symbols)) setSymbols(s.symbols.join(','))
-        if (typeof s.min_confidence === 'number') setMinConfidence(s.min_confidence)
-        if (typeof s.risk_multiplier === 'number') setRiskMultiplier(s.risk_multiplier)
-        if (typeof s.min_trade_size === 'number') setMinTradeSize(s.min_trade_size)
-        if (typeof s.cycle_sleep === 'number') setCycleSleep(s.cycle_sleep)
-      })
-      .catch(() => {})
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/status')
+        if (response.ok) {
+          const s = await response.json()
+          setStatus(s)
+          if (typeof s.running === 'boolean') setRunning(s.running)
+          if (s.mode) setMode(s.mode)
+          if (Array.isArray(s.symbols)) setSymbols(s.symbols.join(','))
+          if (typeof s.min_confidence === 'number') setMinConfidence(s.min_confidence)
+          if (typeof s.risk_multiplier === 'number') setRiskMultiplier(s.risk_multiplier)
+          if (typeof s.min_trade_size === 'number') setMinTradeSize(s.min_trade_size)
+          if (typeof s.cycle_sleep === 'number') setCycleSleep(s.cycle_sleep)
+        }
+      } catch (error) {
+        console.error('Failed to fetch status:', error)
+      }
+    }
+    
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   // Control helpers
@@ -65,13 +74,46 @@ export default function ControlPanel() {
   }
 
   const applyMode = async () => {
-    await send('set_mode', { mode })
+    try {
+      // Try WebSocket first
+      const wsResult = await send('set_mode', { mode })
+      if (!wsResult.ok) {
+        // Fallback to REST API
+        const response = await fetch('http://localhost:5000/api/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode })
+        })
+        if (!response.ok) {
+          console.error('Failed to set mode')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to apply mode:', error)
+    }
   }
 
   const toggleTrading = async () => {
     const next = !running
-    setRunning(next)
-    await send('toggle_trading', { running: next })
+    try {
+      // Try WebSocket first
+      const wsResult = await send('toggle_trading', { running: next })
+      if (!wsResult.ok) {
+        // Fallback to REST API
+        const endpoint = next ? '/api/start' : '/api/stop'
+        const response = await fetch(`http://localhost:5000${endpoint}`, { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        if (response.ok) {
+          setRunning(next)
+        }
+      } else {
+        setRunning(next)
+      }
+    } catch (error) {
+      console.error('Failed to toggle trading:', error)
+    }
   }
 
   const applyCycle = async () => {
@@ -128,9 +170,10 @@ export default function ControlPanel() {
       </div>
 
       <div className="status-row">
-        <div>GPU TF: <b>{status.tf_gpu ? 'Yes' : 'No'}</b></div>
-        <div>GPU Torch: <b>{status.torch_gpu ? 'Yes' : 'No'}</b></div>
-        <div>Open Positions: <b>{status.open_positions ?? 0}</b></div>
+        <div>Status: <b style={{color: running ? '#4CAF50' : '#f44336'}}>{running ? 'RUNNING' : 'STOPPED'}</b></div>
+        <div>Mode: <b>{mode}</b></div>
+        <div>Positions: <b>{status.positions ?? 0}</b></div>
+        <div>Win Rate: <b>{(status.win_rate ?? 0).toFixed(1)}%</b></div>
       </div>
     </div>
   )

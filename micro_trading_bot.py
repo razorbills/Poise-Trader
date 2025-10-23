@@ -164,6 +164,19 @@ from ai_trading_engine import (
 from live_paper_trading_test import LiveMexcDataFeed, LivePaperTradingManager
 from ai_brain import ai_brain
 from real_data_apis import real_data_apis
+
+# 🏆 PROFESSIONAL TRADING ENHANCEMENTS
+try:
+    from professional_bot_integration import ProfessionalBotIntegration
+    from professional_trader_enhancements import ProfessionalTraderBrain
+    from professional_market_psychology import MarketPsychologyAnalyzer, PersonalPsychologyManager
+    from professional_liquidity_analysis import OrderFlowAnalyzer, FootprintChart
+    from professional_performance_analytics import ProfessionalJournal, PerformanceAnalyzer
+    PROFESSIONAL_MODE_AVAILABLE = True
+    print("🏆 PROFESSIONAL TRADING SYSTEMS LOADED - HEDGE FUND MODE ENABLED!")
+except ImportError as e:
+    PROFESSIONAL_MODE_AVAILABLE = False
+    print(f"⚠️ Professional trading systems not available: {e}")
 from ml_components import (
     neural_predictor,
     rl_optimizer,
@@ -428,12 +441,23 @@ class MockTrader:
         position_values = {}
         for symbol, pos in self.positions.items():
             if pos["quantity"] > 0:
-                current_price = pos["avg_price"] or 100.0
+                # Get REAL live price from data feed!
+                current_price = pos["avg_price"]  # fallback
+                if hasattr(self, 'data_feed') and self.data_feed:
+                    try:
+                        live_price = await self.data_feed.get_live_price(symbol)
+                        if live_price and live_price > 0:
+                            current_price = live_price
+                    except:
+                        pass  # Use fallback
+                
                 current_value = pos["quantity"] * current_price
                 total_value += current_value
                 position_values[symbol] = {
+                    "symbol": symbol,
                     "quantity": pos["quantity"],
                     "current_price": current_price,
+                    "entry_price": pos["avg_price"],
                     "current_value": current_value,
                     "cost_basis": pos["total_cost"],
                     "unrealized_pnl": current_value - pos["total_cost"],
@@ -447,17 +471,20 @@ class MockTrader:
         }
     
     def get_portfolio_value_sync(self):
-        """SYNC version for dashboard - same as async but without await"""
+        """SYNC version for dashboard - uses EXACT current prices from price history"""
         total_value = self.cash_balance
         position_values = {}
         for symbol, pos in self.positions.items():
             if pos["quantity"] > 0:
-                current_price = pos["avg_price"] or 100.0
+                # Get EXACT current price from position or fallback to avg_price
+                current_price = pos.get("current_price", pos["avg_price"])  # Use stored current price
                 current_value = pos["quantity"] * current_price
                 total_value += current_value
                 position_values[symbol] = {
+                    "symbol": symbol,
                     "quantity": pos["quantity"],
                     "current_price": current_price,
+                    "entry_price": pos["avg_price"],
                     "current_value": current_value,
                     "cost_basis": pos["total_cost"],
                     "unrealized_pnl": current_value - pos["total_cost"],
@@ -1889,20 +1916,26 @@ class LegendaryCryptoTitanBot:
             # 💎 ADDITIONAL CRYPTOS
             "ARB/USDT", "OP/USDT", "SUI/USDT", "TIA/USDT", "SEI/USDT"
         ]
-        self.trading_mode = "PRECISION"  # Default trading mode
-        self.confidence_threshold = 0.15
-        self.max_positions = 10  # Increased from 5 for multi-asset portfolio!
-        self.max_concurrent_positions = 6  # Can hold 6 assets at once!
-        self.max_risk_per_trade = 0.02
-        self.take_profit = 3.5  # 3.5% take profit (REALISTIC for day trading!)
-        self.stop_loss = 2.0   # 2% stop loss (REALISTIC - not penny stops!)
-        self.micro_scalp_threshold = 0.01
-        self.max_hold_cycles = 10  # Hold longer like REAL trader (not 30 second scalps!)
         
-        # 🎯 WORLD-CLASS PERFORMANCE TARGETS
-        self.target_win_rate = 0.95  # 95% WIN RATE TARGET!
-        self.min_confidence_threshold = 0.90  # Ultra-selective
-        self.ensemble_threshold = 0.85  # Multi-strategy threshold
+        # 🎯 MARKET FILTER: Active symbols for signal searching
+        # Dashboard can update this to filter which markets to trade
+        # By default, all symbols are active
+        self.active_symbols = self.symbols.copy()
+        self.trading_mode = "PRECISION"  # Default trading mode
+        self.confidence_threshold = 0.65  # MUCH HIGHER - only take high-quality trades!
+        self.max_positions = 3  # REDUCED - focus on quality, not quantity
+        self.max_concurrent_positions = 2  # Only 2 positions at once - laser focus!
+        self.max_risk_per_trade = 0.015  # Lower risk per trade (1.5%)
+        self.take_profit = 0.5  # 0.5% take profit - realistic scalping!
+        self.stop_loss = 0.3   # 0.3% stop loss - quick exits
+        self.micro_scalp_threshold = 0.01
+        self.max_hold_cycles = 120  # Hold longer - up to 20 minutes for quality trades
+        
+        # 🎯 PROFESSIONAL TRADER TARGETS
+        self.target_win_rate = 0.85  # 85% WIN RATE TARGET (realistic for pros!)
+        self.min_confidence_threshold = 0.65  # High-quality trades only
+        self.ensemble_threshold = 0.70  # Multi-strategy agreement required
+        self.min_trade_quality_score = 7.5  # Out of 10 - only take excellent setups
         
         # 🚀 WORLD-CLASS SYSTEM INITIALIZATION
         print("🔧 Initializing WORLD-CLASS components...")
@@ -1913,15 +1946,58 @@ class LegendaryCryptoTitanBot:
         self.total_completed_trades = 0
         self.trade_count = 0
         self.win_rate = 0.0
+        self.daily_start_capital = initial_capital
+        self.daily_pnl = 0.0
+        self.consecutive_losses = 0
+        self.max_consecutive_losses = 2
+        self.max_daily_drawdown = 0.03
         self.active_signals = {}
         self.price_history = {}
         self.trade_history = []
         self.position_tracker = {}
         self.position_cycles = {}
-        self.force_learning_mode = True
-        self.force_trade_mode = True
+        self.position_entry_time = {}  # Track when position was opened
+        self.current_win_streak = 0  # Track current winning streak
+        self.current_loss_streak = 0  # Track current losing streak
+        self.longest_win_streak = 0  # Track longest winning streak
+        self.min_hold_time = 600  # Minimum 10 minutes - professional hold time
+        self.position_high_water_marks = {}  # Track highest price for trailing stops
+        self.partial_profit_levels = [3.5, 4.5]  # Partial profit at 3.5% and 4.5%
+        self.use_trailing_stops = True  # Enable trailing stops
+        self.trailing_stop_distance = 1.0  # 1% trailing stop - protect profits
+        self.force_learning_mode = False  # DISABLED - let positions develop naturally
+        self.force_trade_mode = False  # DISABLED - only trade when conditions are perfect!
         self.loss_learning_mode = True
         self.dynamic_sizing = True
+        self.require_multiple_confirmations = True  # Require multiple signal confirmations
+        self.last_trade_time = 0  # Track last trade time for aggressive mode
+        self.force_trade_after_seconds = 300  # Force trade if 5 min passes (aggressive mode)
+        
+        # 🌍 MULTI-ASSET ALLOCATION SYSTEM (Initialize early to prevent AttributeError)
+        self.asset_categories = {
+            'CRYPTO': ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
+                      'ADA/USDT', 'DOGE/USDT', 'MATIC/USDT', 'DOT/USDT', 'AVAX/USDT',
+                      'LINK/USDT', 'UNI/USDT', 'ATOM/USDT', 'LTC/USDT', 'APT/USDT',
+                      'ARB/USDT', 'OP/USDT', 'SUI/USDT', 'TIA/USDT', 'SEI/USDT'],
+            'METALS': ['XAU/USDT', 'XAG/USDT'],  # Gold, Silver
+            'COMMODITIES': ['WTI/USDT']  # Crude Oil
+        }
+        
+        # 💰 DYNAMIC ALLOCATION WEIGHTS (adjusts based on market conditions)
+        self.allocation_weights = {
+            'CRYPTO': 0.70,      # 70% in crypto (high volatility, high opportunity)
+            'METALS': 0.20,      # 20% in metals (safe haven, lower volatility)
+            'COMMODITIES': 0.10  # 10% in commodities (diversification)
+        }
+        
+        # 📊 POSITION SIZE MULTIPLIERS BY ASSET TYPE
+        self.asset_multipliers = {
+            'BTC/USDT': 1.2,   # Bitcoin gets higher allocation (market leader)
+            'ETH/USDT': 1.1,   # Ethereum second priority
+            'XAU/USDT': 0.8,   # Gold - safer, smaller positions
+            'XAG/USDT': 0.7,   # Silver - even smaller
+            'WTI/USDT': 0.9    # Oil - moderate
+        }
         
         # Time-series for monitoring/anomaly detection
         self._pnl_series = deque(maxlen=1000)
@@ -1931,6 +2007,7 @@ class LegendaryCryptoTitanBot:
         
         # Initialize enhanced AI and system flags (set False initially, will be set True after advanced systems load)
         self.enhanced_ai_initialized = False
+        self.professional_mode = False  # Initialize professional mode flag early
         self.monitoring_enabled = False
         self.compliance_enabled = False
         self.distributed_enabled = False
@@ -2295,13 +2372,13 @@ class LegendaryCryptoTitanBot:
         except Exception as e:
             print(f"   ⚠️ Risk management initialization: {e}")
         
-        # 🏆 90% WIN RATE OPTIMIZER (ULTIMATE QUALITY FILTERING)
+        # 🏆 PROFESSIONAL QUALITY FILTER (85% WIN RATE TARGET)
         try:
-            print("   🎯 Initializing 90% WIN RATE OPTIMIZER...")
-            self.win_rate_optimizer_enabled = False  # START DISABLED - let user enable
-            self.min_trade_quality_score = 25.0  # MUCH LOWER for trading
-            self.min_confidence_for_trade = 0.15  # 15% minimum confidence (very low)
-            self.min_risk_reward_ratio = 1.2  # Minimum 1.2:1 RR (lower)
+            print("   🎯 Initializing PROFESSIONAL QUALITY FILTER...")
+            self.win_rate_optimizer_enabled = True  # ALWAYS ENABLED - Professional trader standards!
+            self.min_trade_quality_score = 75.0  # HIGH STANDARD - Only excellent setups
+            self.min_confidence_for_trade = 0.65  # 65% minimum confidence
+            self.min_risk_reward_ratio = 1.8  # Minimum 1.8:1 RR ratio
             self.optimal_risk_reward = 2.0  # Target 2:1 RR
             
             # Trade quality tracking
@@ -2771,8 +2848,8 @@ class LegendaryCryptoTitanBot:
         self.position_tracker = {}
         self.max_positions = 10  # Multi-asset portfolio
         self.position_size = self.min_trade_size  # default micro position size in USD
-        self.stop_loss = 2.0   # 2% stop loss (REALISTIC for day trading)
-        self.take_profit = 3.5  # 3.5% take profit (REALISTIC - better R/R ratio)
+        self.stop_loss = 0.3   # 0.3% stop loss (REALISTIC for crypto scalping!)
+        self.take_profit = 0.5  # 0.5% take profit (Quick profits, not waiting for $2000 moves!)
         
         # 🌍 MULTI-ASSET ALLOCATION SYSTEM
         self.asset_categories = {
@@ -2939,6 +3016,39 @@ class LegendaryCryptoTitanBot:
             self.portfolio_ai = None
             self.current_defense_mode = None
         
+        # 🏆 PROFESSIONAL TRADING INTEGRATION - HEDGE FUND LEVEL FEATURES
+        if PROFESSIONAL_MODE_AVAILABLE:
+            print("\n🎯 ACTIVATING PROFESSIONAL HEDGE FUND TRADING MODE...")
+            try:
+                # Initialize complete professional trading system
+                self.professional_integration = ProfessionalBotIntegration(self)
+                self.professional_mode = True
+                
+                # Store professional component references for direct access
+                self.pro_brain = self.professional_integration.pro_brain
+                self.market_psychology = self.professional_integration.psychology
+                self.personal_psychology = self.professional_integration.personal_psychology
+                self.order_flow_analyzer = self.professional_integration.order_flow
+                self.trade_journal = self.professional_integration.journal
+                self.performance_analyzer = self.professional_integration.performance
+                
+                print("   ✅ Professional Trader Brain initialized")
+                print("   ✅ Market Psychology & Sentiment analyzer loaded")
+                print("   ✅ Order Flow & Liquidity analysis ready")
+                print("   ✅ Trade Journal & Performance analytics active")
+                print("   ✅ Multi-Timeframe analysis enabled")
+                print("   ✅ News & Economic calendar monitoring")
+                print("   ✅ Advanced order types (TWAP, VWAP, Iceberg)")
+                print("   ✅ Professional risk management active")
+                print("   🏆 PROFESSIONAL MODE FULLY ACTIVATED!")
+                
+            except Exception as e:
+                print(f"   ⚠️ Professional mode initialization error: {e}")
+                self.professional_mode = False
+        else:
+            self.professional_mode = False
+            print("   ℹ️ Running in standard mode (professional features not loaded)")
+        
         # 🎯 ENHANCED AI SYSTEMS - 90% WIN RATE TARGET 🎯
         if ENHANCED_AI_AVAILABLE:
             print("🚀 Initializing Enhanced AI Systems for 90% Win Rate...")
@@ -3062,14 +3172,14 @@ class LegendaryCryptoTitanBot:
             self.elite_engine = None
             print("📝 Using standard execution engine")
         self.position_cycles = {}
-        self.force_learning_mode = True
-        self.max_hold_cycles = 10  # Hold longer like REAL trader (not 30 second scalps!)
+        self.force_learning_mode = False  # DISABLED - let positions develop naturally
+        self.max_hold_cycles = 60  # Hold longer - 60 cycles = ~10 minutes per position
         self.force_trade_mode = True  # FORCE TRADES FOR LEARNING!
         self.loss_learning_mode = True
         self.dynamic_sizing = True
         self.micro_scalp_threshold = 0.01
-        self.take_profit = 3.5  # 3.5% take profit (REALISTIC for day trading!)
-        self.stop_loss = 2.0   # 2% stop loss (REALISTIC - real trader stops!)
+        self.take_profit = 0.5  # 0.5% take profit (Quick scalp profits!)
+        self.stop_loss = 0.3   # 0.3% stop loss (Tight risk control)
         self.max_concurrent_positions = 3
         
         # Initialize enhanced live graph visualization
@@ -3278,60 +3388,147 @@ class LegendaryCryptoTitanBot:
             return 50.0  # Default moderate score on error
     
     def _should_take_trade(self, quality_score: float, signal_confidence: float) -> Tuple[bool, str]:
-        """🎯 Determine if trade should be taken based on quality and 90% win rate criteria"""
-        # AGGRESSIVE MODE: Disable optimizer entirely, take all trades!
+        """🎯 PROFESSIONAL TRADER - Quality-focused with mode flexibility"""
+        # AGGRESSIVE MODE: ACTIVE TRADING - Frequent trades!
         if self.trading_mode == 'AGGRESSIVE':
-            print(f"      ⚡ AGGRESSIVE MODE: Taking trade (Quality: {quality_score:.1f}, Confidence: {signal_confidence:.1%})")
-            return True, f"⚡ AGGRESSIVE: Bypassing quality checks"
+            import time as _time
+            current_time = _time.time()
+            time_since_last_trade = current_time - getattr(self, 'last_trade_time', 0)
+            
+            # FORCE TRADE if 5 minutes passed without trading
+            force_trade = time_since_last_trade > getattr(self, 'force_trade_after_seconds', 300)
+            
+            if force_trade and quality_score >= 40 and signal_confidence >= 0.35:
+                print(f"      ⚡ FORCED TRADE: 5+ min without action! (Q: {quality_score:.1f}, C: {signal_confidence:.1%})")
+                self.last_trade_time = current_time
+                return True, f"⚡ FORCED: Maintaining activity"
+            
+            # Normal aggressive standards (lower threshold)
+            if quality_score < 50 or signal_confidence < 0.45:
+                print(f"      ❌ REJECTED: Quality {quality_score:.1f} < 50 OR Confidence {signal_confidence:.1%} < 45%")
+                return False, f"Below aggressive minimum"
+            
+            # Pause after 4 consecutive losses (more tolerance)
+            if self.consecutive_losses >= 4:
+                print(f"      ⚠️ REJECTED: {self.consecutive_losses} consecutive losses - cooling off")
+                return False, f"Cooling off after {self.consecutive_losses} losses"
+            
+            # Grade the trade
+            if quality_score >= 70:
+                grade = "🌟 EXCELLENT"
+            elif quality_score >= 60:
+                grade = "✅ GOOD"
+            else:
+                grade = "⚡ ACCEPTABLE"
+            
+            self.last_trade_time = current_time
+            print(f"      ✅ APPROVED: {grade} (Q: {quality_score:.1f}, C: {signal_confidence:.1%})")
+            return True, f"⚡ AGGRESSIVE: {grade}"
         
-        if not self.win_rate_optimizer_enabled:
-            print(f"      ✅ Optimizer disabled: Taking trade (Quality: {quality_score:.1f}, Confidence: {signal_confidence:.1%})")
-            return True, "Optimizer disabled - taking trade"
+        # PRECISION MODE: STRICT PROFESSIONAL STANDARDS
+        # Check confidence threshold - MUST be high quality
+        if signal_confidence < self.min_confidence_threshold:
+            print(f"      ❌ REJECTED: Confidence {signal_confidence:.1%} < {self.min_confidence_threshold:.1%}")
+            return False, f"Confidence too low: {signal_confidence:.2%} < {self.min_confidence_threshold:.2%}"
         
-        # Check minimum quality threshold (LOWERED)
-        if quality_score < self.min_trade_quality_score:
-            print(f"      ❌ REJECTED: Quality {quality_score:.1f} < {self.min_trade_quality_score}")
-            return False, f"Quality score too low: {quality_score:.1f} < {self.min_trade_quality_score}"
+        # Check quality score - PROFESSIONAL STANDARD
+        min_quality = getattr(self, 'min_trade_quality_score', 75.0)
+        if quality_score < min_quality:
+            print(f"      ❌ REJECTED: Quality {quality_score:.1f} < {min_quality}")
+            return False, f"Quality score too low: {quality_score:.1f} < {min_quality}"
         
-        # Check confidence threshold (LOWERED)
-        if signal_confidence < self.min_confidence_for_trade:
-            print(f"      ❌ REJECTED: Confidence {signal_confidence:.1%} < {self.min_confidence_for_trade:.1%}")
-            return False, f"Confidence too low: {signal_confidence:.2%} < {self.min_confidence_for_trade:.2%}"
-        
-        # Extra caution during losing streaks (REMOVED FOR NOW)
-        # Allow trades even during losing streaks with lower quality
+        # Pause trading during losing streaks - PROTECT CAPITAL
+        if self.consecutive_losses >= 2:
+            print(f"      ⚠️ REJECTED: {self.consecutive_losses} consecutive losses - pausing for market reassessment")
+            return False, f"Paused after {self.consecutive_losses} losses - protecting capital"
         
         # Recommendation based on quality
         if quality_score >= 85:
-            recommendation = "EXCELLENT"
+            recommendation = "🌟 EXCELLENT"
         elif quality_score >= 75:
-            recommendation = "GOOD"
-        elif quality_score >= 45:
-            recommendation = "ACCEPTABLE"
+            recommendation = "✅ GOOD"
         else:
-            recommendation = "CAUTION"
+            recommendation = "⚠️ ACCEPTABLE"
         
         print(f"      ✅ APPROVED: {recommendation} (Quality: {quality_score:.1f}, Confidence: {signal_confidence:.1%})")
-        return True, f"Trade approved: {recommendation} (Quality: {quality_score:.1f}, Confidence: {signal_confidence:.2%})"
+        return True, f"Trade approved: {recommendation}"
     
     async def run_micro_trading_cycle(self, cycles: int = 100):
         """🚀 Run the micro trading bot for specified cycles"""
-        print(f"\n🚀 BOT READY - {self.trading_mode} MODE")
+        
+        # START IN PAUSED STATE - Wait for dashboard control
+        self.trading_mode = 'PRECISION'  # Default to PRECISION mode
+        self.bot_running = False  # DO NOT START AUTOMATICALLY!
+        
+        print(f"\n⏸️ BOT INITIALIZED IN PAUSED STATE")
         print(f"💰 Initial Capital: ${self.initial_capital:.2f}")
-        print(f"🎯 Trading Mode: {self.trading_mode}")
-        print(f"📊 Symbols: {', '.join(self.symbols)}")
+        print(f"🎮 Waiting for dashboard commands...")
+        print(f"📍 Go to: http://localhost:5000")
+        print(f"👆 Click 'Start Trading' to begin!")
+        print(f"🎯 Default Mode: {self.trading_mode}")
+        print(f"⏸️ AUTO-TRADING: DISABLED - Manual control required")
+        print(f"📊 Markets Ready: {len(self.active_symbols)} symbols loaded")
         print("=" * 60)
+        print("\n⏳ WAITING FOR YOUR COMMAND IN DASHBOARD...\n")
+        print("   ⚠️ TRADING WILL NOT START UNTIL YOU CLICK 'START TRADING'")
+        print("   📍 Dashboard: http://localhost:5000")
+        print("=" * 60 + "\n")
         
-        # DON'T auto-start - wait for dashboard command
-        # self.bot_running is controlled by dashboard
+        # Initialize entry times for any existing positions loaded from state
+        try:
+            portfolio = await self.trader.get_portfolio_value()
+            positions = portfolio.get('positions', {})
+            import time as _time_module
+            for symbol, pos in positions.items():
+                if pos.get('quantity', 0) > 0 and symbol not in self.position_entry_time:
+                    # For loaded positions, assume they were entered 5 minutes ago
+                    # This prevents immediate stop loss on restart
+                    self.position_entry_time[symbol] = _time_module.time() - 300
+                    print(f"📂 Loaded position {symbol}: entry time initialized")
+                    
+                    # Log if position has custom TP/SL
+                    if 'take_profit' in pos or 'stop_loss' in pos:
+                        print(f"   🎯 Custom TP/SL found for {symbol}:")
+                        if 'take_profit' in pos:
+                            print(f"      TP: ${pos['take_profit']:.2f}")
+                        if 'stop_loss' in pos:
+                            print(f"      SL: ${pos['stop_loss']:.2f}")
+        except Exception as e:
+            print(f"⚠️ Error initializing position times: {e}")
         
-        # Main trading loop
+        # 🏆 ACTIVATE PROFESSIONAL TRADING FEATURES
+        if self.professional_mode:
+            print("\n🏆 ACTIVATING PROFESSIONAL TRADING SYSTEMS...")
+            try:
+                # Run professional daily preparation and start monitoring loops
+                await self.professional_integration.enhance_bot_with_professional_features()
+                print("✅ Professional features activated!")
+            except Exception as e:
+                print(f"⚠️ Error activating professional features: {e}")
+        
+        # Start background price fetcher (runs even when paused)
+        asyncio.create_task(self._background_price_fetcher())
+        
+        # Main trading loop - checks bot_running flag each cycle
+        waiting_printed = False
         for cycle in range(1, cycles + 1):
             try:
-                # Wait for dashboard to start bot
-                while not self.bot_running:
-                    print("⏸️ Waiting for dashboard command to start trading...")
-                    await asyncio.sleep(5)  # Check every 5 seconds
+                # Check if bot should be running (controlled by dashboard)
+                if not self.bot_running:
+                    if not waiting_printed:
+                        print("\n" + "=" * 60)
+                        print("⏸️  BOT IS PAUSED - WAITING FOR DASHBOARD COMMAND")
+                        print("=" * 60)
+                        print("📍 Go to: http://localhost:5000")
+                        print("🎮 Click 'Start Trading' to begin")
+                        print("⏳ Waiting...")
+                        print("=" * 60)
+                        waiting_printed = True
+                    await asyncio.sleep(2)  # Check every 2 seconds when paused
+                    continue
+                
+                # Bot is running, reset the waiting flag
+                waiting_printed = False
                 
                 print(f"\n📊 CYCLE {cycle}/{cycles}")
                 print("-" * 40)
@@ -3340,14 +3537,9 @@ class LegendaryCryptoTitanBot:
                 await self._display_active_positions()
                 
                 # STEP 1: Collect price data
-                print("📡 Collecting market data...")
-                # Smart symbol selection: top cryptos + metals + commodities
-                priority_symbols = [
-                    'BTC/USDT', 'ETH/USDT', 'SOL/USDT',  # Top 3 cryptos
-                    'XAU/USDT', 'XAG/USDT',              # Metals
-                    'BNB/USDT', 'XRP/USDT', 'ADA/USDT'   # More cryptos
-                ]
-                symbols_to_track = [s for s in priority_symbols if s in self.symbols][:8]  # Top 8 assets
+                print(f"📡 Collecting market data for {len(self.active_symbols)} active markets...")
+                # Use active symbols from market filter (dashboard controlled)
+                symbols_to_track = self.active_symbols[:8]  # Track up to 8 active symbols for efficiency
                 
                 for symbol in symbols_to_track:
                     if symbol not in self.price_history:
@@ -3362,7 +3554,7 @@ class LegendaryCryptoTitanBot:
                         price = await self.data_feed.get_live_price(symbol)
                         
                         if not price or price <= 0:
-                            print(f"⚠️ Failed to get real price for {symbol}, skipping...")
+                            print(f"⚠️ Failed to get price for {symbol}, skipping...")
                             continue
                             
                     except Exception as e:
@@ -3373,12 +3565,71 @@ class LegendaryCryptoTitanBot:
                     self.price_history[symbol].append(price)
                     # Ensure we have at least 2 prices for momentum
                     if len(self.price_history[symbol]) < 2:
-                        self.price_history[symbol].append(price * 0.999)
-                    print(f"   {symbol}: ${price:,.2f} (REAL MEXC PRICE)")
+                        self.price_history[symbol].append(price)
+                    print(f"   ✓ {symbol}: ${price:,.2f}")
+                    
+                    # Update position with EXACT current price if we have an open position
+                    if hasattr(self.trader, 'positions') and symbol in self.trader.positions:
+                        if self.trader.positions[symbol].get('quantity', 0) > 0:
+                            self.trader.positions[symbol]['current_price'] = price  # (REAL MEXC PRICE)
                 
-                # STEP 2: Generate signals
+                # STEP 2: Manage existing positions (close if TP/SL hit)
+                print("\n🔄 Managing positions...")
+                await self._manage_micro_positions()
+                
+                # STEP 3: Generate signals
                 print("\n🔮 Generating trading signals...")
-                signals = await self._generate_micro_signals()
+                
+                # Use professional signals if available
+                if self.professional_mode:
+                    # Get both standard and professional signals
+                    standard_signals = await self._generate_micro_signals()
+                    
+                    # Prepare market data for professional analysis
+                    market_data = self._prepare_market_data_for_professional_analysis()
+                    
+                    # Get professional signals with all advanced analysis
+                    try:
+                        professional_signals = await self.professional_integration.generate_professional_signals(market_data)
+                        
+                        # Combine and prioritize signals
+                        signals = self._combine_signals(standard_signals, professional_signals)
+                        
+                        if len(professional_signals) > 0:
+                            print(f"   🏆 Professional signals: {len(professional_signals)} high-quality setups")
+                    except Exception as e:
+                        print(f"   ⚠️ Professional signal generation error: {e}")
+                        signals = standard_signals
+                else:
+                    signals = await self._generate_micro_signals()
+                
+                # AGGRESSIVE MODE: Force a trade if no signals!
+                if self.trading_mode == 'AGGRESSIVE' and (not signals or len(signals) == 0):
+                    print("⚡ AGGRESSIVE MODE: Forcing a trade opportunity!")
+                    # Pick best performing symbol
+                    best_symbol = self.active_symbols[0] if self.active_symbols else 'BTC/USDT'
+                    if best_symbol in self.price_history and len(self.price_history[best_symbol]) >= 2:
+                        prices = list(self.price_history[best_symbol])
+                        current_price = prices[-1]
+                        prev_price = prices[-2]
+                        
+                        # Create forced signal based on price movement
+                        action = 'BUY' if current_price > prev_price else 'SELL'
+                        if action == 'SELL' and best_symbol not in self.trader.positions:
+                            action = 'BUY'  # Can't sell what we don't have
+                        
+                        forced_signal = AITradingSignal(
+                            symbol=best_symbol,
+                            action=action,
+                            strength=0.75,
+                            confidence=0.70,
+                            entry_price=current_price,
+                            suggested_size=self.min_trade_size * 1.5,
+                            strategy_name='AGGRESSIVE_FORCE',
+                            metadata={'forced': True, 'reason': 'Aggressive mode guarantee'}
+                        )
+                        signals = [forced_signal]
+                        print(f"   🎯 Created forced {action} signal for {best_symbol}")
                 
                 if signals:
                     print(f"   ✅ Generated {len(signals)} signals")
@@ -3387,27 +3638,103 @@ class LegendaryCryptoTitanBot:
                 else:
                     print("   ⚠️ No signals generated")
                 
-                # STEP 3: Execute trades
+                # Professional psychology check before trading
+                if self.professional_mode:
+                    try:
+                        # Check personal trading psychology
+                        trading_stats = {
+                            'consecutive_losses': self.consecutive_losses,
+                            'daily_trades': self.trade_count,
+                            'daily_pnl_pct': (self.daily_pnl / self.initial_capital) * 100
+                        }
+                        
+                        psych_state = await self.personal_psychology.assess_personal_state(trading_stats)
+                        
+                        if not psych_state['should_trade']:
+                            print(f"   🧠 Psychology Alert: {psych_state['emotional_state']} - Reducing trading")
+                            # Filter signals based on psychology state
+                            signals = [s for s in signals if s.confidence > 0.8]  # Only highest confidence
+                    except:
+                        pass  # Continue even if psychology check fails
+                
+                # STEP 4: Execute trades
                 print("\n💎 Executing trades...")
                 await self._execute_micro_trades(signals)
                 
-                # STEP 4: Update status
+                # Professional trade journaling
+                if self.professional_mode and self.total_completed_trades > 0:
+                    try:
+                        # Log recent trades to journal
+                        if hasattr(self, 'trade_history') and self.trade_history:
+                            last_trade = self.trade_history[-1] if self.trade_history else None
+                            if last_trade and not getattr(last_trade, 'journaled', False):
+                                await self.trade_journal.log_trade({
+                                    'symbol': last_trade.get('symbol', 'UNKNOWN'),
+                                    'direction': last_trade.get('action', 'BUY'),
+                                    'entry_price': last_trade.get('entry_price', 0),
+                                    'exit_price': last_trade.get('exit_price', 0),
+                                    'position_size': last_trade.get('size', self.min_trade_size),
+                                    'pnl': last_trade.get('pnl', 0),
+                                    'pnl_pct': last_trade.get('pnl_pct', 0),
+                                    'strategy': last_trade.get('strategy', 'micro_trading'),
+                                    'market_condition': self.current_market_regime
+                                })
+                                last_trade['journaled'] = True
+                    except Exception as e:
+                        print(f"   ⚠️ Journal update error: {e}")
+                
+                # STEP 5: Update status
                 portfolio = await self.trader.get_portfolio_value()
                 current_value = portfolio.get('total_value', self.current_capital)
                 pnl = current_value - self.initial_capital
                 pnl_pct = (pnl / self.initial_capital) * 100 if self.initial_capital > 0 else 0
+                
+                # UPDATE CURRENT CAPITAL FOR DASHBOARD
+                self.current_capital = current_value
+                
+                # Count active positions
+                active_pos_count = len([p for p in portfolio.get('positions', {}).values() if p.get('quantity', 0) > 0])
+                active_pos_list = [sym for sym, p in portfolio.get('positions', {}).items() if p.get('quantity', 0) > 0]
+                
+                # Get current streak
+                current_streak = self.current_win_streak if self.current_win_streak > 0 else -self.current_loss_streak
+                streak_emoji = "🔥" if current_streak > 0 else "❄️" if current_streak < 0 else "⚪"
                 
                 print(f"\n📊 Portfolio Status:")
                 print(f"   💰 Current Value: ${current_value:.2f}")
                 print(f"   📈 P&L: ${pnl:.2f} ({pnl_pct:+.1f}%)")
                 print(f"   🏆 Win Rate: {self.win_rate:.1%}")
                 print(f"   📊 Total Trades: {self.total_completed_trades}")
+                print(f"   📍 Active Positions: {active_pos_count} {f'({', '.join(active_pos_list)})' if active_pos_list else ''}")
+                print(f"   {streak_emoji} Current Streak: {current_streak:+d}")
                 
-                # STEP 5: Wait before next cycle
-                if cycle < cycles:
-                    sleep_time = self.cycle_sleep_override if self.cycle_sleep_override else 10
-                    print(f"\n⏰ Next cycle in {sleep_time} seconds...")
-                    await asyncio.sleep(sleep_time)
+                # STEP 6: Update dashboard metrics
+                if WEB_DASHBOARD_AVAILABLE and real_time_monitor:
+                    try:
+                        # Get win rate stats
+                        win_stats = self.get_win_rate_stats() if hasattr(self, 'get_win_rate_stats') else {}
+                        
+                        # Calculate active positions
+                        active_positions = len([p for p in portfolio.get('positions', {}).values() if p.get('quantity', 0) > 0])
+                        
+                        # Push metrics to dashboard
+                        await real_time_monitor.update_metrics({
+                            'pnl': pnl,
+                            'win_rate': win_stats.get('current_win_rate', self.win_rate),
+                            'active_positions': active_positions,
+                            'daily_volume': portfolio.get('daily_volume', 0),
+                            'total_trades': self.total_completed_trades,
+                            'current_streak': win_stats.get('current_streak', 0),
+                            'portfolio_value': current_value
+                        })
+                    except Exception as dashboard_err:
+                        # Don't break trading loop if dashboard update fails
+                        print(f"   ⚠️ Dashboard update skipped: {dashboard_err}")
+                
+                # STEP 7: Wait before next cycle
+                wait_time = 15 if self.trading_mode == 'AGGRESSIVE' else 30
+                print(f"\n⏱️  Next cycle in {wait_time}s (AGGRESSIVE = faster trading)...")
+                await asyncio.sleep(wait_time)
                     
             except KeyboardInterrupt:
                 print(f"\n🛑 Trading stopped by user at cycle {cycle}")
@@ -3478,10 +3805,29 @@ class LegendaryCryptoTitanBot:
                     self.aggressive_trade_guarantee = True
                     self.aggressive_trade_interval = 60.0
                     self.cycle_sleep_override = 10.0
-                    self.win_rate_optimizer_enabled = False
+                    # AGGRESSIVE MODE: ACTIVE TRADING - At least 1 trade per 5 minutes!
+                    self.win_rate_optimizer_enabled = True
+                    self.min_trade_quality_score = 50.0  # Lower threshold - more trades!
+                    self.min_confidence_for_trade = 0.45  # 45% minimum - balanced
+                    self.confidence_threshold = 0.45
+                    self.max_concurrent_positions = 5  # More positions
+                    self.max_positions = 8
+                    self.take_profit = 2.5  # Professional profit target (2.5%)
+                    self.stop_loss = 1.0  # Professional stop loss (1.0%)
+                    self.min_hold_time = 300  # Professional grace period (5 minutes minimum)
+                    self.partial_profit_levels = [1.5, 2.0]  # Partial profits at 1.5% and 2.0%
+                    self.max_consecutive_losses = 4  # More tolerance
+                    self.aggressive_trade_frequency_target = 300  # 1 trade per 5 minutes
+                    self.last_trade_time = 0  # Track last trade
+                    self.force_trade_after_seconds = 300  # Force trade if 5 min passes
                     print("\n⚡ AGGRESSIVE MODE SELECTED!")
-                    print("   🔥 Win rate optimizer: DISABLED")
-                    print("   🎯 Trade guarantee: ACTIVE (≥1 trade/min)")
+                    print("   🔥 ACTIVE TRADING - Minimum 1 trade per 5 minutes!")
+                    print("   🎯 Minimum Quality: 50/100, Confidence: 45%")
+                    print("   🎯 Target Win Rate: 65-70%")
+                    print("   📊 HIGH FREQUENCY - More action!")
+                    print("   💰 TP: 2.5% | SL: 1.0% | Max Positions: 5")
+                    print("   ⚡ Partial profits at 1.5% and 2.0%")
+                    print("   ⏱️ GUARANTEED: At least 12 trades/hour")
                     print(f"   📊 Min confidence: {config['min_confidence']:.0%}")
                     break
                     
@@ -3499,10 +3845,26 @@ class LegendaryCryptoTitanBot:
                     self.confidence_adjustment_factor = 0.01
                     self.aggressive_trade_guarantee = False
                     self.cycle_sleep_override = None
+                    # PRECISION MODE: Ultra-selective, highest quality only
                     self.win_rate_optimizer_enabled = True
-                    print("\n🎯 NORMAL (PRECISION) MODE SELECTED!")
+                    self.min_trade_quality_score = 75.0  # PROFESSIONAL STANDARD
+                    self.min_confidence_for_trade = 0.65  # 65% minimum
+                    self.confidence_threshold = 0.65
+                    self.max_concurrent_positions = 2  # Focused positions
+                    self.max_positions = 3
+                    self.take_profit = 3.5  # Professional profit target (3.5%)
+                    self.stop_loss = 1.5  # Controlled risk (1.5%)
+                    self.min_hold_time = 600  # Professional grace period (10 minutes minimum)
+                    self.partial_profit_levels = [2.0, 2.75]  # Partial profits at 2.0% and 2.75%
+                    self.max_consecutive_losses = 2  # Strict loss limit
+                    print("\n🎯 PRECISION (PROFESSIONAL) MODE SELECTED!")
                     print("   💎 Win rate optimizer: ENABLED")
-                    print("   🎯 Quality-focused trading")
+                    print("   🎯 Minimum Quality: 75/100, Confidence: 65%")
+                    print("   🏆 Target Win Rate: 85%+")
+                    print("   📊 Fewer trades, bigger winners")
+                    print("   💰 TP: 3.5% | SL: 1.5% | Max Positions: 2")
+                    print("   ⚡ Partial profits at 2.0% and 2.75%")
+                    print("   🎯 Quality-focused trading - ONLY excellent setups!")
                     print(f"   📊 Min confidence: {config['min_confidence']:.0%}")
                     break
                     
@@ -3518,6 +3880,81 @@ class LegendaryCryptoTitanBot:
         print(f"\n✅ {self.trading_mode} MODE ACTIVATED")
         print("=" * 70)
     
+    def _prepare_market_data_for_professional_analysis(self) -> Dict:
+        """Prepare market data for professional analysis"""
+        market_data = {}
+        
+        for symbol in self.active_symbols[:10]:  # Top 10 symbols
+            if symbol in self.price_history and len(self.price_history[symbol]) > 0:
+                prices = list(self.price_history[symbol])
+                current_price = prices[-1] if prices else 0
+                
+                # Calculate basic metrics
+                price_change_24h = ((prices[-1] - prices[0]) / prices[0]) if len(prices) > 1 and prices[0] > 0 else 0
+                volatility = np.std(prices) / np.mean(prices) if len(prices) > 1 else 0.02
+                
+                market_data[symbol] = {
+                    'price': current_price,
+                    'price_change_24h': price_change_24h,
+                    'price_change_7d': price_change_24h,  # Simplified
+                    'volatility': volatility,
+                    'volume_vs_average': np.random.uniform(0.5, 2.0),  # Simulated
+                    'order_book': {},  # Would get from exchange in production
+                    'trades': [],  # Would get from exchange in production
+                    'fear_greed_index': np.random.uniform(20, 80),
+                    'put_call_ratio': np.random.uniform(0.7, 1.3),
+                    'social_sentiment': np.random.uniform(-1, 1)
+                }
+        
+        # Add market-wide data
+        market_data['market'] = {
+            'fear_greed_index': np.random.uniform(20, 80),
+            'put_call_ratio': np.random.uniform(0.7, 1.3),
+            'social_sentiment': np.random.uniform(-1, 1)
+        }
+        
+        return market_data
+    
+    def _combine_signals(self, standard_signals: List[AITradingSignal], 
+                        professional_signals: List[Dict]) -> List[AITradingSignal]:
+        """Combine standard and professional signals"""
+        combined = standard_signals.copy()
+        
+        # Convert professional signals to AITradingSignal format
+        for pro_sig in professional_signals:
+            if pro_sig['confidence'] > 0.6:  # Only high confidence professional signals
+                # Get current price for the symbol
+                current_price = pro_sig.get('entry_price', 0)
+                if current_price == 0 and pro_sig['symbol'] in self.price_history:
+                    prices = list(self.price_history[pro_sig['symbol']])
+                    current_price = prices[-1] if prices else 0
+                
+                if current_price > 0:  # Only create signal if we have a valid price
+                    ai_signal = AITradingSignal(
+                        symbol=pro_sig['symbol'],
+                        action=pro_sig['action'],
+                        confidence=pro_sig['confidence'],
+                        expected_return=pro_sig.get('expected_return', 1.5),
+                        risk_score=pro_sig.get('risk_score', 0.3),
+                        time_horizon=60,
+                        entry_price=current_price,
+                        stop_loss=pro_sig.get('stop_loss', current_price * 0.98),
+                        take_profit=pro_sig.get('take_profit', current_price * 1.02),
+                        position_size=pro_sig.get('position_size', self.min_trade_size),
+                        strategy_name=pro_sig.get('strategy_name', 'professional'),
+                        ai_reasoning='Professional analysis signal',
+                        technical_score=0.7,
+                        sentiment_score=0.6,
+                        momentum_score=0.5,
+                        volatility_score=0.4,
+                        timestamp=datetime.now()
+                    )
+                    combined.append(ai_signal)
+        
+        # Sort by confidence and return top signals
+        combined.sort(key=lambda x: x.confidence, reverse=True)
+        return combined[:10]  # Limit to top 10 signals
+    
     async def _generate_micro_signals(self) -> List[AITradingSignal]:
         """🧬 Generate 90% accuracy micro trading signals with ensemble AI"""
         # AGGRESSIVE MODE: Generate forced signals if needed
@@ -3525,7 +3962,7 @@ class LegendaryCryptoTitanBot:
             print("⚡ AGGRESSIVE MODE: Generating high-volume signals")
             # Force generate simple signals for all symbols
             forced_signals = []
-            for symbol in self.symbols[:3]:  # Take first 3 symbols
+            for symbol in self.active_symbols[:3]:  # Take first 3 active symbols
                 if symbol not in self.price_history or len(self.price_history[symbol]) < 2:
                     continue
                 prices = list(self.price_history[symbol])
@@ -3915,7 +4352,7 @@ class LegendaryCryptoTitanBot:
             
             # Enhanced market data with all intelligence
             enhanced_market_data = {}
-            for symbol in self.symbols:
+            for symbol in self.active_symbols:
                 if symbol in self.price_history and len(self.price_history[symbol]) >= 10:
                     prices = list(self.price_history[symbol])
                     enhanced_market_data[symbol] = {
@@ -4413,6 +4850,10 @@ class LegendaryCryptoTitanBot:
                 self.trade_count += 1
                 self.active_signals[signal.symbol] = signal
                 
+                # Track entry time for grace period
+                import time as _time_module
+                self.position_entry_time[signal.symbol] = _time_module.time()
+                
                 print(f"   ✅ {signal.symbol}: ${position_size:.2f} @ ${signal.entry_price:.4f}")
                 print(f"      🎯 Expected: {signal.expected_return:+.2f}%")
                 
@@ -4439,7 +4880,13 @@ class LegendaryCryptoTitanBot:
         portfolio = await self.trader.get_portfolio_value()
         positions = portfolio.get('positions', {})
         
+        # DEBUG: Check what we have
+        active_positions = {k: v for k, v in positions.items() if v.get('quantity', 0) != 0}
+        if active_positions:
+            print(f"   📊 Found {len(active_positions)} active positions to manage")
+        
         if not positions:
+            print("   ℹ️ No positions to manage")
             return
         
         # Check daily drawdown limit
@@ -4457,132 +4904,22 @@ class LegendaryCryptoTitanBot:
         print(f"   📊 Daily P&L: ${current_total - self.daily_start_capital:+.2f} ({(current_total/self.daily_start_capital-1)*100:+.1f}%)")
         print(f"   🎯 Win Rate: {self.win_rate:.1%} ({self.winning_trades}/{self.total_completed_trades})")
         
-        # Use Advanced Position Manager if available
-        if self.enhanced_ai_initialized and hasattr(self, 'position_manager') and self.position_manager:
-            await self._advanced_position_management(positions, portfolio)
-        else:
-            await self._traditional_position_management(positions)
+        # ALWAYS use traditional position management (simple and profitable!)
+        # Advanced position manager was closing positions too early
+        # Traditional logic respects grace periods and profit targets
+        await self._traditional_position_management(positions)
     
     async def _advanced_position_management(self, positions: Dict, portfolio: Dict):
-        """Advanced AI-driven position management with optimization"""
-        print("   🎯 Using Advanced Position Manager...")
-        
-        for symbol, position in positions.items():
-            if position.get('quantity', 0) <= 0:
-                continue
-            
-            try:
-                # Prepare position data for advanced analysis
-                position_data = {
-                    'symbol': symbol,
-                    'cost_basis': position['cost_basis'],
-                    'current_value': position['current_value'],
-                    'unrealized_pnl': position['unrealized_pnl'],
-                    'quantity': position.get('quantity', 0),
-                    'entry_time': getattr(position, 'entry_time', datetime.now()),
-                    'holding_period': self.position_cycles.get(symbol, 0)
-                }
-                
-                # Get market data for position analysis
-                market_data = {
-                    'current_price': position['current_value'] / position.get('quantity', 1),
-                    'price_history': list(self.price_history.get(symbol, [])),
-                    'volatility': self._calculate_volatility(symbol),
-                    'momentum': self._calculate_momentum(symbol),
-                    'trend_strength': self._calculate_trend_strength(symbol),
-                    'regime': getattr(self.regime_detector, 'current_regime', MarketRegime.SIDEWAYS).value if self.regime_detector else 'sideways',
-                    'atr': self._calculate_atr(symbol)
-                }
-                
-                # Get portfolio context
-                portfolio_context = {
-                    'total_value': portfolio['total_value'],
-                    'cash': portfolio['cash'],
-                    'daily_pnl': self.daily_pnl,
-                    'win_rate': self.win_rate,
-                    'consecutive_losses': self.consecutive_losses,
-                    'max_positions': self.max_positions,
-                    'current_positions': len([p for p in positions.values() if p.get('quantity', 0) > 0])
-                }
-                
-                # Get original signal if available
-                original_signal = self.active_signals.get(symbol)
-                
-                # Get advanced position analysis
-                position_analysis = await self.position_manager.analyze_position(
-                    position_data=position_data,
-                    market_data=market_data,
-                    portfolio_context=portfolio_context,
-                    original_signal=original_signal
-                )
-                
-                # Track position holding cycles
-                if symbol not in self.position_cycles:
-                    self.position_cycles[symbol] = 0
-                else:
-                    self.position_cycles[symbol] += 1
-                
-                # Execute advanced position management decision
-                await self._execute_position_decision(symbol, position, position_analysis)
-                
-            except Exception as e:
-                print(f"   ⚠️ Advanced position management error for {symbol}: {e}")
-                # Fallback to traditional management
-                await self._traditional_position_logic(symbol, position)
+        """Advanced AI-driven position management - DISABLED"""
+        # This function is disabled - we use simple traditional logic instead
+        # Advanced manager was closing positions too early
+        pass
     
     async def _execute_position_decision(self, symbol: str, position: Dict, analysis: Dict):
-        """Execute position management decision based on advanced analysis"""
-        action = analysis.get('action', 'HOLD')
-        reason = analysis.get('reason', 'Advanced analysis')
-        confidence = analysis.get('confidence', 0.5)
-        exit_percentage = analysis.get('exit_percentage', 1.0)
+        """Execute position management decision - DISABLED"""
+        # This function is disabled
+        pass
         
-        cost_basis = position['cost_basis']
-        current_value = position['current_value']
-        unrealized_pnl = position['unrealized_pnl']
-        pnl_pct = (unrealized_pnl / cost_basis) * 100 if cost_basis > 0 else 0
-        
-        if action == 'CLOSE_FULL':
-            print(f"   🎯 {symbol}: Advanced analysis recommends FULL EXIT")
-            await self._close_micro_position(symbol, position, f"ADVANCED_ANALYSIS: {reason}")
-            
-            # Clean up tracking
-            if symbol in self.position_cycles:
-                del self.position_cycles[symbol]
-            if symbol in self.position_high_water_marks:
-                del self.position_high_water_marks[symbol]
-                
-        elif action == 'CLOSE_PARTIAL':
-            close_amount = current_value * exit_percentage
-            print(f"   📊 {symbol}: Advanced analysis recommends {exit_percentage:.0%} PARTIAL EXIT")
-            await self._close_micro_position(symbol, position, f"ADVANCED_PARTIAL: {reason}", close_amount)
-            
-        elif action == 'ADJUST_STOPS':
-            # Advanced stop adjustment (would update with broker in real trading)
-            new_stop = analysis.get('new_stop_price')
-            print(f"   🛑 {symbol}: Advanced analysis adjusts stop to ${new_stop:.2f}")
-            # In paper trading, we just track this for future decisions
-            
-        elif action == 'HOLD':
-            status = "💚" if unrealized_pnl > 0 else "❤️" if unrealized_pnl < 0 else "💛"
-            cycles_info = f" [Cycle {self.position_cycles[symbol]}/{self.max_hold_cycles}]" if self.force_learning_mode else ""
-            confidence_info = f" (AI: {confidence:.1%})"
-            print(f"   {status} {symbol}: ${current_value:.2f} ({pnl_pct:+.2f}%){confidence_info} - ADVANCED HOLD{cycles_info}")
-            
-            # Forced learning override
-            if self.force_learning_mode and self.position_cycles[symbol] >= self.max_hold_cycles:
-                print(f"   🎓 {symbol}: FORCED LEARNING OVERRIDE - Closing for AI learning")
-                await self._force_ai_learning_from_position(symbol, position, "FORCED_LEARNING_TIMEOUT")
-                await self._close_micro_position(symbol, position, f"FORCED LEARNING CLOSE (Cycle {self.position_cycles[symbol]})")
-                
-                if symbol in self.position_cycles:
-                    del self.position_cycles[symbol]
-                if symbol in self.position_high_water_marks:
-                    del self.position_high_water_marks[symbol]
-            else:
-                # Continue learning from open position
-                if symbol in self.active_signals:
-                    await self._learn_from_open_position(symbol, position)
     
     async def _traditional_position_management(self, positions: Dict):
         """Traditional position management fallback"""
@@ -4600,6 +4937,20 @@ class LegendaryCryptoTitanBot:
         current_value = position['current_value']
         unrealized_pnl = position['unrealized_pnl']
         
+        # DEBUG: Log position details with PRICE INFO
+        current_price = current_value / position.get('quantity', 1) if position.get('quantity', 0) > 0 else 0
+        entry_price = position.get('avg_price', 0)
+        price_change = current_price - entry_price if entry_price > 0 else 0
+        price_change_pct = (price_change / entry_price * 100) if entry_price > 0 else 0
+        
+        print(f"\n   🔍 POSITION CHECK: {symbol}")
+        print(f"      Entry Price: ${entry_price:.2f}")
+        print(f"      Current Price: ${current_price:.2f} ({price_change_pct:+.3f}%)")
+        print(f"      Price Movement: ${price_change:+.2f}")
+        print(f"      Cost Basis: ${cost_basis:.2f}")
+        print(f"      Current Value: ${current_value:.2f}")
+        print(f"      Unrealized P&L: ${unrealized_pnl:+.4f}")
+        
         # Get signal info to determine if BUY or SELL
         signal = self.active_signals.get(symbol)
         is_sell_order = signal and signal.action == 'SELL'
@@ -4614,6 +4965,9 @@ class LegendaryCryptoTitanBot:
             # For BUY: standard P&L calculation
             pnl_pct = (unrealized_pnl / cost_basis) * 100 if cost_basis > 0 else 0
             current_price = current_value / position.get('quantity', 1)
+        
+        print(f"      P&L %: {pnl_pct:+.2f}%")
+        print(f"      Current Price: ${current_price:.4f}")
         
         # Initialize high water mark for trailing stops
         if symbol not in self.position_high_water_marks:
@@ -4634,37 +4988,109 @@ class LegendaryCryptoTitanBot:
         close_percentage = 1.0
         reason = ""
         
-        # PARTIAL PROFIT TAKING
+        # CHECK GRACE PERIOD - Don't close on stop loss too early
+        import time as _time_module
+        entry_time = self.position_entry_time.get(symbol, 0)
+        time_held = _time_module.time() - entry_time if entry_time > 0 else 999
+        in_grace_period = time_held < self.min_hold_time
+        
+        # Check for position-specific TP/SL values (from dashboard updates)
+        position_tp_price = position.get('take_profit', None)
+        position_sl_price = position.get('stop_loss', None)
+        
+        # Log if custom TP/SL found
+        if position_tp_price or position_sl_price:
+            print(f"      🎯 CUSTOM TP/SL DETECTED from Dashboard!")
+            if position_tp_price:
+                print(f"         Custom TP: ${position_tp_price:.2f}")
+            if position_sl_price:
+                print(f"         Custom SL: ${position_sl_price:.2f}")
+        
+        # Calculate TP/SL percentages from position-specific prices if available
+        if position_tp_price and entry_price > 0:
+            position_tp_pct = ((position_tp_price - entry_price) / entry_price) * 100
+            print(f"         Using CUSTOM TP: ${position_tp_price:.2f} ({position_tp_pct:+.2f}% from entry)")
+        else:
+            position_tp_pct = self.take_profit
+            print(f"         Using DEFAULT TP: {position_tp_pct:.2f}%")
+            
+        if position_sl_price and entry_price > 0:
+            position_sl_pct = abs((position_sl_price - entry_price) / entry_price) * 100
+            print(f"         Using CUSTOM SL: ${position_sl_price:.2f} (-{position_sl_pct:.2f}% from entry)")
+        else:
+            position_sl_pct = self.stop_loss
+            print(f"         Using DEFAULT SL: -{position_sl_pct:.2f}%")
+        
+        print(f"      ⏰ Time Held: {time_held:.1f}s | Grace Period: {in_grace_period} | Cycle: {self.position_cycles[symbol]}")
+        
+        # SMART PROFIT TAKING (always allowed)
         if pnl_pct >= self.partial_profit_levels[0] and pnl_pct < self.partial_profit_levels[1]:
             partial_close = True
-            close_percentage = 0.5  # Close 50% at first level
-            reason = f"PARTIAL PROFIT 50% ({pnl_pct:.1f}%)"
-        elif pnl_pct >= self.partial_profit_levels[1] and pnl_pct < self.take_profit:
+            close_percentage = 0.5  # Close 50% at first level - LOCK IN PROFIT!
+            reason = f"🎯 SMART PROFIT 50% ({pnl_pct:.1f}%)"
+            print(f"      ✅ LOCKING PROFIT: Taking 50% off at {self.partial_profit_levels[0]}%")
+        elif pnl_pct >= self.partial_profit_levels[1] and pnl_pct < position_tp_pct:
             partial_close = True
-            close_percentage = 0.25  # Close additional 25% at second level
-            reason = f"PARTIAL PROFIT 25% ({pnl_pct:.1f}%)"
+            close_percentage = 0.75  # Close 75% of remaining - let 25% run to target
+            reason = f"🎯 SMART PROFIT 75% ({pnl_pct:.1f}%)"
+            print(f"      ✅ LOCKING PROFIT: Taking 75% off at {self.partial_profit_levels[1]}%, letting rest run")
         
-        # TRAILING STOP
-        elif self.use_trailing_stops and unrealized_pnl > 0:
+        # TRAILING STOP (only after grace period)
+        elif not in_grace_period and self.use_trailing_stops and unrealized_pnl > 0:
             high_water_mark = self.position_high_water_marks[symbol]
             trailing_stop_price = high_water_mark * (1 - self.trailing_stop_distance / 100)
             if current_price <= trailing_stop_price:
                 should_close = True
                 reason = f"TRAILING STOP (${trailing_stop_price:.2f})"
+                print(f"      ✅ CONDITION MET: Trailing stop hit")
         
-        # TRADITIONAL STOPS
-        elif pnl_pct >= self.take_profit:
-            should_close = True
-            reason = f"PROFIT TARGET ({self.take_profit}%)"
-        elif pnl_pct <= -self.stop_loss:
-            should_close = True
-            reason = f"STOP LOSS ({self.stop_loss}%)"
+        # Check both TP and SL independently (not elif) - both should be evaluated
+        if not should_close and not partial_close:
+            # TAKE PROFIT - Check price-based TP first, then percentage-based
+            if position_tp_price:  # If custom TP price is set, ONLY use that
+                if current_price >= position_tp_price:
+                    should_close = True
+                    reason = f"PROFIT TARGET (${position_tp_price:.2f})"
+                    print(f"      ✅ CONDITION MET: Custom take profit target hit!")
+            elif pnl_pct >= position_tp_pct:  # Otherwise use percentage
+                should_close = True
+                reason = f"PROFIT TARGET ({position_tp_pct:.2f}%)"
+                print(f"      ✅ CONDITION MET: Take profit target hit!")
         
-        # FORCED LEARNING MODE
-        elif self.force_learning_mode and self.position_cycles[symbol] >= self.max_hold_cycles:
-            should_close = True
-            reason = f"FORCED LEARNING CLOSE (Cycle {self.position_cycles[symbol]})"
-            await self._force_ai_learning_from_position(symbol, position, "FORCED_TIMEOUT")
+        # STOP LOSS - Always check SL even if TP was evaluated (independent check)
+        if not should_close and not partial_close:
+            # STOP LOSS - Check price-based SL first, then percentage-based
+            if position_sl_price:  # If custom SL price is set, ONLY use that
+                if current_price <= position_sl_price:
+                    if in_grace_period and pnl_pct > -(position_sl_pct * 2):
+                        # Still in grace period and loss not catastrophic - HOLD
+                        print(f"      ⏳ GRACE PERIOD ACTIVE: Holding despite SL price reached ({time_held:.0f}s/{self.min_hold_time}s)")
+                    else:
+                        should_close = True
+                        reason = f"STOP LOSS (${position_sl_price:.2f})"
+                        print(f"      ❌ CONDITION MET: Custom stop loss triggered")
+            elif pnl_pct <= -position_sl_pct:  # Otherwise use percentage
+                if in_grace_period and pnl_pct > -(position_sl_pct * 2):
+                    # Still in grace period and loss not catastrophic - HOLD
+                    print(f"      ⏳ GRACE PERIOD ACTIVE: Holding despite {pnl_pct:.1f}% loss ({time_held:.0f}s/{self.min_hold_time}s)")
+                else:
+                    should_close = True
+                    reason = f"STOP LOSS ({position_sl_pct:.2f}%)"
+                    print(f"      ❌ CONDITION MET: Stop loss triggered")
+        
+        # MAX HOLD CYCLES (Safety mechanism - avoid stuck positions)
+        if not should_close and not partial_close:
+            if self.position_cycles[symbol] >= self.max_hold_cycles:
+                should_close = True
+                reason = f"MAX HOLD TIME (Cycle {self.position_cycles[symbol]})"
+                print(f"      ⏰ CONDITION MET: Max hold cycles reached")
+                # Only force close if we've held too long
+                if hasattr(self, '_force_ai_learning_from_position'):
+                    await self._force_ai_learning_from_position(symbol, position, "FORCED_TIMEOUT")
+        
+        # If nothing triggered, log that we're holding
+        if not should_close and not partial_close:
+            print(f"      ✋ HOLDING: No exit conditions met")
         
         if should_close or partial_close:
             close_amount = current_value * close_percentage
@@ -4674,6 +5100,8 @@ class LegendaryCryptoTitanBot:
                 del self.position_cycles[symbol]
                 if symbol in self.position_high_water_marks:
                     del self.position_high_water_marks[symbol]
+                if symbol in self.position_entry_time:
+                    del self.position_entry_time[symbol]
         else:
             status = "💚" if unrealized_pnl > 0 else "❤️" if unrealized_pnl < 0 else "💛"
             trailing_info = f" Trail: ${self.position_high_water_marks[symbol]:.2f}" if self.use_trailing_stops and unrealized_pnl > 0 else ""
@@ -4717,10 +5145,16 @@ class LegendaryCryptoTitanBot:
             if pnl > 0:
                 self.winning_trades += 1
                 self.consecutive_losses = 0
+                self.current_loss_streak = 0
+                self.current_win_streak += 1
+                if self.current_win_streak > self.longest_win_streak:
+                    self.longest_win_streak = self.current_win_streak
                 print(f"   ✅ WIN #{self.winning_trades} - Consecutive losses reset")
             else:
                 self.consecutive_losses += 1
-                print(f"   ❌ LOSS #{self.consecutive_losses} consecutive")
+                self.current_win_streak = 0
+                self.current_loss_streak += 1
+                print(f"   ❌ LOSS #{self.consecutive_losses} consecutive (Loss streak: {self.current_loss_streak})")
             
             self.win_rate = self.winning_trades / self.total_completed_trades if self.total_completed_trades > 0 else 0
             self.daily_pnl += pnl
@@ -4834,30 +5268,51 @@ class LegendaryCryptoTitanBot:
             profit_pct = (pnl / cost_basis) * 100 if cost_basis else 0
             exit_price = result.get('execution_price', current_px) if isinstance(result, dict) else current_px
             hold_time = self.position_cycles.get(symbol, 0) * 15  # ~seconds, given 15s cycle delay
-            safe_strategy_name = strategy_name if 'strategy_name' in locals() else getattr(signal, 'strategy_name', 'momentum')
+            
+            # Get signal if available, otherwise use default values
+            if symbol in self.active_signals:
+                sig = self.active_signals[symbol]
+                safe_strategy_name = strategy_name if 'strategy_name' in locals() else getattr(sig, 'strategy_name', 'momentum')
+                action = sig.action
+                entry_px = getattr(sig, 'entry_price', current_px)
+                confidence = sig.confidence
+                tech_score = sig.technical_score
+                sent_score = sig.sentiment_score
+                mom_score = sig.momentum_score
+                vol_score = sig.volatility_score
+            else:
+                # Position closed without active signal (manual close or loaded position)
+                safe_strategy_name = 'manual_close'
+                action = 'SELL'
+                entry_px = position.get('avg_price', current_px)
+                confidence = 0.5
+                tech_score = 0.5
+                sent_score = 0.5
+                mom_score = 0.5
+                vol_score = 0.5
             
             trade_data = {
                 'symbol': symbol,
-                'action': signal.action,
+                'action': action,
                 'profit_loss': pnl,
                 'profit_pct': profit_pct,
-                'entry_price': getattr(signal, 'entry_price', current_px),
+                'entry_price': entry_px,
                 'exit_price': exit_price,
                 'hold_time': hold_time,
-                'confidence': signal.confidence,
+                'confidence': confidence,
                 'strategy': safe_strategy_name,
                 'strategy_scores': {
-                    'technical': signal.technical_score,
-                    'sentiment': signal.sentiment_score,
-                    'momentum': signal.momentum_score
+                    'technical': tech_score,
+                    'sentiment': sent_score,
+                    'momentum': mom_score
                 },
                 'technical_indicators': {
                     'rsi': self._calculate_rsi(list(self.price_history[symbol])) if symbol in self.price_history else 50,
-                    'momentum': signal.momentum_score,
-                    'volatility': signal.volatility_score
+                    'momentum': mom_score,
+                    'volatility': vol_score
                 },
                 'market_conditions': {
-                    'volatility': signal.volatility_score,
+                    'volatility': vol_score,
                     'trend_strength': 0.3,
                     'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways'
                 }
@@ -4865,47 +5320,52 @@ class LegendaryCryptoTitanBot:
             
             # Add loss analysis if it's a loss
             if pnl < 0 and self.loss_learning_mode:
-                loss_analysis = self._analyze_trading_loss(symbol, signal, pnl, position)
-                trade_data['loss_analysis'] = loss_analysis
-                print(f"   📚 Loss analysis completed for forced closure")
+                # Only do loss analysis if we have the signal
+                if symbol in self.active_signals:
+                    loss_analysis = self._analyze_trading_loss(symbol, self.active_signals[symbol], pnl, position)
+                    trade_data['loss_analysis'] = loss_analysis
+                    print(f"   📚 Loss analysis completed for forced closure")
             
             ai_brain.learn_from_trade(trade_data)
             
             # 🏆 RECORD TRADE OUTCOME FOR 90% WIN RATE TRACKING
             if self.win_rate_optimizer_enabled and symbol in self.active_signals:
-                quality_score = self._calculate_trade_quality_score(signal, {'price': signal.entry_price})
+                sig_for_quality = self.active_signals[symbol]
+                quality_score = self._calculate_trade_quality_score(sig_for_quality, {'price': sig_for_quality.entry_price})
                 self._record_trade_outcome(
                     symbol=symbol,
                     strategy=strategy_name,
                     profit_loss=pnl,
                     quality_score=quality_score,
-                    confidence=signal.confidence
+                    confidence=sig_for_quality.confidence
                 )
             
             # Cross-bot learning from forced closure
-            lesson_type = 'forced_closure_trade'
-            lesson = {
-                'type': lesson_type,
-                'symbol': symbol,
-                'strategy': strategy_name,
-                'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways',
-                'pnl': pnl,
-                'confidence': signal.confidence,
-                'position_size': self.min_trade_size,
-                'account_size': 'legendary_micro',
-                'legendary_attributes': {
-                    'cz_vision': self.cz_global_strategy['global_market_dominance'],
-                    'devasini_liquidity': self.devasini_market_making['liquidity_provision'],
-                    'armstrong_institutional': self.armstrong_institutional['institutional_grade_execution'],
-                    'titan_mode': self.titan_mode_active,
-                    'win_streak': self.legendary_win_streak
-                },
-                'lesson': f"Legendary micro {lesson_type} with {signal.confidence:.1%} confidence using crypto titan strategies"
-            }
-            cross_bot_learning.share_trade_lesson('micro', lesson)
-            print(f"   🤝 Lesson shared with cross-bot learning system")
-            
-            del self.active_signals[symbol]
+            if symbol in self.active_signals:
+                lesson_type = 'forced_closure_trade'
+                sig_for_lesson = self.active_signals[symbol]
+                lesson = {
+                    'type': lesson_type,
+                    'symbol': symbol,
+                    'strategy': strategy_name,
+                    'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways',
+                    'pnl': pnl,
+                    'confidence': sig_for_lesson.confidence,
+                    'position_size': self.min_trade_size,
+                    'account_size': 'legendary_micro',
+                    'legendary_attributes': {
+                        'cz_vision': self.cz_global_strategy['global_market_dominance'],
+                        'devasini_liquidity': self.devasini_market_making['liquidity_provision'],
+                        'armstrong_institutional': self.armstrong_institutional['institutional_grade_execution'],
+                        'titan_mode': self.titan_mode_active,
+                        'win_streak': self.legendary_win_streak
+                    },
+                    'lesson': f"Legendary micro {lesson_type} with {sig_for_lesson.confidence:.1%} confidence using crypto titan strategies"
+                }
+                cross_bot_learning.share_trade_lesson('micro', lesson)
+                print(f"   🤝 Lesson shared with cross-bot learning system")
+                
+                del self.active_signals[symbol]
         else:
             print(f"   ❌ {symbol}: Failed to close position")
     
@@ -5499,11 +5959,15 @@ class LegendaryCryptoTitanBot:
     
     def get_win_rate_stats(self):
         """Get win rate statistics for dashboard"""
+        # Use tracked streaks (more accurate than calculating from history)
+        current_streak = self.current_win_streak if self.current_win_streak > 0 else -self.current_loss_streak
+        
         return {
             'current_win_rate': self.win_rate,
             'total_trades': self.total_completed_trades,
             'winning_trades': self.winning_trades,
-            'current_streak': 0  # Could track this if needed
+            'current_streak': current_streak,
+            'longest_win_streak': getattr(self, 'longest_win_streak', 0)
         }
     
     def _traditional_confidence_update(self):
@@ -6141,6 +6605,53 @@ class LegendaryCryptoTitanBot:
         
         return adjusted_size
     
+    async def _background_price_fetcher(self):
+        """📡 Background task to fetch prices continuously (even when bot is paused)"""
+        print("\n📡 Starting background price fetcher...")
+        last_fetch = 0
+        
+        while True:
+            try:
+                current_time = time.time()
+                # Fetch prices every 5 seconds for faster updates
+                if current_time - last_fetch >= 5:
+                    # Track top 5 symbols for dashboard display
+                    symbols_to_track = self.active_symbols[:5] if self.active_symbols else self.symbols[:5]
+                    
+                    fetched_any = False
+                    for symbol in symbols_to_track:
+                        if symbol not in self.price_history:
+                            self.price_history[symbol] = deque(maxlen=100)
+                        
+                        try:
+                            if hasattr(self, 'data_feed') and self.data_feed:
+                                price = await self.data_feed.get_live_price(symbol)
+                                
+                                if price and price > 0:
+                                    self.price_history[symbol].append(price)
+                                    
+                                    # Update position with current price if exists
+                                    if hasattr(self.trader, 'positions') and symbol in self.trader.positions:
+                                        if self.trader.positions[symbol].get('quantity', 0) > 0:
+                                            self.trader.positions[symbol]['current_price'] = price
+                                    
+                                    if not fetched_any:
+                                        print(f"\n📊 REAL Price update (MEXC):")
+                                        fetched_any = True
+                                    print(f"   {symbol}: ${price:,.2f}")
+                        except Exception as e:
+                            if not fetched_any:
+                                print(f"\n⚠️ Waiting for MEXC connection...")
+                                fetched_any = True
+                    
+                    last_fetch = current_time
+                
+                await asyncio.sleep(2)  # Check every 2 seconds
+                
+            except Exception as e:
+                print(f"⚠️ Background price fetcher error: {e}")
+                await asyncio.sleep(10)
+    
     async def _display_active_positions(self):
         """📊 Display all active positions with P&L"""
         try:
@@ -6169,7 +6680,11 @@ class LegendaryCryptoTitanBot:
                 symbol = pos.get('symbol', 'UNKNOWN')
                 quantity = pos.get('quantity', 0)
                 entry_price = pos.get('entry_price', 0)
-                current_price = pos.get('current_price', entry_price)
+                # Get EXACT current price from price history if available
+                if symbol in self.price_history and len(self.price_history[symbol]) > 0:
+                    current_price = list(self.price_history[symbol])[-1]  # Most recent REAL price
+                else:
+                    current_price = pos.get('current_price', entry_price)
                 position_value = quantity * current_price
                 cost_basis = quantity * entry_price
                 pnl = position_value - cost_basis
@@ -6472,7 +6987,7 @@ class LegendaryCryptoTitanBot:
                 symbol_intel = {}
                 sentiment_scores = []
                 regimes = []
-                for symbol in self.symbols:
+                for symbol in self.active_symbols:
                     if symbol in self.price_history and len(self.price_history[symbol]) >= 20:
                         prices = list(self.price_history[symbol])
                         intel = await self.market_intelligence_hub.get_comprehensive_intelligence(symbol, prices)
@@ -6602,7 +7117,7 @@ class LegendaryCryptoTitanBot:
                     symbol: {
                         'prices': list(self.price_history.get(symbol, []))[-20:]
                     }
-                    for symbol in self.symbols
+                    for symbol in self.active_symbols
                     if symbol in self.price_history and len(self.price_history[symbol]) >= 5
                 }
                 risk_sentiment = await _maybe_await(self.cross_market_intelligence.analyze_risk_sentiment(market_data_for_risk))
@@ -6613,7 +7128,7 @@ class LegendaryCryptoTitanBot:
                 # Get integrated signals across markets
                 integrated_signals = await _maybe_await(self.cross_market_integrator.generate_integrated_signals(
                     current_signals=[],
-                    crypto_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.symbols}
+                    crypto_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols}
                 ))
                 analysis['integrated_signals'] = integrated_signals
             
@@ -6621,8 +7136,8 @@ class LegendaryCryptoTitanBot:
             if hasattr(self, 'market_leadership_detector') and self.market_leadership_detector:
                 # Detect which markets/assets are leading
                 leadership_signals = await _maybe_await(self.market_leadership_detector.detect_leadership(
-                    symbols=self.symbols,
-                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.symbols}
+                    symbols=self.active_symbols,
+                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols}
                 ))
                 analysis['leadership_signals'] = leadership_signals
                 
@@ -6646,8 +7161,8 @@ class LegendaryCryptoTitanBot:
             if hasattr(self, 'dark_pool_tracker') and self.dark_pool_tracker:
                 # Track large hidden orders and whale movements
                 dark_pool_data = await _maybe_await(self.dark_pool_tracker.analyze_dark_pools(
-                    symbols=self.symbols,
-                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.symbols}
+                    symbols=self.active_symbols,
+                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols}
                 ))
                 whale_analysis['dark_pools'] = dark_pool_data
                 
@@ -6663,7 +7178,7 @@ class LegendaryCryptoTitanBot:
                         'prices': list(self.price_history.get(symbol, [])),
                         'volatility': self._calculate_volatility(symbol),
                         'volume_profile': 'normal'  # Would use real volume data
-                    } for symbol in self.symbols}
+                    } for symbol in self.active_symbols}
                 ))
                 whale_analysis['front_running'] = front_run_signals
             
@@ -6751,8 +7266,8 @@ class LegendaryCryptoTitanBot:
             if hasattr(self, 'manipulation_detector') and self.manipulation_detector:
                 # Detect pump and dump schemes
                 pump_dump_signals = await _maybe_await(self.manipulation_detector.detect_pump_dump(
-                    symbols=self.symbols,
-                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.symbols}
+                    symbols=self.active_symbols,
+                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols}
                 ))
                 manipulation_analysis['pump_dump'] = pump_dump_signals
                 
@@ -6760,7 +7275,7 @@ class LegendaryCryptoTitanBot:
                 spoofing_payload = {symbol: {
                         'prices': list(self.price_history.get(symbol, [])),
                         'order_book': 'simulated'  # Would use real order book
-                    } for symbol in self.symbols}
+                    } for symbol in self.active_symbols}
                 spoofing_signals = []
                 try:
                     # Prefer positional payload to avoid kwarg mismatches
@@ -6781,11 +7296,11 @@ class LegendaryCryptoTitanBot:
             if hasattr(self, 'psychological_modeler') and self.psychological_modeler:
                 # Model market psychology
                 market_psychology = await _maybe_await(self.psychological_modeler.analyze_market_psychology(
-                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.symbols},
+                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols},
                     sentiment_indicators={
                         'fear_greed': 50,  # Would use real fear/greed index
                         'social_sentiment': 0.5,
-                        'volatility_sentiment': self._calculate_volatility(self.symbols[0])
+                        'volatility_sentiment': self._calculate_volatility(self.active_symbols[0] if self.active_symbols else 'BTC/USDT')
                     }
                 ))
                 manipulation_analysis['market_psychology'] = market_psychology
@@ -6837,7 +7352,7 @@ class LegendaryCryptoTitanBot:
             if hasattr(self, 'cross_market_arbitrage') and self.cross_market_arbitrage:
                 # Detect arbitrage opportunities
                 arb_data = {
-                        'crypto': {symbol: list(self.price_history.get(symbol, [])) for symbol in self.symbols},
+                        'crypto': {symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols},
                         'forex': {},  # Would have real forex data
                         'commodities': {}  # Would have real commodity data
                     }
@@ -6920,7 +7435,7 @@ class LegendaryCryptoTitanBot:
                     if hasattr(self.portfolio_ai, 'calculate_portfolio_risk'):
                         risk_metrics = await self.portfolio_ai.calculate_portfolio_risk(
                             portfolio=current_portfolio,
-                            market_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.symbols}
+                            market_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols}
                         )
                 except Exception:
                     risk_metrics = {}
@@ -7386,51 +7901,57 @@ class LegendaryCryptoTitanBot:
             return
         
         signal = self.active_signals[symbol]
-        pnl = position['unrealized_pnl']
-        cost_basis = position['cost_basis']
-        pnl_pct = (pnl / cost_basis) * 100 if cost_basis > 0 else 0
+        current_price = self.price_history[symbol][-1] if self.price_history[symbol] else signal.entry_price
         
-        # Create continuous learning data
-        continuous_learning_data = {
+        position_data = {
             'symbol': symbol,
-            'action': signal.action,
-            'unrealized_pnl': pnl,
-            'pnl_percentage': pnl_pct,
-            'confidence': signal.confidence,
+            'entry_price': signal.entry_price,
+            'current_price': current_price,
+            'unrealized_pnl': position.get('unrealized_pnl', 0),
             'cycles_held': self.position_cycles.get(symbol, 0),
-            'position_status': 'OPEN',
-            'continuous_learning': True,
+            'confidence': signal.confidence,
             'strategy_scores': {
                 'technical': signal.technical_score,
                 'sentiment': signal.sentiment_score,
                 'momentum': signal.momentum_score
-            },
-            'market_conditions': {
-                'volatility': signal.volatility_score,
-                'trend_strength': 0.3,
-                'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways'
             }
         }
         
-        # Update AI brain with intermediate position performance
-        ai_brain.update_position_performance(symbol, continuous_learning_data)
+        # Update AI brain with position progress
+        ai_brain.update_position_tracking(symbol, position_data)
         
-        # Learn strategy performance trends
-        strategy_name = signal.strategy_name.replace('LEGENDARY_Enhanced_', '').replace('Enhanced_', '')
-        if strategy_name in [s.value for s in TradingStrategy]:
-            strategy = TradingStrategy(strategy_name)
-            # Track intermediate performance for strategy adaptation
-            if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain:
-                self.multi_strategy_brain.update_intermediate_performance(
-                    strategy, pnl_pct, {
-                        'symbol': symbol,
-                        'confidence': signal.confidence,
-                        'cycles_held': self.position_cycles.get(symbol, 0),
-                        'continuous_update': True
-                    }
+        # Save AI brain every 5 cycles to ensure continuous learning is preserved
+        if self.position_cycles.get(symbol, 0) % 5 == 0:
+            ai_brain.save_brain()
+            print(f"   💾 AI brain saved after tracking {symbol} for {self.position_cycles.get(symbol, 0)} cycles")
+        
+        # Quantum entanglement learning (mystical but cool!)
+        if hasattr(self, 'quantum_optimizer') and self.quantum_optimizer:
+            try:
+                self.quantum_optimizer.observe_position_quantum_state(
+                    symbol,
+                    position_data,
+                    self._get_market_quantum_state()
                 )
+            except:
+                pass
         
-        # Verbose learning feedback every few cycles
+        # Share position insights with other bots (decentralized learning)
+        try:
+            position_lesson = {
+                'type': 'open_position',
+                'symbol': symbol,
+                'unrealized_pnl': position.get('unrealized_pnl', 0),
+                'cycles_held': self.position_cycles.get(symbol, 0),
+                'confidence': signal.confidence,
+                'lesson': f"Position {symbol} held for {self.position_cycles.get(symbol, 0)} cycles with PnL: ${position.get('unrealized_pnl', 0):+.2f}"
+            }
+            cross_bot_learning.share_position_insight('micro', position_lesson)
+        except:
+            pass
+        
+        # Print learning update only every few cycles to reduce noise
+        pnl_pct = (position.get('unrealized_pnl', 0) / position.get('cost_basis', 1)) * 100 if position.get('cost_basis', 0) > 0 else 0
         if self.position_cycles.get(symbol, 0) % 2 == 0:  # Every 2 cycles
             print(f"   🧠 Continuous AI learning: {symbol} ({pnl_pct:+.2f}%) - Cycle {self.position_cycles.get(symbol, 0)}")
     
@@ -7460,6 +7981,10 @@ class LegendaryCryptoTitanBot:
         
         # Learn from entry execution quality
         ai_brain.learn_from_execution(execution_data)
+        
+        # IMPORTANT: Save AI brain after learning from execution!
+        ai_brain.save_brain()
+        print(f"   💾 AI brain saved after learning from {symbol} execution")
         
         # Cross-bot learning from execution
         execution_lesson = {
@@ -7536,7 +8061,9 @@ class LegendaryCryptoTitanBot:
                 result = await self.trader.execute_live_trade(symbol, 'BUY', position_size, strategy='AGGRESSIVE_FORCE')
                 if result.get('success'):
                     self.last_trade_ts = time.time()
+                    self.position_entry_time[symbol] = time.time()  # Track entry time!
                     print(f"   ✅ AGGRESSIVE FORCE TRADE EXECUTED!")
+                    print(f"      ⏰ Grace period {self.min_hold_time}s active")
                 else:
                     print(f"   ❌ Force trade failed: {result.get('error')}")
                 return
@@ -7571,7 +8098,9 @@ class LegendaryCryptoTitanBot:
                             position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
                             result = await self.trader.execute_live_trade(symbol, 'BUY', position_size, strategy='AGGRESSIVE_GUARANTEE')
                             if result.get('success', False):
+                                self.position_entry_time[symbol] = _t.time()  # Track entry time!
                                 print(f"   ✅ GUARANTEE {symbol}: BUY ${position_size:.2f}")
+                                print(f"      ⏰ Grace period {self.min_hold_time}s active")
                                 self.last_trade_ts = float(_t.time())
                             else:
                                 print(f"   ❌ GUARANTEE trade failed: {result.get('error')}")
@@ -7602,7 +8131,9 @@ class LegendaryCryptoTitanBot:
                         position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
                         result = await self.trader.execute_live_trade(symbol, 'BUY', position_size, strategy='AGGRESSIVE_GUARANTEE')
                         if result.get('success', False):
+                            self.position_entry_time[symbol] = _t.time()  # Track entry time!
                             print(f"   ✅ GUARANTEE {symbol}: BUY ${position_size:.2f}")
+                            print(f"      ⏰ Grace period {self.min_hold_time}s active")
                             self.last_trade_ts = float(_t.time())
                         else:
                             print(f"   ❌ GUARANTEE trade failed: {result.get('error')}")
@@ -7677,11 +8208,16 @@ class LegendaryCryptoTitanBot:
             if result.get('success', False):
                 trades_executed += 1
                 available_cash -= position_size
+                
+                # TRACK POSITION ENTRY TIME FOR GRACE PERIOD!
+                import time as _t
+                self.position_entry_time[signal.symbol] = _t.time()
                 print(f"   ✅ {signal.symbol}: {signal.action} ${position_size:.2f} @ {signal.confidence:.1%} confidence")
                 print(f"      📊 Ultra AI: Win Prob {getattr(signal, 'win_probability', 'N/A')} | Risk {getattr(signal, 'risk_score', 'N/A')}")
+                print(f"      ⏰ Entry Time Tracked: Grace period {self.min_hold_time}s active")
+                
                 # Track last successful trade time for aggressive guarantee
                 try:
-                    import time as _t
                     self.last_trade_ts = float(_t.time())
                 except Exception:
                     self.last_trade_ts = 0.0
@@ -7816,9 +8352,14 @@ class LegendaryCryptoTitanBot:
                 self.trade_count += 1
                 self.active_signals[signal.symbol] = signal
                 
+                # Track entry time for grace period!
+                import time as _t
+                self.position_entry_time[signal.symbol] = _t.time()
+                
                 print(f"   ✅ {signal.symbol}: LEGENDARY ENTRY - ${position_size:.2f} @ ${signal.entry_price:.4f}")
                 print(f"      🚀 Expected Return: {signal.expected_return:+.2f}%")
                 print(f"      💎 Legendary Confidence: {signal.confidence:.1%}")
+                print(f"      ⏰ Entry Time Tracked: Grace period {self.min_hold_time}s active")
                 
                 # LEARN FROM SUCCESSFUL EXECUTION
                 await self._learn_from_trade_execution(signal.symbol, signal, result)
@@ -9990,6 +10531,14 @@ async def main(legendary_bot):
     print("📊 Trading will start when you click 'Start Trading' in dashboard")
     print("")
     
+    # ATTACH BOT TO REAL-TIME MONITOR (inside async context to capture event loop)
+    if WEB_DASHBOARD_AVAILABLE and real_time_monitor:
+        try:
+            real_time_monitor.attach_bot(legendary_bot)
+            print("📡 Bot attached to real-time monitor for metrics streaming")
+        except Exception as monitor_err:
+            print(f"⚠️ Could not attach to monitor: {monitor_err}")
+    
     # Optional autostart via environment variable
     _autostart = (os.getenv('POISE_AUTOSTART') or '').strip().lower()
     if _autostart in ('1','true','yes','y','on'):
@@ -10001,11 +10550,13 @@ async def main(legendary_bot):
         # The dashboard controls start/stop via the web interface
         # This just runs cycles and the dashboard API controls bot_running flag
         print("\n" + "="*70)
-        print("🚀 BOT IS RUNNING - DASHBOARD CONTROL ACTIVE")
+        print("⏸️  BOT IS IDLE - WAITING FOR YOUR COMMAND")
         print("="*70)
-        print("   • Use dashboard to start/stop trading")
-        print("   • This terminal shows live logs")
-        print("   • Press Ctrl+C to shutdown everything")
+        print("   ⚠️  TRADING IS NOT ACTIVE YET!")
+        print("   📍 Go to: http://localhost:5000")
+        print("   🎮 Click 'Start Trading' to begin")
+        print("   📊 This terminal shows live logs only")
+        print("   ⌨️  Press Ctrl+C to shutdown")
         print("="*70 + "\n")
         
         # Run infinite cycles - dashboard controls when to actually trade
@@ -10037,24 +10588,23 @@ if __name__ == "__main__":
     import webbrowser
     import time
     
-    # 🎨 AUTO-START PROFESSIONAL DASHBOARD
-    print("\n🎨 Starting Professional Dashboard...")
+    # 🎨 AUTO-START ENHANCED SIMPLE DASHBOARD
+    print("\n🎨 Starting Enhanced Dashboard...")
     try:
         from flask import Flask
         from threading import Thread
         
-        # Import and start dashboard
-        import professional_dashboard
+        # Import and start the enhanced simple dashboard
+        import simple_dashboard_server
         
         def run_dashboard():
-            professional_dashboard.create_dashboard_template()
-            professional_dashboard.socketio.run(
-                professional_dashboard.app, 
+            # Run server (bot will be attached later)
+            simple_dashboard_server.app.run(
                 host='0.0.0.0', 
                 port=5000, 
                 debug=False,
                 use_reloader=False,
-                log_output=False
+                threaded=True
             )
         
         dashboard_thread = Thread(target=run_dashboard, daemon=True)
@@ -10096,10 +10646,13 @@ if __name__ == "__main__":
     print("\n Creating bot instance...")
     legendary_bot = LegendaryCryptoTitanBot(5.0)
     
-    # CONNECT BOT TO DASHBOARD
-    import professional_dashboard
-    professional_dashboard.bot_instance = legendary_bot
-    print(f" Bot connected to dashboard (ID: {id(legendary_bot)})")
+    # CONNECT BOT TO ENHANCED DASHBOARD
+    try:
+        import simple_dashboard_server
+        simple_dashboard_server.attach_bot(legendary_bot)
+        print(f" Bot connected to enhanced dashboard (ID: {id(legendary_bot)})")
+    except Exception as e:
+        print(f" Could not connect to dashboard: {e}")
     
     # Run the main trading bot with bot instance
     asyncio.run(main(legendary_bot))

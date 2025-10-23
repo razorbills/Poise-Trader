@@ -1,0 +1,967 @@
+{
+  "version": "2.0",
+  "created": "2025-08-27T19:11:39.936248",
+  "last_updated": "2025-10-18T19:58:56.777565",
+  "total_trades": 21,
+  "total_profit_loss": 5.403664943676985,
+  "win_rate": 0.047619047619047616,
+  "sharpe_ratio": 0.0,
+  "learning_sessions": 12,
+  "strategy_performance": {
+    "technical": {
+      "wins": 1,
+      "losses": 20,
+      "total_return": 5.403664943676985
+    },
+    "sentiment": {
+      "wins": 1,
+      "losses": 20,
+      "total_return": 5.403664943676985
+    },
+    "momentum": {
+      "wins": 1,
+      "losses": 20,
+      "total_return": 5.403664943676985
+    },
+    "mean_reversion": {
+      "wins": 0,
+      "losses": 0,
+      "total_return": 0.0
+    },
+    "breakout": {
+      "wins": 0,
+      "losses": 0,
+      "total_return": 0.0
+    }
+  },
+  "market_patterns": {
+    "bull_market": {
+      "trades": 1,
+      "success_rate": 1.0
+    },
+    "bear_market": {
+      "trades": 0,
+      "success_rate": 0.5
+    },
+    "sideways": {
+      "trades": 0,
+      "success_rate": 0.5
+    },
+    "high_volatility": {
+      "trades": 0,
+      "success_rate": 0.5
+    },
+    "low_volatility": {
+      "trades": 20,
+      "success_rate": 0.5
+    }
+  },
+  "symbol_knowledge": {
+    "BTC/USDT": {
+      "trades": 11,
+      "profit_loss": 5.460999449447385,
+      "best_strategies": {},
+      "volatility_preference": 0.0,
+      "position_tracking": [
+        {
+          "timestamp": "2025-08-28T19:14:20.350613",
+          "unrealized_pnl": -0.0011249799285353856,
+          "pnl_percentage": -0.37536867818998526,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T19:14:53.400226",
+          "unrealized_pnl": -0.0011789795750553056,
+          "pnl_percentage": -0.3933865782633653,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T19:15:29.187059",
+          "unrealized_pnl": -0.0011551530904743146,
+          "pnl_percentage": -0.38543646662472963,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:32:43.339924",
+          "unrealized_pnl": -0.0019732451582358257,
+          "pnl_percentage": -0.1973247131482957,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:33:26.420170",
+          "unrealized_pnl": -0.0018207222095559805,
+          "pnl_percentage": -0.18207240302800107,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:34:02.098486",
+          "unrealized_pnl": -0.0015506092721018216,
+          "pnl_percentage": -0.15506108227126444,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:55:56.147162",
+          "unrealized_pnl": -0.0046374184669126794,
+          "pnl_percentage": -0.3956301585886471,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:56:32.087636",
+          "unrealized_pnl": -0.004467319962535354,
+          "pnl_percentage": -0.3811186154224134,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:57:09.762930",
+          "unrealized_pnl": -0.0047245912959350544,
+          "pnl_percentage": -0.40306709800155793,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T16:00:17.379851",
+          "unrealized_pnl": -0.0047736230580559535,
+          "pnl_percentage": -0.40725012439052277,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T16:00:55.454017",
+          "unrealized_pnl": -0.00505788388609818,
+          "pnl_percentage": -0.4315011505339013,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:06:02.243213",
+          "unrealized_pnl": -0.005328088395162522,
+          "pnl_percentage": -0.454552995765299,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:06:39.766611",
+          "unrealized_pnl": -0.0031217203066873367,
+          "pnl_percentage": -0.26632202998629373,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:07:26.809583",
+          "unrealized_pnl": -0.00421652922700666,
+          "pnl_percentage": -0.3597230094020155,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:08:52.858520",
+          "unrealized_pnl": -0.0028160940710602045,
+          "pnl_percentage": -0.2402482656855894,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:09:33.637718",
+          "unrealized_pnl": -0.0036370228602888854,
+          "pnl_percentage": -0.31028382305221863,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:10:21.627722",
+          "unrealized_pnl": -0.0057398030599242755,
+          "pnl_percentage": -0.48967743822722803,
+          "cycles_held": 2,
+          "confidence": 0.2
+        }
+      ],
+      "execution_quality": 0.8643399529372635
+    },
+    "ETH/USDT": {
+      "trades": 6,
+      "profit_loss": -0.035556232627506956,
+      "best_strategies": {},
+      "volatility_preference": 0.0,
+      "position_tracking": [
+        {
+          "timestamp": "2025-08-28T19:15:29.187059",
+          "unrealized_pnl": -0.0012653981530076353,
+          "pnl_percentage": -0.4222216059418203,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T19:16:17.908014",
+          "unrealized_pnl": -0.0024867689362412237,
+          "pnl_percentage": -0.8297527314785532,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:34:02.098486",
+          "unrealized_pnl": -0.004236712133600329,
+          "pnl_percentage": -0.4236716370316699,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:34:49.629884",
+          "unrealized_pnl": -0.00439154219605542,
+          "pnl_percentage": -0.43915465876020077,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:35:30.810829",
+          "unrealized_pnl": -0.004624877642290581,
+          "pnl_percentage": -0.46248822671728484,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:57:09.762930",
+          "unrealized_pnl": -0.005228103500149794,
+          "pnl_percentage": -0.44602302587955567,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:58:02.638391",
+          "unrealized_pnl": -0.004604459344058176,
+          "pnl_percentage": -0.3928183306082942,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:58:49.710801",
+          "unrealized_pnl": -0.0048052031711263155,
+          "pnl_percentage": -0.4099443054810197,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:06:39.766611",
+          "unrealized_pnl": -0.00571743720855622,
+          "pnl_percentage": -0.48776934962430335,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:07:26.809583",
+          "unrealized_pnl": -0.006359949585408531,
+          "pnl_percentage": -0.5425837415889083,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:08:15.546122",
+          "unrealized_pnl": -0.0077942718208710016,
+          "pnl_percentage": -0.6649494796675387,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:09:33.637718",
+          "unrealized_pnl": -0.0034274245612517795,
+          "pnl_percentage": -0.29240245028424267,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:10:21.627722",
+          "unrealized_pnl": -0.00647425503109722,
+          "pnl_percentage": -0.5523354346759162,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T19:11:10.329394",
+          "unrealized_pnl": -0.008254696386498894,
+          "pnl_percentage": -0.7042294897026765,
+          "cycles_held": 2,
+          "confidence": 0.2
+        }
+      ],
+      "execution_quality": 0.56109745
+    },
+    "BNB/USDT": {
+      "trades": 4,
+      "profit_loss": -0.02177827314289371,
+      "best_strategies": {},
+      "volatility_preference": 0.0,
+      "position_tracking": [
+        {
+          "timestamp": "2025-08-28T20:34:49.630879",
+          "unrealized_pnl": -0.004988706916140062,
+          "pnl_percentage": -0.4988711904851967,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:35:30.811843",
+          "unrealized_pnl": -0.004544495722771824,
+          "pnl_percentage": -0.4544500267272091,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-28T20:36:09.706410",
+          "unrealized_pnl": -0.004658396028763723,
+          "pnl_percentage": -0.46584006871644096,
+          "cycles_held": 2,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:58:02.638391",
+          "unrealized_pnl": -0.005775097247062488,
+          "pnl_percentage": -0.4926884765784962,
+          "cycles_held": 0,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:58:49.710801",
+          "unrealized_pnl": -0.006264295659103247,
+          "pnl_percentage": -0.5344232578405048,
+          "cycles_held": 1,
+          "confidence": 0.2
+        },
+        {
+          "timestamp": "2025-08-29T15:59:37.865668",
+          "unrealized_pnl": -0.006413772951671115,
+          "pnl_percentage": -0.5471755521149954,
+          "cycles_held": 2,
+          "confidence": 0.2
+        }
+      ],
+      "execution_quality": 0.3608550000000001
+    }
+  },
+  "time_patterns": {
+    "hour_performance": {
+      "0": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "1": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "2": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "3": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "4": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "5": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "6": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "7": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "8": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "9": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "10": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "11": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "12": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "13": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "14": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "15": {
+        "trades": 4,
+        "profit": -0.018827248935484597
+      },
+      "16": {
+        "trades": 2,
+        "profit": -0.013099322798920898
+      },
+      "17": {
+        "trades": 1,
+        "profit": 5.5
+      },
+      "18": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "19": {
+        "trades": 8,
+        "profit": -0.0400761990262225
+      },
+      "20": {
+        "trades": 6,
+        "profit": -0.024332285562386646
+      },
+      "21": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "22": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "23": {
+        "trades": 0,
+        "profit": 0.0
+      }
+    },
+    "day_performance": {
+      "0": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "1": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "2": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "3": {
+        "trades": 9,
+        "profit": 5.472705551603033
+      },
+      "4": {
+        "trades": 12,
+        "profit": -0.06904060792604794
+      },
+      "5": {
+        "trades": 0,
+        "profit": 0.0
+      },
+      "6": {
+        "trades": 0,
+        "profit": 0.0
+      }
+    }
+  },
+  "confidence_adjustments": {
+    "high_confidence_accuracy": 0.55,
+    "medium_confidence_accuracy": 0.5,
+    "low_confidence_accuracy": 0.06078832729528468
+  },
+  "risk_learnings": {
+    "optimal_position_sizes": {},
+    "stop_loss_effectiveness": {},
+    "take_profit_levels": {}
+  },
+  "recent_trades": [
+    {
+      "timestamp": "2025-08-28T17:05:27.197126",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": 5.5,
+      "confidence": 0.75,
+      "strategy_scores": {
+        "technical": 0.8,
+        "sentiment": 0.7,
+        "momentum": 0.6
+      },
+      "market_conditions": {
+        "volatility": 2.5,
+        "trend_strength": 0.4,
+        "regime": "trending"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T19:16:15.490092",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.001481081417290031,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T19:16:17.855022",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.001481081417290031,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T20:34:47.363972",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.0021703164522502982,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T20:34:49.603440",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.0021703164522502982,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T20:36:07.221595",
+      "symbol": "ETH/USDT",
+      "action": "BUY",
+      "profit_loss": -0.005656351156956618,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T20:36:09.681295",
+      "symbol": "ETH/USDT",
+      "action": "BUY",
+      "profit_loss": -0.005656351156956618,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T20:36:38.369390",
+      "symbol": "BNB/USDT",
+      "action": "BUY",
+      "profit_loss": -0.004339475171986407,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-28T20:36:40.839084",
+      "symbol": "BNB/USDT",
+      "action": "BUY",
+      "profit_loss": -0.004339475171986407,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T15:58:00.070144",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.0040570449182690815,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T15:58:02.617996",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.0040570449182690815,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T15:59:35.552455",
+      "symbol": "ETH/USDT",
+      "action": "BUY",
+      "profit_loss": -0.005356579549473217,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T15:59:37.847484",
+      "symbol": "ETH/USDT",
+      "action": "BUY",
+      "profit_loss": -0.005356579549473217,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T16:00:17.379851",
+      "symbol": "BNB/USDT",
+      "action": "BUY",
+      "profit_loss": -0.006549661399460449,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T16:00:19.707947",
+      "symbol": "BNB/USDT",
+      "action": "BUY",
+      "profit_loss": -0.006549661399460449,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T19:08:13.299295",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.005118074211841961,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T19:08:15.521462",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.005118074211841961,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T19:08:52.859580",
+      "symbol": "ETH/USDT",
+      "action": "BUY",
+      "profit_loss": -0.006765185607323643,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T19:08:55.527908",
+      "symbol": "ETH/USDT",
+      "action": "BUY",
+      "profit_loss": -0.006765185607323643,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T19:11:08.077929",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.006673758276655617,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    },
+    {
+      "timestamp": "2025-08-29T19:11:10.311498",
+      "symbol": "BTC/USDT",
+      "action": "BUY",
+      "profit_loss": -0.006673758276655617,
+      "confidence": 0.2,
+      "strategy_scores": {
+        "technical": 0.5,
+        "sentiment": 0.5,
+        "momentum": 0.5
+      },
+      "market_conditions": {
+        "volatility": 0.3,
+        "trend_strength": 0.3,
+        "regime": "sideways"
+      }
+    }
+  ],
+  "ml_performance": {
+    "neural_accuracy": 0.0,
+    "pattern_success": 0.0,
+    "rl_reward": -0.006673758276655617
+  },
+  "position_tracking": {},
+  "execution_metrics": {
+    "slippage": [],
+    "fill_rate": 0.0,
+    "avg_execution_time": 0.0
+  },
+  "knowledge_sessions": [
+    {
+      "session_id": 1,
+      "start_time": "2025-08-27T19:15:54.162477",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-27T19:19:39.792354",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 2,
+      "start_time": "2025-08-27T20:26:12.565924",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-27T20:29:34.852000",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 3,
+      "start_time": "2025-08-27T20:36:40.564461",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-27T20:40:38.019961",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 4,
+      "start_time": "2025-08-27T20:42:55.066370",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-27T20:47:21.640299",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 5,
+      "start_time": "2025-08-27T20:52:31.165878",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-27T20:57:20.483424",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 6,
+      "start_time": "2025-08-27T20:59:30.887341",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-27T21:04:03.139453",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 7,
+      "start_time": "2025-08-27T21:06:44.763296",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-27T21:11:19.601287",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 8,
+      "start_time": "2025-08-27T21:19:05.827012",
+      "trades_at_start": 0,
+      "profit_at_start": 0.0,
+      "end_time": "2025-08-28T18:01:04.423364",
+      "trades_learned": 1,
+      "profit_learned": 5.5
+    },
+    {
+      "session_id": 9,
+      "start_time": "2025-08-28T18:39:55.371261",
+      "trades_at_start": 1,
+      "profit_at_start": 5.5,
+      "end_time": "2025-08-31T11:15:54.174776",
+      "trades_learned": 20,
+      "profit_learned": -0.09633505632301542
+    },
+    {
+      "session_id": 10,
+      "start_time": "2025-09-01T11:03:52.741436",
+      "trades_at_start": 21,
+      "profit_at_start": 5.403664943676985,
+      "end_time": "2025-09-01T11:12:21.532311",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 11,
+      "start_time": "2025-09-01T11:35:35.530470",
+      "trades_at_start": 21,
+      "profit_at_start": 5.403664943676985,
+      "end_time": "2025-09-01T12:18:16.655550",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    },
+    {
+      "session_id": 12,
+      "start_time": "2025-09-01T12:32:35.239193",
+      "trades_at_start": 21,
+      "profit_at_start": 5.403664943676985,
+      "end_time": "2025-10-18T19:58:56.770601",
+      "trades_learned": 0,
+      "profit_learned": 0.0
+    }
+  ]
+}

@@ -1,8 +1,22 @@
-import { io } from 'socket.io-client'
+import io from 'socket.io-client'
 
-// Connect to same-origin Socket.IO (proxied in dev, same host in prod)
-const socket = io({
-  transports: ['websocket', 'polling'],
+const BACKEND_URL = import.meta.env.DEV 
+  ? 'http://localhost:5000' 
+  : window.location.origin
+
+const socket = io(BACKEND_URL, {
+  reconnection: true,
+  reconnectionDelay: 500,
+  reconnectionAttempts: Infinity,
+  transports: ['websocket', 'polling']
+})
+
+socket.on('connect', () => {
+  console.log('✅ Connected to backend')
+})
+
+socket.on('disconnect', () => {
+  console.log('❌ Disconnected from backend')
 })
 
 export default socket

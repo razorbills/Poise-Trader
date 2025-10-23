@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poise Trader - Simple Control Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .status-bar {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 10px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #4CAF50;
+        }
+
+        .status-indicator.disconnected {
+            background: #f44336;
+        }
+
+        .status-indicator.waiting {
+            background: #FFC107;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .mode-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .mode-btn {
+            padding: 20px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .mode-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .mode-btn .icon {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .control-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .control-btn {
+            padding: 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .control-btn:active {
+            transform: translateY(0);
+        }
+
+        .start-btn {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .stop-btn {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .info-panel {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .info-value {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .message {
+            text-align: center;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Poise Trader Control Panel</h1>
+        
+        <div class="status-bar">
+            <span class="status-indicator disconnected" id="statusIndicator"></span>
+            <span id="statusText">Connecting...</span>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Trading Mode</div>
+            <div class="mode-buttons">
+                <button class="mode-btn" data-mode="AGGRESSIVE" onclick="setMode('AGGRESSIVE')">
+                    <div class="icon">⚡</div>
+                    <div>Aggressive</div>
+                    <small style="color: #999; font-weight: normal;">High frequency</small>
+                </button>
+                <button class="mode-btn active" data-mode="PRECISION" onclick="setMode('PRECISION')">
+                    <div class="icon">🎯</div>
+                    <div>Normal</div>
+                    <small style="color: #999; font-weight: normal;">Best signals</small>
+                </button>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Trading Control</div>
+            <div class="control-buttons">
+                <button class="control-btn start-btn" onclick="startTrading()">
+                    ▶️ Start
+                </button>
+                <button class="control-btn stop-btn" onclick="stopTrading()">
+                    ⏹️ Stop
+                </button>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <div class="info-row">
+                <span class="info-label">Current Mode:</span>
+                <span class="info-value" id="currentMode">Normal</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Trading Status:</span>
+                <span class="info-value" id="tradingStatus">Stopped</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Bot Connected:</span>
+                <span class="info-value" id="botConnected">No</span>
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000';
+        let currentMode = 'PRECISION';
+        let isTrading = false;
+        let botConnected = false;
+
+        // Check connection status
+        async function checkStatus() {
+            try {
+                const response = await fetch(`${API_URL}/api/status`);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Update connection status
+                    const indicator = document.getElementById('statusIndicator');
+                    const statusText = document.getElementById('statusText');
+                    
+                    if (data.connected) {
+                        indicator.className = 'status-indicator connected';
+                        statusText.textContent = 'Connected to Bot';
+                        botConnected = true;
+                        document.getElementById('botConnected').textContent = 'Yes';
+                    } else {
+                        indicator.className = 'status-indicator waiting';
+                        statusText.textContent = 'Waiting for Bot';
+                        botConnected = false;
+                        document.getElementById('botConnected').textContent = 'No';
+                    }
+                    
+                    // Update trading status
+                    isTrading = data.running || false;
+                    document.getElementById('tradingStatus').textContent = isTrading ? 'Running' : 'Stopped';
+                    
+                    // Update mode
+                    if (data.mode) {
+                        currentMode = data.mode;
+                        updateModeButtons();
+                    }
+                } else {
+                    document.getElementById('statusIndicator').className = 'status-indicator disconnected';
+                    document.getElementById('statusText').textContent = 'Disconnected';
+                    document.getElementById('botConnected').textContent = 'No';
+                }
+            } catch (error) {
+                document.getElementById('statusIndicator').className = 'status-indicator disconnected';
+                document.getElementById('statusText').textContent = 'Connection Error';
+                document.getElementById('botConnected').textContent = 'No';
+            }
+        }
+
+        // Set trading mode
+        async function setMode(mode) {
+            try {
+                showMessage('Changing mode...', 'info');
+                
+                const response = await fetch(`${API_URL}/api/mode`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ mode })
+                });
+                
+                if (response.ok) {
+                    currentMode = mode;
+                    updateModeButtons();
+                    const modeName = mode === 'AGGRESSIVE' ? 'Aggressive' : 'Normal';
+                    showMessage(`Mode changed to ${modeName}`, 'success');
+                } else {
+                    showMessage('Failed to change mode', 'error');
+                }
+            } catch (error) {
+                showMessage('Connection error', 'error');
+            }
+        }
+
+        // Start trading
+        async function startTrading() {
+            if (!botConnected) {
+                showMessage('No bot connected! Please run your trading bot first.', 'error');
+                return;
+            }
+            
+            try {
+                showMessage('Starting bot...', 'info');
+                
+                const response = await fetch(`${API_URL}/api/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    isTrading = true;
+                    document.getElementById('tradingStatus').textContent = 'Running';
+                    showMessage('Trading started successfully!', 'success');
+                } else {
+                    showMessage(data.message || 'Failed to start trading', 'error');
+                }
+            } catch (error) {
+                showMessage('Connection error', 'error');
+            }
+        }
+
+        // Stop trading
+        async function stopTrading() {
+            try {
+                showMessage('Stopping bot...', 'info');
+                
+                const response = await fetch(`${API_URL}/api/stop`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    isTrading = false;
+                    document.getElementById('tradingStatus').textContent = 'Stopped';
+                    showMessage('Trading stopped', 'success');
+                } else {
+                    showMessage('Failed to stop trading', 'error');
+                }
+            } catch (error) {
+                showMessage('Connection error', 'error');
+            }
+        }
+
+        // Update mode button styles
+        function updateModeButtons() {
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.mode === currentMode) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            const modeName = currentMode === 'AGGRESSIVE' ? 'Aggressive' : 'Normal';
+            document.getElementById('currentMode').textContent = modeName;
+        }
+
+        // Show message
+        function showMessage(text, type) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = text;
+            messageEl.className = `message ${type}`;
+            
+            if (type !== 'info') {
+                setTimeout(() => {
+                    messageEl.className = 'message';
+                }, 3000);
+            }
+        }
+
+        // Initialize
+        checkStatus();
+        setInterval(checkStatus, 2000);
+    </script>
+</body>
+</html>

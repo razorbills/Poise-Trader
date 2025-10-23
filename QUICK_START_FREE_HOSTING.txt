@@ -1,0 +1,176 @@
+╔════════════════════════════════════════════════════════════════╗
+║  🆓 QUICK START: FREE 24/7 BOT HOSTING (NO CREDIT CARD!)     ║
+╚════════════════════════════════════════════════════════════════╝
+
+⏱️  TOTAL SETUP TIME: 15 MINUTES
+💰 TOTAL COST: $0.00 (FREE FOREVER!)
+💳 CREDIT CARD: NOT NEEDED!
+📄 PAN CARD: NOT NEEDED!
+
+───────────────────────────────────────────────────────────────────
+
+📋 STEP 1: SIGN UP FOR PYTHONANYWHERE (2 min)
+───────────────────────────────────────────────────────────────────
+
+1. Open browser: https://www.pythonanywhere.com
+2. Click "Start running Python online"
+3. Click "Create a Beginner account" (FREE)
+4. Enter email and password
+5. Verify email
+6. ✅ Done! You have FREE hosting!
+
+───────────────────────────────────────────────────────────────────
+
+📂 STEP 2: UPLOAD BOT FILES (5 min)
+───────────────────────────────────────────────────────────────────
+
+Option A - Direct Upload (Easiest):
+1. Log into PythonAnywhere
+2. Click "Files" tab
+3. Create folder: "poise-trader"
+4. Upload these files:
+   ✅ micro_trading_bot.py
+   ✅ cloud_launcher_free.py
+   ✅ requirements_free_hosting.txt
+   ✅ .env (with your API keys)
+   ✅ All files from ai_enhancements/ folder
+   ✅ All files from core/ folder
+
+Option B - GitHub (Better):
+1. Create GitHub account (free): https://github.com
+2. Create new repository: "poise-trader" (can be private)
+3. Upload all your bot files to GitHub
+4. In PythonAnywhere, click "Consoles" → "Bash"
+5. Run:
+   git clone https://github.com/YOUR_USERNAME/poise-trader.git
+   cd poise-trader
+
+───────────────────────────────────────────────────────────────────
+
+📦 STEP 3: INSTALL DEPENDENCIES (3 min)
+───────────────────────────────────────────────────────────────────
+
+In PythonAnywhere Bash console, run:
+
+# Create virtual environment
+python3.10 -m venv venv
+source venv/bin/activate
+
+# Install packages
+pip install -r requirements_free_hosting.txt
+
+✅ Wait 2-3 minutes for installation to complete
+
+───────────────────────────────────────────────────────────────────
+
+🚀 STEP 4: START YOUR BOT (2 min)
+───────────────────────────────────────────────────────────────────
+
+In PythonAnywhere Bash console, run:
+
+# Start bot in background
+nohup python cloud_launcher_free.py > bot.log 2>&1 &
+
+# Check if running
+ps aux | grep python
+
+✅ Bot is now running 24/7!
+
+───────────────────────────────────────────────────────────────────
+
+📱 STEP 5: SETUP TELEGRAM ALERTS (3 min) - OPTIONAL BUT RECOMMENDED
+───────────────────────────────────────────────────────────────────
+
+Get trade notifications on your phone!
+
+1. Open Telegram app
+2. Search for "BotFather"
+3. Send: /newbot
+4. Name it: "My Poise Trader"
+5. Username: "my_poise_trader_bot" (must be unique)
+6. Copy the TOKEN (looks like: 123456789:ABC...)
+
+7. Search for "userinfobot"
+8. Send: /start
+9. Copy your CHAT ID (number like: 987654321)
+
+10. In PythonAnywhere, edit cloud_launcher_free.py:
+    Find these lines and add your token/ID:
+    
+    TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', 'YOUR_TOKEN_HERE')
+    TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'YOUR_CHAT_ID_HERE')
+
+11. Save file and restart bot:
+    pkill -f cloud_launcher_free.py
+    nohup python cloud_launcher_free.py > bot.log 2>&1 &
+
+✅ You'll now get trade alerts on Telegram!
+
+───────────────────────────────────────────────────────────────────
+
+✅ VERIFICATION CHECKLIST
+───────────────────────────────────────────────────────────────────
+
+After setup, verify:
+
+✅ PythonAnywhere shows bot process running (ps aux | grep python)
+✅ Bot log shows "Bot is now trading 24/7" (tail -f bot.log)
+✅ Telegram sends startup message (if enabled)
+✅ No errors in bot.log
+✅ Close your PC - bot keeps running!
+
+───────────────────────────────────────────────────────────────────
+
+🎯 USEFUL COMMANDS (Save these!)
+───────────────────────────────────────────────────────────────────
+
+# View live logs:
+tail -f bot.log
+
+# Check if bot is running:
+ps aux | grep python
+
+# Stop bot:
+pkill -f cloud_launcher_free.py
+
+# Restart bot:
+pkill -f cloud_launcher_free.py
+nohup python cloud_launcher_free.py > bot.log 2>&1 &
+
+# View recent log (last 50 lines):
+tail -n 50 bot.log
+
+───────────────────────────────────────────────────────────────────
+
+🎉 CONGRATULATIONS!
+───────────────────────────────────────────────────────────────────
+
+Your bot is now:
+✅ Running 24/7 in the cloud
+✅ Trading automatically
+✅ Working even when PC is OFF
+✅ Costing you $0.00
+✅ No credit card needed
+✅ Sending you Telegram alerts (if enabled)
+
+───────────────────────────────────────────────────────────────────
+
+🆘 NEED HELP?
+───────────────────────────────────────────────────────────────────
+
+📖 Detailed Guide: FREE_24_7_HOSTING.md
+📱 Telegram Setup: See Step 5 above
+🌐 PythonAnywhere Help: https://help.pythonanywhere.com/
+💬 Bot Issues: Check bot.log for errors
+
+───────────────────────────────────────────────────────────────────
+
+💪 YOU'RE ALL SET!
+───────────────────────────────────────────────────────────────────
+
+Close your PC and relax! 😴
+Your bot is working 24/7 making trades! 💰
+
+🚀 Happy Trading! 🚀
+
+───────────────────────────────────────────────────────────────────

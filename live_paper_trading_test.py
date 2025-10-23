@@ -13,6 +13,12 @@ from typing import Dict, List, Any
 import random
 import sys
 from pathlib import Path
+import requests
+import urllib3
+import os
+
+# Disable SSL warnings for requests
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Add core modules to path
 sys.path.append(str(Path(__file__).parent))
@@ -33,36 +39,45 @@ class LiveMexcDataFeed:
         self.base_url = "https://api.mexc.com"
         self.prices_cache = {}
         self.last_update = None
+        # Try alternative endpoints if main one fails
+        self.alternative_urls = [
+            "https://api.mexc.com",
+            "https://www.mexc.com",
+            "https://contract.mexc.com"
+        ]
         
     async def get_live_price(self, symbol: str) -> float:
-        """Get current live price from MEXC"""
+        """Get current live price from MEXC using requests (works reliably)"""
         
         # Convert symbol format (BTC/USDT -> BTCUSDT)
         mexc_symbol = symbol.replace('/', '')
         
-        async with aiohttp.ClientSession() as session:
-            try:
-                url = f"{self.base_url}/api/v3/ticker/24hr?symbol={mexc_symbol}"
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        price = float(data['lastPrice'])
-                        
-                        # Cache the price
-                        self.prices_cache[symbol] = {
-                            'price': price,
-                            'timestamp': datetime.now(),
-                            'change_24h': float(data['priceChangePercent'])
-                        }
-                        
-                        return price
-                    else:
-                        print(f"⚠️ Failed to get {symbol} price: {response.status}")
-                        return None
-                        
-            except Exception as e:
-                print(f"❌ Error getting {symbol} price: {e}")
+        # Use requests library which works reliably
+        try:
+            url = f"{self.base_url}/api/v3/ticker/price?symbol={mexc_symbol}"
+            response = requests.get(url, timeout=5, verify=False)
+            
+            if response.status_code == 200:
+                data = response.json()
+                price = float(data['price'])
+                
+                # Cache the price
+                self.prices_cache[symbol] = {
+                    'price': price,
+                    'timestamp': datetime.now()
+                }
+                
+                return price
+            else:
+                print(f"⚠️ Failed to get {symbol} price: Status {response.status_code}")
                 return None
+                
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error getting {symbol} price: {str(e)[:50]}")
+            return None
+        except Exception as e:
+            print(f"❌ Unexpected error getting {symbol} price: {str(e)[:50]}")
+            return None
     
     async def get_multiple_prices(self, symbols: List[str]) -> Dict[str, float]:
         """Get multiple live prices at once"""
@@ -78,19 +93,31 @@ class LiveMexcDataFeed:
 class LivePaperTradingManager:
     """Paper trading manager using LIVE market prices"""
     
-    def __init__(self, initial_capital: float = 5000.0):
+    def __init__(self, initial_capital: float = 5.0):
+        self.state_file = "trading_state.json"
         self.initial_capital = initial_capital
-        self.cash_balance = initial_capital
-        self.positions = {}
-        self.trade_history = []
+        
+        # Try to load existing state
+        if self._load_state():
+            print("💾 Loaded existing trading state")
+        else:
+            # Initialize fresh state
+            self.cash_balance = initial_capital
+            self.positions = {}
+            self.trade_history = []
+            self.total_trades = 0
+            self.winning_trades = 0
+            print(f"🆕 NEW trading session with ${initial_capital:,.2f}")
+        
         self.data_feed = LiveMexcDataFeed()
         
-        # Performance tracking
-        self.total_trades = 0
-        self.winning_trades = 0
-        
-        print(f"🔥 LIVE Paper Trading Manager initialized with ${initial_capital:,.2f}")
+        print(f"🔥 LIVE Paper Trading Manager active")
+        print(f"   💰 Current Balance: ${self.cash_balance:.2f}")
+        print(f"   📊 Active Positions: {len(self.positions)}")
         print("📡 Using REAL-TIME MEXC market prices!")
+        
+        # Save state immediately
+        self._save_state()
     
     async def execute_live_trade(self, symbol: str, action: str, amount_usd: float, strategy: str = "test", stop_loss: float = None, take_profit: float = None, *args, **kwargs):
         """Execute trade using live market prices.
@@ -188,6 +215,9 @@ class LivePaperTradingManager:
         print(f"   💸 Commission: ${commission:.2f}")
         print(f"   🏦 Cash Balance: ${self.cash_balance:,.2f}")
         
+        # Save state after each trade
+        self._save_state()
+        
         return {"success": True, "trade": trade_record}
     
     async def get_portfolio_value(self):
@@ -238,7 +268,8 @@ class LivePaperTradingManager:
                     "current_price": current_price,
                     "current_value": current_value,
                     "cost_basis": position["total_cost"],
-                    "unrealized_pnl": current_value - position["total_cost"]
+                    "unrealized_pnl": current_value - position["total_cost"],
+                    "pnl_percentage": ((current_value - position["total_cost"]) / position["total_cost"]) * 100 if position["total_cost"] > 0 else 0
                 }
         
         return {
@@ -248,6 +279,49 @@ class LivePaperTradingManager:
             "total_return": (portfolio_value - self.initial_capital) / self.initial_capital if self.initial_capital > 0 else 0,
             "total_pnl": portfolio_value - self.initial_capital
         }
+
+    def _save_state(self):
+        """Save trading state to file"""
+        try:
+            state = {
+                "cash_balance": self.cash_balance,
+                "positions": self.positions,
+                "trade_history": self.trade_history[-100:],  # Keep last 100 trades
+                "total_trades": self.total_trades,
+                "winning_trades": self.winning_trades,
+                "initial_capital": self.initial_capital,
+                "last_save_time": datetime.now().isoformat()
+            }
+            with open(self.state_file, 'w') as f:
+                json.dump(state, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"⚠️ Failed to save state: {e}")
+            return False
+    
+    def _load_state(self):
+        """Load trading state from file"""
+        try:
+            if os.path.exists(self.state_file):
+                with open(self.state_file, 'r') as f:
+                    state = json.load(f)
+                
+                self.cash_balance = state.get("cash_balance", self.initial_capital)
+                self.positions = state.get("positions", {})
+                self.trade_history = state.get("trade_history", [])
+                self.total_trades = state.get("total_trades", 0)
+                self.winning_trades = state.get("winning_trades", 0)
+                
+                # Keep initial capital from constructor if not in state
+                if "initial_capital" in state:
+                    self.initial_capital = state["initial_capital"]
+                
+                print(f"📂 Loaded state from {state.get('last_save_time', 'unknown time')}")
+                return True
+            return False
+        except Exception as e:
+            print(f"⚠️ Failed to load state: {e}")
+            return False
 
 async def run_live_paper_trading_test():
     """Test paper trading with live MEXC prices"""

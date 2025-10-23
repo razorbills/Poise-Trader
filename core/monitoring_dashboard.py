@@ -664,6 +664,10 @@ class RealTimeMonitor:
             'daily_volume': current_metrics.get('daily_volume', 0),
             'sharpe_ratio': current_metrics.get('sharpe_ratio', 0),
             'max_drawdown': current_metrics.get('max_drawdown', 0),
+            'total_trades': int(current_metrics.get('total_trades', 0)),
+            'current_streak': int(current_metrics.get('current_streak', 0)),
+            'portfolio_value': current_metrics.get('portfolio_value', 0),
+            'pnl_history': list(self.metrics_history.get('pnl', [])),
             'timestamp': datetime.now().isoformat()
         }
     

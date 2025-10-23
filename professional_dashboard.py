@@ -5,21 +5,28 @@ Real-time monitoring for Poise Trader with stunning UI/UX
 """
 
 from flask import Flask, render_template, jsonify, request
-from flask_socketio import SocketIO, emit
-import asyncio
 import threading
+import asyncio
+import time
+import subprocess
+import os
 import json
+import traceback
 from datetime import datetime
 from pathlib import Path
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'poise_trader_2025'
-socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Global bot instance
 bot_instance = None
 bot_thread = None
 selected_mode = 'PRECISION'  # Default to PRECISION mode (user can change)
+
+@app.route('/favicon.ico')
+def favicon():
+    """Return empty response for favicon to prevent 404"""
+    return '', 204
 
 @app.route('/')
 def dashboard():
@@ -33,23 +40,47 @@ def get_status():
         return jsonify({'status': 'not_running', 'message': 'Bot not initialized'})
     
     try:
-        portfolio = bot_instance.trader.get_portfolio_value_sync() if hasattr(bot_instance.trader, 'get_portfolio_value_sync') else {}
-        win_stats = bot_instance.get_win_rate_stats() if hasattr(bot_instance, 'get_win_rate_stats') else {}
+        # Get portfolio value
+        if hasattr(bot_instance.trader, 'get_portfolio_value_sync'):
+            portfolio = bot_instance.trader.get_portfolio_value_sync()
+        else:
+            # Fallback to calculating from bot state
+            portfolio = {
+                'total_value': bot_instance.current_capital,
+                'positions': {}
+            }
+        
+        # Get win rate stats
+        if hasattr(bot_instance, 'get_win_rate_stats'):
+            win_stats = bot_instance.get_win_rate_stats()
+        else:
+            win_stats = {
+                'total_trades': bot_instance.total_completed_trades,
+                'current_win_rate': bot_instance.win_rate,
+                'current_streak': 0
+            }
         
         # CHECK bot_running FLAG - not just if bot exists!
         status = 'running' if bot_instance.bot_running else 'waiting'
         
+        # Calculate active positions
+        active_positions = 0
+        if 'positions' in portfolio:
+            active_positions = len([p for p in portfolio.get('positions', {}).values() if p.get('quantity', 0) > 0])
+        
         return jsonify({
             'status': status,  # 'running' or 'waiting'
             'capital': portfolio.get('total_value', bot_instance.current_capital),
-            'positions': len([p for p in portfolio.get('positions', {}).values() if p.get('quantity', 0) > 0]),
-            'total_trades': bot_instance.total_trades,
-            'win_rate': win_stats.get('current_win_rate', 0) * 100,
+            'positions': active_positions,
+            'total_trades': win_stats.get('total_trades', bot_instance.total_completed_trades),
+            'win_rate': win_stats.get('current_win_rate', bot_instance.win_rate) * 100,
             'current_streak': win_stats.get('current_streak', 0),
             'trading_mode': bot_instance.trading_mode,
             'bot_running': bot_instance.bot_running  # Explicit flag
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/api/start', methods=['POST'])
@@ -161,6 +192,96 @@ def stop_bot():
     print("="*70 + "\n")
     
     return jsonify({'success': True, 'message': 'Bot stopped (ready to restart)'})
+
+@app.route('/api/ai-brain')
+def get_ai_brain_status():
+    """Get AI brain learning status"""
+    import json
+    import os
+    
+    try:
+        brain_file = 'ai_brain.json'
+        if not os.path.exists(brain_file):
+            return jsonify({'error': 'AI brain not found', 'total_trades': 0})
+        
+        with open(brain_file, 'r') as f:
+            brain = json.load(f)
+        
+        # Extract key metrics
+        status = {
+            'total_trades': brain.get('total_trades', 0),
+            'total_pnl': brain.get('total_profit_loss', 0),
+            'win_rate': brain.get('win_rate', 0.5) * 100,
+            'learning_sessions': brain.get('learning_sessions', 0),
+            'last_updated': brain.get('last_updated', 'Never'),
+            'strategies': brain.get('strategy_performance', {}),
+            'recent_trades': brain.get('recent_trades', [])[-5:],  # Last 5 trades
+            'symbol_knowledge': {}
+        }
+        
+        # Add top symbols
+        symbols = brain.get('symbol_knowledge', {})
+        for symbol, data in list(symbols.items())[:5]:
+            status['symbol_knowledge'][symbol] = {
+                'trades': data.get('total_trades', 0),
+                'win_rate': data.get('win_rate', 0.5) * 100
+            }
+        
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e), 'total_trades': 0})
+
+@app.route('/api/market-filter', methods=['POST'])
+def set_market_filter():
+    """Update the bot's active markets filter"""
+    global bot_instance
+    
+    try:
+        data = request.get_json() or {}
+        markets = data.get('markets', [])
+        
+        if bot_instance:
+            # Update the bot's active_symbols list
+            bot_instance.active_symbols = markets
+            print(f"🎯 Market filter updated: {len(markets)} markets selected")
+            print(f"   Selected: {', '.join(markets[:5])}{'...' if len(markets) > 5 else ''}")
+            return jsonify({'success': True, 'message': f'Filter applied: {len(markets)} markets'})
+        else:
+            return jsonify({'success': False, 'message': 'Bot not initialized'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/reset', methods=['POST'])
+def reset_trading():
+    """Reset trading state to fresh start"""
+    import os
+    import json
+    
+    try:
+        # Create fresh state file
+        fresh_state = {
+            "cash_balance": 5.0,
+            "initial_capital": 5.0,
+            "positions": {},
+            "trade_history": [],
+            "total_trades": 0,
+            "winning_trades": 0,
+            "last_save_time": datetime.now().isoformat()
+        }
+        
+        with open('trading_state.json', 'w') as f:
+            json.dump(fresh_state, f, indent=2)
+        
+        # If bot is running, reinitialize the trader
+        global bot_instance
+        if bot_instance and hasattr(bot_instance, 'trader'):
+            from live_paper_trading_test import LivePaperTradingManager
+            bot_instance.trader = LivePaperTradingManager(5.0)
+            print("♻️ Trading state reset - starting fresh with $5.00")
+        
+        return jsonify({'success': True, 'message': 'Trading state reset to $5.00'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/mode', methods=['POST'])
 def set_mode():

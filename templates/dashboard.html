@@ -137,12 +137,99 @@
         .status-stopped { background-color: #ff0000; box-shadow: 0 0 10px #ff0000; }
         .profit { color: #00ff00; }
         .loss { color: #ff6b6b; }
+        
+        /* Market Filter Styles */
+        .market-filter {
+            background: rgba(255,255,255,0.15);
+            padding: 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 30px;
+        }
+        .market-filter h3 {
+            color: #ffd700;
+            margin-bottom: 15px;
+        }
+        .market-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .market-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .market-item:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: #667eea;
+        }
+        .market-item.selected {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+        }
+        .market-checkbox {
+            width: 18px;
+            height: 18px;
+            margin-right: 8px;
+            cursor: pointer;
+            accent-color: #667eea;
+            /* Force checkbox to show properly */
+            -webkit-appearance: none;
+            appearance: none;
+            background-color: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 3px;
+            position: relative;
+        }
+        .market-checkbox:checked {
+            background-color: #667eea;
+            border-color: #667eea;
+        }
+        .market-checkbox:checked::after {
+            content: '✓';
+            position: absolute;
+            top: -2px;
+            left: 2px;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .market-label {
+            color: #fff;
+            font-size: 13px;
+            user-select: none;
+        }
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .filter-btn {
+            padding: 8px 15px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        .filter-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
     </style>
 </head>
 <body>
     <div class="dashboard-container">
         <div class="header">
-            <h1>🏆 POISE TRADER</h1>
+            <h1> POISE TRADER</h1>
             <p>Professional Trading Dashboard | 90% Win Rate System</p>
             <p><span class="status-indicator status-stopped" id="statusIndicator"></span><span id="statusText">Not Running</span></p>
         </div>
@@ -173,6 +260,22 @@
             </div>
         </div>
 
+        <div class="market-filter">
+            <h3>🎯 Market Filter - Select Trading Markets</h3>
+            <div class="filter-controls">
+                <button class="filter-btn" onclick="selectAll()">Select All</button>
+                <button class="filter-btn" onclick="selectNone()">Select None</button>
+                <button class="filter-btn" onclick="selectTop10()">Top 10 Only</button>
+                <button class="filter-btn" onclick="applyMarketFilter()">✅ Apply Filter</button>
+            </div>
+            <div class="market-grid" id="marketGrid">
+                <!-- Markets will be populated here -->
+            </div>
+            <p style="margin-top: 10px; opacity: 0.8; font-size: 12px;">
+                <span id="selectedCount">0</span> markets selected
+            </p>
+        </div>
+
         <div class="chart-container">
             <h3>📈 Portfolio Performance</h3>
             <canvas id="performanceChart"></canvas>
@@ -200,6 +303,101 @@
 
     <script>
         let currentMode = 'AGGRESSIVE';
+        let selectedMarkets = new Set();
+        
+        // Define all available markets
+        const allMarkets = [
+            'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
+            'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT', 'DOT/USDT', 'MATIC/USDT',
+            'LTC/USDT', 'ATOM/USDT', 'UNI/USDT', 'LINK/USDT', 'BCH/USDT',
+            'XLM/USDT', 'ALGO/USDT', 'VET/USDT', 'FIL/USDT'
+        ];
+        
+        // Initialize market filter
+        function initializeMarkets() {
+            const marketGrid = document.getElementById('marketGrid');
+            marketGrid.innerHTML = '';
+            
+            allMarkets.forEach(market => {
+                const marketItem = document.createElement('div');
+                marketItem.className = 'market-item';
+                marketItem.id = `market-${market.replace('/', '-')}`;
+                marketItem.onclick = () => toggleMarket(market);
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'market-checkbox';
+                checkbox.checked = selectedMarkets.has(market);
+                checkbox.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleMarket(market);
+                };
+                
+                const label = document.createElement('label');
+                label.className = 'market-label';
+                label.textContent = market;
+                
+                marketItem.appendChild(checkbox);
+                marketItem.appendChild(label);
+                marketGrid.appendChild(marketItem);
+            });
+            
+            updateSelectedCount();
+        }
+        
+        function toggleMarket(market) {
+            const marketElement = document.getElementById(`market-${market.replace('/', '-')}`);
+            const checkbox = marketElement.querySelector('.market-checkbox');
+            
+            if (selectedMarkets.has(market)) {
+                selectedMarkets.delete(market);
+                marketElement.classList.remove('selected');
+                checkbox.checked = false;
+            } else {
+                selectedMarkets.add(market);
+                marketElement.classList.add('selected');
+                checkbox.checked = true;
+            }
+            
+            updateSelectedCount();
+        }
+        
+        function selectAll() {
+            selectedMarkets = new Set(allMarkets);
+            initializeMarkets();
+        }
+        
+        function selectNone() {
+            selectedMarkets.clear();
+            initializeMarkets();
+        }
+        
+        function selectTop10() {
+            selectedMarkets = new Set(allMarkets.slice(0, 10));
+            initializeMarkets();
+        }
+        
+        function updateSelectedCount() {
+            document.getElementById('selectedCount').textContent = selectedMarkets.size;
+        }
+        
+        function applyMarketFilter() {
+            const markets = Array.from(selectedMarkets);
+            fetch('/api/market-filter', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({markets: markets})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`✅ Market filter applied! Trading ${markets.length} markets.`);
+                } else {
+                    alert('Error applying filter: ' + data.message);
+                }
+            })
+            .catch(err => console.error('Error:', err));
+        }
         
         function setMode(mode) {
             fetch('/api/mode', {
@@ -300,6 +498,10 @@
 
         // DON'T auto-select any mode - let user choose
         // document.getElementById('aggressiveBtn').classList.add('active');  ← REMOVED
+        
+        // Initialize market filter with all markets selected by default
+        selectedMarkets = new Set(allMarkets);
+        initializeMarkets();
         
         // Update dashboard status every 2 seconds
         setInterval(updateDashboard, 2000);
