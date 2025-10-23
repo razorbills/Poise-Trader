@@ -1889,6 +1889,17 @@ class LegendaryCryptoTitanBot:
     This single bot contains EVERYTHING the orchestrator has and MORE!
     """
     
+    @staticmethod
+    def get_dashboard_url():
+        """Get the correct dashboard URL for both local and Render deployment"""
+        port = int(os.environ.get('PORT', 5000))
+        render_url = os.environ.get('RENDER_EXTERNAL_URL')
+        
+        if render_url:
+            return render_url
+        else:
+            return f"http://localhost:{port}"
+    
     def __init__(self, initial_capital=5.0):
         print("\n" + "="*80)
         print("🏆 INITIALIZING WORLD-CLASS MICRO TRADING BOT 🏆")
@@ -3460,10 +3471,11 @@ class LegendaryCryptoTitanBot:
         self.trading_mode = 'PRECISION'  # Default to PRECISION mode
         self.bot_running = False  # DO NOT START AUTOMATICALLY!
         
+        dashboard_url = self.get_dashboard_url()
         print(f"\n⏸️ BOT INITIALIZED IN PAUSED STATE")
         print(f"💰 Initial Capital: ${self.initial_capital:.2f}")
         print(f"🎮 Waiting for dashboard commands...")
-        print(f"📍 Go to: http://localhost:5000")
+        print(f"📍 Go to: {dashboard_url}")
         print(f"👆 Click 'Start Trading' to begin!")
         print(f"🎯 Default Mode: {self.trading_mode}")
         print(f"⏸️ AUTO-TRADING: DISABLED - Manual control required")
@@ -3471,7 +3483,7 @@ class LegendaryCryptoTitanBot:
         print("=" * 60)
         print("\n⏳ WAITING FOR YOUR COMMAND IN DASHBOARD...\n")
         print("   ⚠️ TRADING WILL NOT START UNTIL YOU CLICK 'START TRADING'")
-        print("   📍 Dashboard: http://localhost:5000")
+        print(f"   📍 Dashboard: {dashboard_url}")
         print("=" * 60 + "\n")
         
         # Initialize entry times for any existing positions loaded from state
@@ -3516,10 +3528,11 @@ class LegendaryCryptoTitanBot:
                 # Check if bot should be running (controlled by dashboard)
                 if not self.bot_running:
                     if not waiting_printed:
+                        dashboard_url = self.get_dashboard_url()
                         print("\n" + "=" * 60)
                         print("⏸️  BOT IS PAUSED - WAITING FOR DASHBOARD COMMAND")
                         print("=" * 60)
-                        print("📍 Go to: http://localhost:5000")
+                        print(f"📍 Go to: {dashboard_url}")
                         print("🎮 Click 'Start Trading' to begin")
                         print("⏳ Waiting...")
                         print("=" * 60)
@@ -10460,7 +10473,8 @@ async def main(legendary_bot):
     print("\n" + "="*70)
     print("🎛️ WEB DASHBOARD IS PRIMARY CONTROL INTERFACE")
     print("="*70)
-    print("   🌐 Dashboard URL: http://localhost:5000")
+    dashboard_url = LegendaryCryptoTitanBot.get_dashboard_url()
+    print(f"   🌐 Dashboard URL: {dashboard_url}")
     print("   🎮 All controls available in dashboard:")
     print("      • Select Trading Mode (Aggressive/Normal)")
     print("      • Start/Stop Trading")
@@ -10549,11 +10563,12 @@ async def main(legendary_bot):
         # NO INTERFACE SELECTION - Just run and wait for dashboard control
         # The dashboard controls start/stop via the web interface
         # This just runs cycles and the dashboard API controls bot_running flag
+        dashboard_url = LegendaryCryptoTitanBot.get_dashboard_url()
         print("\n" + "="*70)
         print("⏸️  BOT IS IDLE - WAITING FOR YOUR COMMAND")
         print("="*70)
         print("   ⚠️  TRADING IS NOT ACTIVE YET!")
-        print("   📍 Go to: http://localhost:5000")
+        print(f"   📍 Go to: {dashboard_url}")
         print("   🎮 Click 'Start Trading' to begin")
         print("   📊 This terminal shows live logs only")
         print("   ⌨️  Press Ctrl+C to shutdown")
@@ -10599,9 +10614,10 @@ if __name__ == "__main__":
         
         def run_dashboard():
             # Run server (bot will be attached later)
+            port = int(os.environ.get('PORT', 5000))
             simple_dashboard_server.app.run(
                 host='0.0.0.0', 
-                port=5000, 
+                port=port, 
                 debug=False,
                 use_reloader=False,
                 threaded=True
@@ -10617,16 +10633,24 @@ if __name__ == "__main__":
         # Dashboard needs to control THIS bot, not create a new one!
         
         # Auto-open browser
-        dashboard_url = "http://localhost:5000"
-        print(f"✅ Dashboard started: {dashboard_url}")
-        print("🌐 Opening dashboard in browser...")
+        port = int(os.environ.get('PORT', 5000))
+        render_url = os.environ.get('RENDER_EXTERNAL_URL')
         
-        try:
-            webbrowser.open(dashboard_url)
-            print("✅ Browser opened!")
-        except:
-            print("⚠️ Could not open browser automatically")
-            print(f"💡 Please open: {dashboard_url}")
+        if render_url:
+            dashboard_url = render_url
+            print(f"✅ Dashboard started on Render: {dashboard_url}")
+            print("🌐 Access your dashboard at the URL above")
+        else:
+            dashboard_url = f"http://localhost:{port}"
+            print(f"✅ Dashboard started: {dashboard_url}")
+            print("🌐 Opening dashboard in browser...")
+            
+            try:
+                webbrowser.open(dashboard_url)
+                print("✅ Browser opened!")
+            except:
+                print("⚠️ Could not open browser automatically")
+                print(f"💡 Please open: {dashboard_url}")
         
         print("\n" + "="*60)
         print("💡 DASHBOARD CONTROLS:")
