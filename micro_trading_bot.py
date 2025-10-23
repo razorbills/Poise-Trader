@@ -5036,42 +5036,20 @@ class LegendaryCryptoTitanBot:
         
         print(f"      ⏰ Time Held: {time_held:.1f}s | Grace Period: {in_grace_period} | Cycle: {self.position_cycles[symbol]}")
         
-        # SMART PROFIT TAKING (always allowed)
-        if pnl_pct >= self.partial_profit_levels[0] and pnl_pct < self.partial_profit_levels[1]:
-            partial_close = True
-            close_percentage = 0.5  # Close 50% at first level - LOCK IN PROFIT!
-            reason = f"🎯 SMART PROFIT 50% ({pnl_pct:.1f}%)"
-            print(f"      ✅ LOCKING PROFIT: Taking 50% off at {self.partial_profit_levels[0]}%")
-        elif pnl_pct >= self.partial_profit_levels[1] and pnl_pct < position_tp_pct:
-            partial_close = True
-            close_percentage = 0.75  # Close 75% of remaining - let 25% run to target
-            reason = f"🎯 SMART PROFIT 75% ({pnl_pct:.1f}%)"
-            print(f"      ✅ LOCKING PROFIT: Taking 75% off at {self.partial_profit_levels[1]}%, letting rest run")
-        
-        # TRAILING STOP (only after grace period)
-        elif not in_grace_period and self.use_trailing_stops and unrealized_pnl > 0:
-            high_water_mark = self.position_high_water_marks[symbol]
-            trailing_stop_price = high_water_mark * (1 - self.trailing_stop_distance / 100)
-            if current_price <= trailing_stop_price:
+        # CHECK TP/SL FIRST - These take priority over partial profits!
+        # TAKE PROFIT - Check price-based TP first, then percentage-based
+        if position_tp_price:  # If custom TP price is set, ONLY use that
+            if current_price >= position_tp_price:
                 should_close = True
-                reason = f"TRAILING STOP (${trailing_stop_price:.2f})"
-                print(f"      ✅ CONDITION MET: Trailing stop hit")
+                reason = f"PROFIT TARGET (${position_tp_price:.2f})"
+                print(f"      ✅ CONDITION MET: Custom take profit target hit!")
+        elif pnl_pct >= position_tp_pct:  # Otherwise use percentage
+            should_close = True
+            reason = f"PROFIT TARGET ({position_tp_pct:.2f}%)"
+            print(f"      ✅ CONDITION MET: Take profit target hit!")
         
-        # Check both TP and SL independently (not elif) - both should be evaluated
-        if not should_close and not partial_close:
-            # TAKE PROFIT - Check price-based TP first, then percentage-based
-            if position_tp_price:  # If custom TP price is set, ONLY use that
-                if current_price >= position_tp_price:
-                    should_close = True
-                    reason = f"PROFIT TARGET (${position_tp_price:.2f})"
-                    print(f"      ✅ CONDITION MET: Custom take profit target hit!")
-            elif pnl_pct >= position_tp_pct:  # Otherwise use percentage
-                should_close = True
-                reason = f"PROFIT TARGET ({position_tp_pct:.2f}%)"
-                print(f"      ✅ CONDITION MET: Take profit target hit!")
-        
-        # STOP LOSS - Always check SL even if TP was evaluated (independent check)
-        if not should_close and not partial_close:
+        # STOP LOSS - Always check SL independently
+        if not should_close:
             # STOP LOSS - Check price-based SL first, then percentage-based
             if position_sl_price:  # If custom SL price is set, ONLY use that
                 if current_price <= position_sl_price:
@@ -5090,6 +5068,28 @@ class LegendaryCryptoTitanBot:
                     should_close = True
                     reason = f"STOP LOSS ({position_sl_pct:.2f}%)"
                     print(f"      ❌ CONDITION MET: Stop loss triggered")
+        
+        # TRAILING STOP (only after grace period, and if not already closing)
+        if not should_close and not in_grace_period and self.use_trailing_stops and unrealized_pnl > 0:
+            high_water_mark = self.position_high_water_marks[symbol]
+            trailing_stop_price = high_water_mark * (1 - self.trailing_stop_distance / 100)
+            if current_price <= trailing_stop_price:
+                should_close = True
+                reason = f"TRAILING STOP (${trailing_stop_price:.2f})"
+                print(f"      ✅ CONDITION MET: Trailing stop hit")
+        
+        # SMART PROFIT TAKING - Only if not already closing at TP/SL/Trailing
+        if not should_close:
+            if pnl_pct >= self.partial_profit_levels[0] and pnl_pct < self.partial_profit_levels[1]:
+                partial_close = True
+                close_percentage = 0.5  # Close 50% at first level - LOCK IN PROFIT!
+                reason = f"🎯 SMART PROFIT 50% ({pnl_pct:.1f}%)"
+                print(f"      ✅ LOCKING PROFIT: Taking 50% off at {self.partial_profit_levels[0]}%")
+            elif pnl_pct >= self.partial_profit_levels[1] and pnl_pct < position_tp_pct:
+                partial_close = True
+                close_percentage = 0.75  # Close 75% of remaining - let 25% run to target
+                reason = f"🎯 SMART PROFIT 75% ({pnl_pct:.1f}%)"
+                print(f"      ✅ LOCKING PROFIT: Taking 75% off at {self.partial_profit_levels[1]}%, letting rest run")
         
         # MAX HOLD CYCLES (Safety mechanism - avoid stuck positions)
         if not should_close and not partial_close:
@@ -8409,6 +8409,10 @@ class LegendaryCryptoTitanBot:
             unrealized_pnl = position['unrealized_pnl']
             pnl_pct = (unrealized_pnl / cost_basis) * 100 if cost_basis > 0 else 0
             
+            # Calculate current and entry prices
+            current_price = current_value / position.get('quantity', 1) if position.get('quantity', 0) > 0 else 0
+            entry_price = position.get('avg_price', 0)
+            
             # Track position holding cycles
             if symbol not in self.position_cycles:
                 self.position_cycles[symbol] = 0
@@ -8417,14 +8421,39 @@ class LegendaryCryptoTitanBot:
             should_close = False
             reason = ""
             
-            # Legendary profit taking - use configured targets
-            if pnl_pct >= self.take_profit:  # Use configured take profit
+            # Check for position-specific TP/SL values (from dashboard updates)
+            position_tp_price = position.get('take_profit', None)
+            position_sl_price = position.get('stop_loss', None)
+            
+            # Calculate TP/SL values
+            if position_tp_price and entry_price > 0:
+                position_tp_pct = ((position_tp_price - entry_price) / entry_price) * 100
+            else:
+                position_tp_pct = self.take_profit
+                
+            if position_sl_price and entry_price > 0:
+                position_sl_pct = abs((position_sl_price - entry_price) / entry_price) * 100
+            else:
+                position_sl_pct = self.stop_loss
+            
+            # Legendary profit taking - check custom TP price first, then percentage
+            if position_tp_price:  # Custom TP price from dashboard
+                if current_price >= position_tp_price:
+                    should_close = True
+                    reason = f"LEGENDARY PROFIT (${position_tp_price:.2f})"
+            elif pnl_pct >= position_tp_pct:  # Use configured take profit percentage
                 should_close = True
-                reason = f"LEGENDARY PROFIT ({self.take_profit}%)"
-            # Legendary stop loss - use configured targets
-            elif pnl_pct <= -self.stop_loss:  # Use configured stop loss
-                should_close = True
-                reason = f"LEGENDARY STOP ({self.stop_loss}%)"
+                reason = f"LEGENDARY PROFIT ({position_tp_pct:.2f}%)"
+            
+            # Legendary stop loss - check custom SL price first, then percentage
+            if not should_close:
+                if position_sl_price:  # Custom SL price from dashboard
+                    if current_price <= position_sl_price:
+                        should_close = True
+                        reason = f"LEGENDARY STOP (${position_sl_price:.2f})"
+                elif pnl_pct <= -position_sl_pct:  # Use configured stop loss percentage
+                    should_close = True
+                    reason = f"LEGENDARY STOP ({position_sl_pct:.2f}%)"
             
             # FORCED LEARNING MODE: Close after max_hold_cycles
             elif self.force_learning_mode and self.position_cycles[symbol] >= self.max_hold_cycles:
