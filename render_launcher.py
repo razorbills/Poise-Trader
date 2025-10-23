@@ -21,106 +21,18 @@ print("🎯 Full features enabled (Dashboard + Bot)")
 print("🌐 Web service mode activated")
 print("-"*70)
 
-# Create Flask app with dashboard
-from flask import Flask, jsonify, send_file, request
-from flask_socketio import SocketIO
-from flask_cors import CORS
-import os
+# Import full dashboard server with ALL routes
+import simple_dashboard_server
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'poise_render_2025'
-CORS(app)  # Enable CORS for all routes
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+app = simple_dashboard_server.app
+socketio = simple_dashboard_server.socketio
 
-# Global bot reference
-global_bot = None
-
+# Use the dashboard's attach_bot function
 def set_bot_instance(bot):
-    global global_bot
-    global_bot = bot
-    print("✅ Bot registered with dashboard")
+    simple_dashboard_server.attach_bot(bot)
+    print("✅ Bot registered with full dashboard")
 
-@app.route('/')
-def dashboard():
-    """Serve the dashboard HTML"""
-    try:
-        # Try enhanced dashboard first
-        if os.path.exists('enhanced_simple_dashboard.html'):
-            return send_file('enhanced_simple_dashboard.html')
-        elif os.path.exists('simple_dashboard.html'):
-            return send_file('simple_dashboard.html')
-        else:
-            return """
-            <html>
-            <head><title>Poise Trader</title></head>
-            <body style='font-family: Arial; padding: 20px;'>
-                <h1>🚀 Poise Trader Bot is Running!</h1>
-                <p>✅ Bot Status: Active</p>
-                <p>📊 Connected to MEXC</p>
-                <p>🎯 Mode: AGGRESSIVE</p>
-                <p>💰 Balance: Check logs for details</p>
-                <p><a href='/api/status'>View API Status</a></p>
-            </body>
-            </html>
-            """
-    except Exception as e:
-        return f"Dashboard loading error: {e}", 500
-
-@app.route('/api/status')
-def api_status():
-    """API status endpoint"""
-    print(f"📡 API Status requested - Bot exists: {global_bot is not None}")
-    try:
-        if global_bot:
-            status = {
-                'bot_running': getattr(global_bot, 'bot_running', False),
-                'trading_mode': getattr(global_bot, 'trading_mode', 'PRECISION'),
-                'capital': getattr(global_bot, 'current_capital', 5.0),
-                'positions': len(getattr(global_bot, 'positions', {})),
-                'timestamp': datetime.now().isoformat(),
-                'connected': True
-            }
-        else:
-            status = {
-                'bot_running': False,
-                'trading_mode': 'INITIALIZING',
-                'capital': 0,
-                'positions': 0,
-                'timestamp': datetime.now().isoformat(),
-                'connected': False,
-                'message': 'Bot is still initializing...'
-            }
-        return jsonify(status)
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'connected': False,
-            'bot_running': False,
-            'timestamp': datetime.now().isoformat()
-        }), 200  # Return 200 so dashboard doesn't error
-
-@app.route('/health')
-def health():
-    """Health check"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
-
-@app.route('/api/start', methods=['POST'])
-def start_bot():
-    """Start the bot"""
-    if global_bot:
-        global_bot.bot_running = True
-        return jsonify({'success': True, 'message': 'Bot started'})
-    return jsonify({'success': False, 'message': 'Bot not initialized'}), 400
-
-@app.route('/api/stop', methods=['POST'])
-def stop_bot():
-    """Stop the bot"""
-    if global_bot:
-        global_bot.bot_running = False
-        return jsonify({'success': True, 'message': 'Bot stopped'})
-    return jsonify({'success': False, 'message': 'Bot not initialized'}), 400
-
-print("✅ Dashboard server configured")
+print("✅ Full dashboard server loaded with all API endpoints")
 
 # Global bot reference
 bot_instance = None
@@ -156,8 +68,10 @@ def run_bot():
             print("-"*70)
             print("🚀 Starting trading loop...\n")
             
-            # Start bot in running state (can be controlled via dashboard)
-            bot_instance.bot_running = True
+            # Start bot in PAUSED state - wait for dashboard command
+            bot_instance.bot_running = False
+            print("⏸️  Bot initialized in PAUSED state")
+            print("   👉 Use dashboard to START trading")
             
             # Run bot (this blocks)
             await bot_instance.run_micro_trading_cycle(cycles=999999)
