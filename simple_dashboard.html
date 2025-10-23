@@ -271,7 +271,8 @@
     </div>
 
     <script>
-        const API_URL = 'http://localhost:5000';
+        // Use current origin instead of hardcoded localhost
+        const API_URL = window.location.origin;
         let currentMode = 'PRECISION';
         let isTrading = false;
         let botConnected = false;

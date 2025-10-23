@@ -32,11 +32,14 @@ plotly>=5.0.0
 dash>=2.15.0
 seaborn>=0.12.0
 
-# Web Interface (Optional)
+# Web Interface (Required for Dashboard)
+flask>=2.3.0
+flask-socketio>=5.3.0
+flask-cors>=4.0.0
+websocket-client>=1.6.0
 # fastapi>=0.100.0
 # uvicorn>=0.22.0
 # jinja2>=3.1.0
-websocket-client>=1.6.0
 
 # Configuration & Utils
 pydantic>=2.0.0
