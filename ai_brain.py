@@ -178,7 +178,7 @@ class AIBrain:
             print(f"⚠️ Error saving AI brain: {e}")
     
     def learn_from_trade(self, trade_data: Dict):
-        """Learn from a completed trade"""
+        """🔥 Enhanced learning from trade with comprehensive market data"""
         try:
             # Extract trade information
             symbol = trade_data.get('symbol', 'UNKNOWN')
@@ -187,6 +187,13 @@ class AIBrain:
             confidence = trade_data.get('confidence', 0.5)
             strategy_scores = trade_data.get('strategy_scores', {})
             market_conditions = trade_data.get('market_conditions', {})
+            
+            # 🔥 NEW: Extract comprehensive market data if available
+            comprehensive_data = trade_data.get('comprehensive_market_data', {})
+            orderbook_data = comprehensive_data.get('orderbook', {})
+            trade_flow_data = comprehensive_data.get('recent_trades', {})
+            ticker_data = comprehensive_data.get('ticker_24h', {})
+            klines_data = comprehensive_data.get('klines', {})
             
             # Update total statistics
             self.brain['total_trades'] += 1
@@ -268,8 +275,51 @@ class AIBrain:
                 'profit_loss': profit_loss,
                 'confidence': confidence,
                 'strategy_scores': strategy_scores,
-                'market_conditions': market_conditions
+                'market_conditions': market_conditions,
+                # 🔥 NEW: Include comprehensive market data for deeper learning
+                'orderbook_spread': orderbook_data.get('spread_pct', 0),
+                'orderbook_imbalance': orderbook_data.get('volume_imbalance', 0),
+                'buy_sell_ratio': trade_flow_data.get('buy_sell_ratio', 1.0),
+                'volume_pressure': trade_flow_data.get('volume_pressure', 0),
+                'price_change_24h': ticker_data.get('price_change_pct', 0),
+                'volatility_24h': ticker_data.get('volatility_24h', 0),
+                'market_sentiment': comprehensive_data.get('market_sentiment', 0),
+                'liquidity_score': comprehensive_data.get('liquidity_score', 0),
+                'momentum_score': comprehensive_data.get('momentum_score', 0)
             }
+            
+            # 🔥 NEW: Learn which market conditions lead to wins/losses
+            if 'market_condition_performance' not in self.brain:
+                self.brain['market_condition_performance'] = {}
+            
+            # Track performance by spread
+            spread_category = 'tight' if orderbook_data.get('spread_pct', 999) < 0.05 else 'wide'
+            if spread_category not in self.brain['market_condition_performance']:
+                self.brain['market_condition_performance'][spread_category] = {'wins': 0, 'losses': 0}
+            if was_profitable:
+                self.brain['market_condition_performance'][spread_category]['wins'] += 1
+            else:
+                self.brain['market_condition_performance'][spread_category]['losses'] += 1
+            
+            # Track performance by buy/sell pressure
+            pressure = trade_flow_data.get('volume_pressure', 0)
+            pressure_category = 'buying' if pressure > 0.2 else 'selling' if pressure < -0.2 else 'neutral'
+            if pressure_category not in self.brain['market_condition_performance']:
+                self.brain['market_condition_performance'][pressure_category] = {'wins': 0, 'losses': 0}
+            if was_profitable:
+                self.brain['market_condition_performance'][pressure_category]['wins'] += 1
+            else:
+                self.brain['market_condition_performance'][pressure_category]['losses'] += 1
+            
+            # Track performance by liquidity
+            liquidity = comprehensive_data.get('liquidity_score', 0)
+            liquidity_category = 'high_liquidity' if liquidity > 0.7 else 'low_liquidity'
+            if liquidity_category not in self.brain['market_condition_performance']:
+                self.brain['market_condition_performance'][liquidity_category] = {'wins': 0, 'losses': 0}
+            if was_profitable:
+                self.brain['market_condition_performance'][liquidity_category]['wins'] += 1
+            else:
+                self.brain['market_condition_performance'][liquidity_category]['losses'] += 1
             
             self.brain['recent_trades'].append(trade_record)
             

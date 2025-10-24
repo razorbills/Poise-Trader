@@ -5191,6 +5191,12 @@ class LegendaryCryptoTitanBot:
 
                 # Use Enhanced AI Learning System if available
                 if self.enhanced_ai_initialized and self.enhanced_ai_learning:
+                    # 🔥 Get comprehensive market data if available
+                    comprehensive_market_data = {}
+                    if hasattr(self, 'market_data_history') and symbol in self.market_data_history and len(self.market_data_history[symbol]) > 0:
+                        comprehensive_market_data = self.market_data_history[symbol][-1]  # Most recent comprehensive data
+                        print(f"   📊 Feeding comprehensive market data to AI (orderbook, trades, volume, klines)")
+                    
                     trade_result = {
                         'symbol': symbol,
                         'action': signal.action,
@@ -5204,10 +5210,12 @@ class LegendaryCryptoTitanBot:
                             'momentum': signal.momentum_score,
                             'volatility': signal.volatility_score,
                             'regime': getattr(getattr(self.regime_detector, 'current_regime', type('obj', (object,), {'value': 'sideways'})), 'value', 'sideways') if self.regime_detector else 'sideways'
-                        }
+                        },
+                        # 🔥 NEW: Include comprehensive market data
+                        'comprehensive_market_data': comprehensive_market_data
                     }
                     self.enhanced_ai_learning.learn_from_trade(trade_result)
-                    print(f"   🧠 Enhanced AI Learning: Trade data processed for {symbol}")
+                    print(f"   🧠 Enhanced AI Learning: Trade data + market data processed for {symbol}")
                 
                 # 🚀 ULTRA AI LEARNING (ALL 10 MODULES!)
                 if self.ultra_ai_enabled and self.ultra_ai:
@@ -6625,16 +6633,24 @@ class LegendaryCryptoTitanBot:
         return adjusted_size
     
     async def _background_price_fetcher(self):
-        """📡 Background task to fetch prices continuously (even when bot is paused)"""
-        print("\n📡 Starting background price fetcher...")
+        """📡 🔥 Enhanced background task - fetches COMPREHENSIVE market data for AI learning"""
+        print("\n📡 Starting enhanced market data fetcher...")
+        print("   🔥 Collecting: Prices, Orderbook, Trades, Volume, Klines, Sentiment")
         last_fetch = 0
+        last_comprehensive_fetch = 0
+        fetch_cycle = 0
+        
+        # Initialize market data storage for AI
+        if not hasattr(self, 'market_data_history'):
+            self.market_data_history = {}
         
         while True:
             try:
                 current_time = time.time()
-                # Fetch prices every 5 seconds for faster updates
+                fetch_cycle += 1
+                
+                # FAST FETCH: Prices every 5 seconds
                 if current_time - last_fetch >= 5:
-                    # Track top 5 symbols for dashboard display
                     symbols_to_track = self.active_symbols[:5] if self.active_symbols else self.symbols[:5]
                     
                     fetched_any = False
@@ -6665,10 +6681,58 @@ class LegendaryCryptoTitanBot:
                     
                     last_fetch = current_time
                 
+                # 🔥 COMPREHENSIVE FETCH: Full market data every 30 seconds
+                if current_time - last_comprehensive_fetch >= 30:
+                    print(f"\n🔥 Fetching COMPREHENSIVE market data (Cycle {fetch_cycle})...")
+                    
+                    primary_symbol = self.active_symbols[0] if self.active_symbols else 'BTC/USDT'
+                    
+                    try:
+                        if hasattr(self, 'data_feed') and self.data_feed:
+                            # Get comprehensive data (orderbook, trades, ticker, klines)
+                            if hasattr(self.data_feed, 'get_comprehensive_market_data'):
+                                comprehensive_data = await self.data_feed.get_comprehensive_market_data(primary_symbol)
+                                
+                                if comprehensive_data:
+                                    # Store for AI learning
+                                    if primary_symbol not in self.market_data_history:
+                                        self.market_data_history[primary_symbol] = deque(maxlen=50)
+                                    
+                                    self.market_data_history[primary_symbol].append(comprehensive_data)
+                                    
+                                    # Print summary
+                                    print(f"   ✅ {primary_symbol} comprehensive data collected:")
+                                    if comprehensive_data.get('orderbook'):
+                                        ob = comprehensive_data['orderbook']
+                                        print(f"      📖 Orderbook: Spread {ob.get('spread_pct', 0):.4f}%, Imbalance {ob.get('volume_imbalance', 0):+.2f}")
+                                    if comprehensive_data.get('recent_trades'):
+                                        trades = comprehensive_data['recent_trades']
+                                        print(f"      📊 Trades: Buy/Sell ratio {trades.get('buy_sell_ratio', 0):.2f}, Pressure {trades.get('volume_pressure', 0):+.2f}")
+                                    if comprehensive_data.get('ticker_24h'):
+                                        ticker = comprehensive_data['ticker_24h']
+                                        print(f"      📈 24h: {ticker.get('price_change_pct', 0):+.2f}%, Vol {ticker.get('volume_24h', 0):,.0f}")
+                                    if comprehensive_data.get('klines'):
+                                        klines = comprehensive_data['klines']
+                                        print(f"      🕯️ Klines: 1m({len(klines.get('1m', []))}), 5m({len(klines.get('5m', []))}), 15m({len(klines.get('15m', []))})")
+                                    
+                                    print(f"      🧠 AI Scores: Sentiment {comprehensive_data.get('market_sentiment', 0):+.2f}, " + 
+                                          f"Liquidity {comprehensive_data.get('liquidity_score', 0):.2f}, " +
+                                          f"Momentum {comprehensive_data.get('momentum_score', 0):+.2f}")
+                            else:
+                                # Fallback: fetch individual data types
+                                print("   ℹ️ Fetching basic market data...")
+                                orderbook = await self.data_feed.get_orderbook(primary_symbol) if hasattr(self.data_feed, 'get_orderbook') else None
+                                if orderbook:
+                                    print(f"      ✅ Orderbook: {len(orderbook.get('bids', []))} bids, {len(orderbook.get('asks', []))} asks")
+                    except Exception as e:
+                        print(f"   ⚠️ Error fetching comprehensive data: {str(e)[:80]}")
+                    
+                    last_comprehensive_fetch = current_time
+                
                 await asyncio.sleep(2)  # Check every 2 seconds
                 
             except Exception as e:
-                print(f"⚠️ Background price fetcher error: {e}")
+                print(f"⚠️ Background data fetcher error: {e}")
                 await asyncio.sleep(10)
     
     async def _display_active_positions(self):

@@ -33,11 +33,15 @@ MEXC_SECRET_KEY = "cb416a71d0ba45298eb1383dc7896a18"
 PAPER_TRADING_MODE = True  # Set to False for real trading
 
 class LiveMexcDataFeed:
-    """Live MEXC data feed for paper trading"""
+    """Live MEXC data feed with comprehensive market data for AI learning"""
     
     def __init__(self):
         self.base_url = "https://api.mexc.com"
         self.prices_cache = {}
+        self.orderbook_cache = {}  # Order book depth data
+        self.trades_cache = {}  # Recent trades
+        self.klines_cache = {}  # OHLCV candles
+        self.ticker_24h_cache = {}  # 24h statistics
         self.last_update = None
         # Try alternative endpoints if main one fails
         self.alternative_urls = [
@@ -45,6 +49,7 @@ class LiveMexcDataFeed:
             "https://www.mexc.com",
             "https://contract.mexc.com"
         ]
+        print("📊 Enhanced MEXC Data Feed initialized - collecting comprehensive market data")
         
     async def get_live_price(self, symbol: str) -> float:
         """Get current live price from MEXC using requests (works reliably)"""
@@ -89,6 +94,235 @@ class LiveMexcDataFeed:
                 prices[symbol] = price
                 
         return prices
+    
+    async def get_orderbook(self, symbol: str, limit: int = 20) -> Dict:
+        """Get order book depth data - critical for AI learning!"""
+        mexc_symbol = symbol.replace('/', '')
+        
+        try:
+            url = f"{self.base_url}/api/v3/depth?symbol={mexc_symbol}&limit={limit}"
+            response = requests.get(url, timeout=5, verify=False)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Process orderbook data
+                orderbook = {
+                    'symbol': symbol,
+                    'timestamp': datetime.now(),
+                    'bids': [[float(p), float(q)] for p, q in data.get('bids', [])[:limit]],
+                    'asks': [[float(p), float(q)] for p, q in data.get('asks', [])[:limit]],
+                }
+                
+                # Calculate orderbook metrics for AI
+                if orderbook['bids'] and orderbook['asks']:
+                    orderbook['spread'] = orderbook['asks'][0][0] - orderbook['bids'][0][0]
+                    orderbook['spread_pct'] = (orderbook['spread'] / orderbook['bids'][0][0]) * 100
+                    orderbook['bid_volume'] = sum(q for p, q in orderbook['bids'])
+                    orderbook['ask_volume'] = sum(q for p, q in orderbook['asks'])
+                    orderbook['volume_imbalance'] = (orderbook['bid_volume'] - orderbook['ask_volume']) / (orderbook['bid_volume'] + orderbook['ask_volume'])
+                    orderbook['mid_price'] = (orderbook['bids'][0][0] + orderbook['asks'][0][0]) / 2
+                
+                self.orderbook_cache[symbol] = orderbook
+                return orderbook
+            
+            return None
+        except Exception as e:
+            print(f"⚠️ Error getting orderbook for {symbol}: {str(e)[:50]}")
+            return None
+    
+    async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict]:
+        """Get recent trades - shows market momentum and pressure"""
+        mexc_symbol = symbol.replace('/', '')
+        
+        try:
+            url = f"{self.base_url}/api/v3/trades?symbol={mexc_symbol}&limit={limit}"
+            response = requests.get(url, timeout=5, verify=False)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                trades = []
+                for trade in data:
+                    trades.append({
+                        'price': float(trade['price']),
+                        'qty': float(trade['qty']),
+                        'time': trade['time'],
+                        'is_buyer_maker': trade.get('isBuyerMaker', True)
+                    })
+                
+                # Calculate trade metrics for AI
+                if trades:
+                    buy_volume = sum(t['qty'] for t in trades if not t['is_buyer_maker'])
+                    sell_volume = sum(t['qty'] for t in trades if t['is_buyer_maker'])
+                    total_volume = buy_volume + sell_volume
+                    
+                    trade_data = {
+                        'symbol': symbol,
+                        'trades': trades,
+                        'buy_volume': buy_volume,
+                        'sell_volume': sell_volume,
+                        'buy_sell_ratio': buy_volume / sell_volume if sell_volume > 0 else 999,
+                        'volume_pressure': (buy_volume - sell_volume) / total_volume if total_volume > 0 else 0,
+                        'avg_trade_size': total_volume / len(trades),
+                        'timestamp': datetime.now()
+                    }
+                    
+                    self.trades_cache[symbol] = trade_data
+                    return trade_data
+            
+            return None
+        except Exception as e:
+            print(f"⚠️ Error getting trades for {symbol}: {str(e)[:50]}")
+            return None
+    
+    async def get_24h_ticker(self, symbol: str) -> Dict:
+        """Get 24h ticker statistics - volume, price change, high/low"""
+        mexc_symbol = symbol.replace('/', '')
+        
+        try:
+            url = f"{self.base_url}/api/v3/ticker/24hr?symbol={mexc_symbol}"
+            response = requests.get(url, timeout=5, verify=False)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                ticker = {
+                    'symbol': symbol,
+                    'price_change': float(data.get('priceChange', 0)),
+                    'price_change_pct': float(data.get('priceChangePercent', 0)),
+                    'high_24h': float(data.get('highPrice', 0)),
+                    'low_24h': float(data.get('lowPrice', 0)),
+                    'volume_24h': float(data.get('volume', 0)),
+                    'quote_volume_24h': float(data.get('quoteVolume', 0)),
+                    'trades_count': int(data.get('count', 0)),
+                    'open_price': float(data.get('openPrice', 0)),
+                    'close_price': float(data.get('lastPrice', 0)),
+                    'timestamp': datetime.now()
+                }
+                
+                # Calculate additional metrics
+                if ticker['high_24h'] > 0 and ticker['low_24h'] > 0:
+                    ticker['volatility_24h'] = ((ticker['high_24h'] - ticker['low_24h']) / ticker['low_24h']) * 100
+                    ticker['price_position'] = ((ticker['close_price'] - ticker['low_24h']) / (ticker['high_24h'] - ticker['low_24h'])) if ticker['high_24h'] != ticker['low_24h'] else 0.5
+                
+                self.ticker_24h_cache[symbol] = ticker
+                return ticker
+            
+            return None
+        except Exception as e:
+            print(f"⚠️ Error getting 24h ticker for {symbol}: {str(e)[:50]}")
+            return None
+    
+    async def get_klines(self, symbol: str, interval: str = '1m', limit: int = 100) -> List[Dict]:
+        """Get candlestick/kline data - OHLCV for pattern recognition"""
+        mexc_symbol = symbol.replace('/', '')
+        
+        try:
+            url = f"{self.base_url}/api/v3/klines?symbol={mexc_symbol}&interval={interval}&limit={limit}"
+            response = requests.get(url, timeout=5, verify=False)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                klines = []
+                for k in data:
+                    klines.append({
+                        'open_time': k[0],
+                        'open': float(k[1]),
+                        'high': float(k[2]),
+                        'low': float(k[3]),
+                        'close': float(k[4]),
+                        'volume': float(k[5]),
+                        'close_time': k[6],
+                        'quote_volume': float(k[7]),
+                        'trades_count': int(k[8])
+                    })
+                
+                self.klines_cache[f"{symbol}_{interval}"] = klines
+                return klines
+            
+            return None
+        except Exception as e:
+            print(f"⚠️ Error getting klines for {symbol}: {str(e)[:50]}")
+            return None
+    
+    async def get_comprehensive_market_data(self, symbol: str) -> Dict:
+        """🔥 Get ALL market data at once - feed AI everything!"""
+        print(f"📊 Fetching comprehensive data for {symbol}...")
+        
+        # Fetch all data types in parallel would be ideal, but sequentially works
+        price = await self.get_live_price(symbol)
+        orderbook = await self.get_orderbook(symbol)
+        trades = await self.get_recent_trades(symbol)
+        ticker_24h = await self.get_24h_ticker(symbol)
+        klines_1m = await self.get_klines(symbol, '1m', 100)
+        klines_5m = await self.get_klines(symbol, '5m', 50)
+        klines_15m = await self.get_klines(symbol, '15m', 30)
+        
+        comprehensive_data = {
+            'symbol': symbol,
+            'timestamp': datetime.now(),
+            'price': price,
+            'orderbook': orderbook,
+            'recent_trades': trades,
+            'ticker_24h': ticker_24h,
+            'klines': {
+                '1m': klines_1m,
+                '5m': klines_5m,
+                '15m': klines_15m
+            },
+            # Derived metrics for AI
+            'market_sentiment': self._calculate_market_sentiment(orderbook, trades, ticker_24h),
+            'liquidity_score': self._calculate_liquidity(orderbook, trades),
+            'momentum_score': self._calculate_momentum(klines_1m, ticker_24h)
+        }
+        
+        return comprehensive_data
+    
+    def _calculate_market_sentiment(self, orderbook: Dict, trades: Dict, ticker: Dict) -> float:
+        """Calculate overall market sentiment from multiple indicators"""
+        sentiment_score = 0.0
+        factors = 0
+        
+        # Factor 1: Volume imbalance from orderbook
+        if orderbook and 'volume_imbalance' in orderbook:
+            sentiment_score += orderbook['volume_imbalance']
+            factors += 1
+        
+        # Factor 2: Buy/sell pressure from trades
+        if trades and 'volume_pressure' in trades:
+            sentiment_score += trades['volume_pressure']
+            factors += 1
+        
+        # Factor 3: Price change trend
+        if ticker and 'price_change_pct' in ticker:
+            sentiment_score += (ticker['price_change_pct'] / 10)  # Normalize
+            factors += 1
+        
+        return sentiment_score / factors if factors > 0 else 0.0
+    
+    def _calculate_liquidity(self, orderbook: Dict, trades: Dict) -> float:
+        """Calculate market liquidity score"""
+        if not orderbook:
+            return 0.0
+        
+        # Tight spread + high volume = high liquidity
+        spread_score = 1 / (1 + orderbook.get('spread_pct', 1.0))  # Lower spread = higher score
+        volume_score = min(orderbook.get('bid_volume', 0) + orderbook.get('ask_volume', 0), 1000) / 1000
+        
+        return (spread_score + volume_score) / 2
+    
+    def _calculate_momentum(self, klines: List[Dict], ticker: Dict) -> float:
+        """Calculate price momentum score"""
+        if not klines or len(klines) < 5:
+            return 0.0
+        
+        # Recent price movement
+        recent_closes = [k['close'] for k in klines[-5:]]
+        momentum = (recent_closes[-1] - recent_closes[0]) / recent_closes[0] * 100
+        
+        return max(min(momentum, 5), -5) / 5  # Normalize to [-1, 1]
 
 class LivePaperTradingManager:
     """Paper trading manager using LIVE market prices"""
