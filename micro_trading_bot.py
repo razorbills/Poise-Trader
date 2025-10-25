@@ -1276,7 +1276,8 @@ class ComplianceManager:
     async def _best_execution_analysis(self, trade_data):
         """Analyze best execution compliance"""
         try:
-            # Mock best execution analysis
+            # TODO: Implement real best execution analysis with actual venue data
+            # For now, using placeholder metrics for compliance reporting (not used in trading)
             execution_metrics = {
                 'price_improvement': 0.001,  # $0.001 improvement
                 'speed_of_execution': 0.05,  # 50ms
@@ -1417,10 +1418,11 @@ class ComplianceManager:
                 current_time = time.time()
                 holding_period = current_time - lot['timestamp']
                 
-                # Mock current price (in real implementation, get actual price)
-                import random
-                current_price = lot['price'] * random.uniform(0.8, 1.2)
-                unrealized_pnl = (current_price - lot['price']) * lot['quantity']
+                # TODO: Get real current price from data feed instead of estimation
+                # For now, skip this optimization feature - it's not critical for trading
+                continue  # Skip tax optimization until real price feed is integrated
+                # current_price = self.data_feed.get_price(symbol)  # Need real price here
+                # unrealized_pnl = (current_price - lot['price']) * lot['quantity']
                 
                 if unrealized_pnl < -100 and holding_period > 2592000:  # Loss > $100, held > 30 days
                     opportunities.append({
@@ -2054,14 +2056,8 @@ class LegendaryCryptoTitanBot:
         self.advanced_features_enabled = False
         self.venues_connected = False
         
-        # Initialize missing brain attributes
-        self.multi_strategy_brain = MockBrain()
-        self.meta_learning_brain = MockBrain()
-        self.cross_market_intelligence = MockBrain()
-        self.geopolitical_intelligence = MockBrain()
-        self.market_manipulation_detector = MockBrain()
-        self.cross_market_integrator = MockBrain()
-        self.market_leadership_detector = MockBrain()
+        # NO MOCK BRAIN ATTRIBUTES - Use real components only
+        # If advanced brain components are not available, the bot will gracefully skip them
         
         # Initialize data feed FIRST - REAL DATA ONLY!
         try:
@@ -2074,17 +2070,17 @@ class LegendaryCryptoTitanBot:
             print(f"   Please check your internet connection and try again.")
             raise RuntimeError("Real market data feed is required - no mock data allowed!")
         
-        # Initialize trader with data feed
+        # Initialize trader with data feed - REAL TRADER ONLY!
         if not hasattr(self, 'trader') or self.trader is None:
             try:
-                # Prefer live paper trading manager for realistic control via dashboard
+                # Use live paper trading manager with real MEXC prices
                 self.trader = LivePaperTradingManager(initial_capital=self.initial_capital)
-                print("🧪 Live Paper Trader enabled (MEXC live prices)")
+                print("🧪 ✅ Live Paper Trader enabled (MEXC live prices)")
             except Exception as _e:
-                print(f"⚠️ Live paper trader unavailable ({_e}); using MockTrader with live feed")
-                # Pass data feed to MockTrader so it can access live prices
-                self.trader = MockTrader(initial_capital=self.initial_capital, data_feed=self.data_feed)
-                print(f"✅ MockTrader initialized with {'LIVE' if isinstance(self.data_feed, LiveMexcDataFeed) else 'MOCK'} data feed")
+                print(f"❌ CRITICAL ERROR: Cannot initialize LivePaperTradingManager!")
+                print(f"   Error: {_e}")
+                print(f"   The bot REQUIRES real paper trading manager - no mock traders allowed!")
+                raise RuntimeError("Real paper trading manager is required - no mock traders allowed!")
         self.live_chart = None
         
         # Initialize real-time data manager
@@ -2448,6 +2444,32 @@ class LegendaryCryptoTitanBot:
         print("💎 This single bot now contains EVERYTHING and MORE!")
         print("🎯 TARGET: 90%+ WIN RATE through QUALITY FILTERING!")
         
+    def _build_historical_data_from_prices(self) -> dict:
+        """Build real historical data from collected price history - NO MOCK DATA!"""
+        try:
+            all_returns = []
+            all_volatilities = []
+            
+            for symbol, prices in self.price_history.items():
+                if len(prices) >= 2:
+                    # Calculate real returns
+                    returns = [(prices[i] - prices[i-1]) / prices[i-1] for i in range(1, len(prices))]
+                    all_returns.extend(returns)
+                    
+                    # Calculate real volatility (rolling std of returns)
+                    if len(returns) >= 10:
+                        import numpy as np
+                        volatility = np.std(returns[-20:]) if len(returns) >= 20 else np.std(returns)
+                        all_volatilities.append(volatility)
+            
+            return {
+                'returns': all_returns[-100:] if len(all_returns) > 100 else all_returns,  # Last 100 returns
+                'volatilities': all_volatilities[-50:] if len(all_volatilities) > 50 else all_volatilities  # Last 50 vol readings
+            }
+        except Exception as e:
+            print(f"   ⚠️ Error building historical data: {e}")
+            return {'returns': [], 'volatilities': []}
+        
     async def _initialize_institutional_systems(self):
         """Initialize institutional systems with historical data"""
         try:
@@ -2462,16 +2484,16 @@ class LegendaryCryptoTitanBot:
                 except Exception as e:
                     print(f"   ⚠️ Multi-venue connection error: {e}")
             
-            # Initialize advanced features with historical data
+            # Initialize advanced features with REAL historical data from price history
             if hasattr(self, 'advanced_features') and self.advanced_features_enabled:
                 try:
-                    # Mock historical data for initialization
-                    historical_data = {
-                        'returns': [0.01, -0.005, 0.02, -0.01, 0.015] * 20,
-                        'volatilities': [0.02, 0.025, 0.018, 0.03, 0.022] * 20
-                    }
-                    await self.advanced_features.initialize_models(historical_data)
-                    print("   ✅ Advanced features models initialized")
+                    # Build real historical data from collected price history
+                    if self.price_history:
+                        historical_data = self._build_historical_data_from_prices()
+                        await self.advanced_features.initialize_models(historical_data)
+                        print("   ✅ Advanced features models initialized with REAL data")
+                    else:
+                        print("   ⚠️ Skipping advanced features init - need price history first")
                 except Exception as e:
                     print(f"   ⚠️ Advanced features initialization error: {e}")
             
@@ -7125,12 +7147,13 @@ class LegendaryCryptoTitanBot:
                 # Regime-Switching Analysis
                 if hasattr(self, 'advanced_features_enabled') and self.advanced_features_enabled:
                     try:
-                        historical_data = {
-                            'returns': [0.01, -0.005, 0.02, -0.01, 0.015] * 10,  # Mock returns
-                            'volatilities': [0.02, 0.025, 0.018, 0.03, 0.022] * 10  # Mock volatilities
-                        }
-                        regime_analysis = await self.advanced_features.get_comprehensive_analysis(historical_data)
-                        intelligence_data['regime_analysis'] = regime_analysis
+                        # Use REAL historical data from price history
+                        if self.price_history:
+                            historical_data = self._build_historical_data_from_prices()
+                            regime_analysis = await self.advanced_features.get_comprehensive_analysis(historical_data)
+                            intelligence_data['regime_analysis'] = regime_analysis
+                        else:
+                            print(f"   ⚠️ Skipping regime analysis - need price history")
                     except Exception as e:
                         print(f"   ⚠️ Regime analysis error: {e}")
             
