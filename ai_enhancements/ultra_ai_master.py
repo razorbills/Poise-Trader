@@ -308,10 +308,17 @@ class UltraAdvancedAIMaster:
         
         # Step 8: Feature Engineering
         if self.feature_engineer:
-            features = self.feature_engineer.engineer_features(prices, volumes)
-            result['ai_insights']['engineered_features'] = features
-            if features:
-                print(f"💡 Engineered Features: {len(features)} custom indicators")
+            try:
+                features = self.feature_engineer.engineer_features(prices, volumes)
+                result['ai_insights']['engineered_features'] = features
+                if features:
+                    print(f"💡 Engineered Features: {len(features)} custom indicators")
+            except (ValueError, IndexError) as e:
+                print(f"⚠️ Feature engineering error (array mismatch): {e}")
+                result['ai_insights']['engineered_features'] = {}
+            except Exception as e:
+                print(f"⚠️ Feature engineering error: {e}")
+                result['ai_insights']['engineered_features'] = {}
         
         # Step 9: META-ENSEMBLE DECISION
         final_decision = self._meta_ensemble_decision(result, meta_weights if self.meta_learner else {})

@@ -177,19 +177,44 @@ class FeatureEngineer:
         """
         import numpy as np
         
-        if len(prices) < 20:
+        # Validate input
+        if prices is None or len(prices) < 20:
             return {}
         
-        prices = np.array(prices)
+        try:
+            prices = np.array(prices, dtype=float)
+            
+            # Remove any NaN or Inf values
+            prices = prices[np.isfinite(prices)]
+            
+            if len(prices) < 20:
+                return {}
+            
+        except (ValueError, TypeError) as e:
+            print(f"⚠️ Invalid price data in feature engineering: {e}")
+            return {}
         
         features = {}
         
         # 1. Volume-Weighted Momentum
-        if volumes is not None and len(volumes) > 0:
-            volumes = np.array(volumes)
-            returns = np.diff(prices) / prices[:-1]
-            vwm = np.sum(returns[-20:] * volumes[-20:]) / np.sum(volumes[-20:])
-            features['volume_weighted_momentum'] = vwm
+        if volumes is not None and len(volumes) >= 20:
+            try:
+                volumes = np.array(volumes, dtype=float)
+                volumes = volumes[np.isfinite(volumes)]
+                
+                if len(volumes) >= 20:
+                    returns = np.diff(prices) / prices[:-1]
+                    # Ensure same length for multiplication
+                    if len(returns) >= 20:
+                        ret_slice = returns[-20:]
+                        vol_slice = volumes[-20:]
+                        # Make sure they're the same length
+                        min_len = min(len(ret_slice), len(vol_slice))
+                        if min_len > 0:
+                            vwm = np.sum(ret_slice[-min_len:] * vol_slice[-min_len:]) / np.sum(vol_slice[-min_len:])
+                            features['volume_weighted_momentum'] = vwm
+            except Exception as e:
+                print(f"⚠️ Volume momentum calculation error: {e}")
         
         # 2. Multi-Timeframe Trend Alignment
         sma_10 = np.mean(prices[-10:])
@@ -207,7 +232,13 @@ class FeatureEngineer:
         # 3. Volatility-Adjusted Support/Resistance
         recent_high = np.max(prices[-20:])
         recent_low = np.min(prices[-20:])
-        volatility = np.std(np.diff(prices) / prices[:-1])
+        # Safe volatility calculation
+        if len(prices) > 1:
+            price_diffs = np.diff(prices)
+            price_base = prices[:-1]
+            volatility = np.std(price_diffs / price_base) if len(price_base) > 0 else 0.01
+        else:
+            volatility = 0.01
         
         # Adjust support/resistance levels by volatility
         support = recent_low * (1 - volatility)
@@ -218,11 +249,16 @@ class FeatureEngineer:
         
         # 4. Price-Volume Correlation
         if volumes is not None and len(volumes) >= 20:
-            price_returns = np.diff(prices[-20:]) / prices[-20:-1]
-            volume_changes = np.diff(volumes[-20:]) / volumes[-20:-1]
-            
-            correlation = np.corrcoef(price_returns, volume_changes)[0, 1]
-            features['price_volume_correlation'] = correlation if not np.isnan(correlation) else 0
+            try:
+                price_returns = np.diff(prices[-20:]) / prices[-20:-1]
+                volume_changes = np.diff(volumes[-20:]) / volumes[-20:-1]
+                
+                # Ensure same length
+                if len(price_returns) == len(volume_changes) and len(price_returns) > 0:
+                    correlation = np.corrcoef(price_returns, volume_changes)[0, 1]
+                    features['price_volume_correlation'] = correlation if not np.isnan(correlation) else 0
+            except Exception as e:
+                print(f"⚠️ Price-volume correlation error: {e}")
         
         # 5. Order Flow Imbalance (simplified)
         if volumes is not None and len(volumes) >= 10:
@@ -239,11 +275,14 @@ class FeatureEngineer:
         
         # 7. Volatility Regime
         if len(prices) >= 50:
-            short_vol = np.std(np.diff(prices[-20:]) / prices[-20:-1])
-            long_vol = np.std(np.diff(prices[-50:]) / prices[-50:-1])
-            
-            vol_regime = short_vol / long_vol if long_vol > 0 else 1
-            features['volatility_regime'] = vol_regime
+            try:
+                short_vol = np.std(np.diff(prices[-20:]) / prices[-20:-1])
+                long_vol = np.std(np.diff(prices[-50:]) / prices[-50:-1])
+                
+                vol_regime = short_vol / long_vol if long_vol > 0 else 1
+                features['volatility_regime'] = vol_regime
+            except Exception as e:
+                print(f"⚠️ Volatility regime calculation error: {e}")
         
         return features
     
