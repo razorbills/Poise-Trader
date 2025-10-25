@@ -218,8 +218,8 @@ class FeatureEngineer:
         
         # 4. Price-Volume Correlation
         if volumes is not None and len(volumes) >= 20:
-            price_returns = np.diff(prices[-20:]) / prices[-21:-1]
-            volume_changes = np.diff(volumes[-20:]) / volumes[-21:-1]
+            price_returns = np.diff(prices[-20:]) / prices[-20:-1]
+            volume_changes = np.diff(volumes[-20:]) / volumes[-20:-1]
             
             correlation = np.corrcoef(price_returns, volume_changes)[0, 1]
             features['price_volume_correlation'] = correlation if not np.isnan(correlation) else 0
@@ -239,8 +239,8 @@ class FeatureEngineer:
         
         # 7. Volatility Regime
         if len(prices) >= 50:
-            short_vol = np.std(np.diff(prices[-20:]) / prices[-21:-1])
-            long_vol = np.std(np.diff(prices[-50:]) / prices[-51:-1])
+            short_vol = np.std(np.diff(prices[-20:]) / prices[-20:-1])
+            long_vol = np.std(np.diff(prices[-50:]) / prices[-50:-1])
             
             vol_regime = short_vol / long_vol if long_vol > 0 else 1
             features['volatility_regime'] = vol_regime

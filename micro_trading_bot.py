@@ -3253,10 +3253,10 @@ class LegendaryCryptoTitanBot:
         
         print("🏆 LEGENDARY CRYPTO TITAN BOT INITIALIZED 🏆")
         print(f"💎 Channeling the power of crypto legends:")
-        print(f"   🌟 CZ's Vision: {self.cz_vision_multiplier}x multiplier")
-        print(f"   💧 Devasini's Liquidity: {self.devasini_liquidity_factor}x factor")
-        print(f"   🏛️ Armstrong's Edge: {self.armstrong_institutional_edge}x advantage")
-        print(f"   ⚡ Legendary Boost: +{self.legendary_confidence_boost*100}% confidence")
+        print(f"   🌟 CZ's Vision: {getattr(self, 'cz_vision_multiplier', 1.0)}x multiplier")
+        print(f"   💧 Devasini's Liquidity: {getattr(self, 'devasini_liquidity_factor', 1.0)}x factor")
+        print(f"   🏛️ Armstrong's Edge: {getattr(self, 'armstrong_institutional_edge', 1.0)}x advantage")
+        print(f"   ⚡ Legendary Boost: +{getattr(self, 'legendary_confidence_boost', 0.0)*100}% confidence")
         print(f"   💰 Starting with {initial_capital} SATS for world domination!")
         print(f"   🧠 Advanced Intelligence: Multi-strategy brain, regime detection, sentiment analysis")
         print(f"   🛡️ Self-healing watchdog with auto-recovery and max drawdown protection")
@@ -3312,7 +3312,7 @@ class LegendaryCryptoTitanBot:
     
     def _activate_titan_mode(self):
         """Activate legendary titan mode for enhanced performance"""
-        if self.legendary_win_streak >= 3:
+        if getattr(self, 'legendary_win_streak', 0) >= 3:
             self.titan_mode_active = True
             self.legendary_profit_multiplier = 1.5
             print("🏆 TITAN MODE ACTIVATED! Legendary performance unlocked!")
@@ -3325,22 +3325,23 @@ class LegendaryCryptoTitanBot:
         
         # Apply CZ's global vision
         if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
-            enhanced_confidence *= self.cz_vision_multiplier
+            enhanced_confidence *= getattr(self, 'cz_vision_multiplier', 1.0)
         
         # Apply Devasini's liquidity expertise
         if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('liquidity_provision'):
-            enhanced_confidence *= self.devasini_liquidity_factor
+            enhanced_confidence *= getattr(self, 'devasini_liquidity_factor', 1.0)
         
         # Apply Armstrong's institutional approach
         if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
-            enhanced_confidence *= self.armstrong_institutional_edge
+            enhanced_confidence *= getattr(self, 'armstrong_institutional_edge', 1.0)
         
         # Titan mode boost
-        if self.titan_mode_active:
-            enhanced_confidence *= self.legendary_profit_multiplier
+        if getattr(self, 'titan_mode_active', False):
+            enhanced_confidence *= getattr(self, 'legendary_profit_multiplier', 1.0)
         
         # Cap at 0.95 for safety
-        signal.confidence = min(0.95, enhanced_confidence + self.legendary_confidence_boost)
+        legendary_boost = getattr(self, 'legendary_confidence_boost', 0.0)
+        signal.confidence = min(0.95, enhanced_confidence + legendary_boost)
         print("🎯 MISSION: LEARN FROM 1000 TRADES TO BECOME UNDEFEATABLE!")
         
         return signal
@@ -4354,17 +4355,18 @@ class LegendaryCryptoTitanBot:
             # Apply legendary titan strategies
             legendary_multiplier = 1.0
             if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
-                legendary_multiplier *= self.cz_vision_multiplier
+                legendary_multiplier *= getattr(self, 'cz_vision_multiplier', 1.0)
             if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
-                legendary_multiplier *= self.devasini_liquidity_factor
+                legendary_multiplier *= getattr(self, 'devasini_liquidity_factor', 1.0)
             if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
-                legendary_multiplier *= self.armstrong_institutional_edge
+                legendary_multiplier *= getattr(self, 'armstrong_institutional_edge', 1.0)
             
-            final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
+            legendary_boost = getattr(self, 'legendary_confidence_boost', 0.0)
+            final_confidence = min(0.95, base_confidence * legendary_multiplier + legendary_boost)
             # Enhanced returns with legendary strategies
             base_return = 2.0
-            if self.titan_mode_active:
-                expected_return = base_return * self.legendary_profit_multiplier
+            if getattr(self, 'titan_mode_active', False):
+                expected_return = base_return * getattr(self, 'legendary_profit_multiplier', 1.0)
             else:
                 expected_return = base_return * legendary_multiplier
             
@@ -5461,8 +5463,8 @@ class LegendaryCryptoTitanBot:
                         'cz_vision': self.cz_global_strategy.get('global_market_dominance', False) if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy else False,
                         'devasini_liquidity': self.devasini_market_making.get('liquidity_provision', False) if hasattr(self, 'devasini_market_making') and self.devasini_market_making else False,
                         'armstrong_institutional': self.armstrong_institutional.get('institutional_grade_execution', False) if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional else False,
-                        'titan_mode': self.titan_mode_active,
-                        'win_streak': self.legendary_win_streak
+                        'titan_mode': getattr(self, 'titan_mode_active', False),
+                        'win_streak': getattr(self, 'legendary_win_streak', 0)
                     },
                     'lesson': f"Legendary micro {lesson_type} with {sig_for_lesson.confidence:.1%} confidence using crypto titan strategies"
                 }
@@ -5798,17 +5800,18 @@ class LegendaryCryptoTitanBot:
             # Apply legendary titan strategies
             legendary_multiplier = 1.0
             if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
-                legendary_multiplier *= self.cz_vision_multiplier
+                legendary_multiplier *= getattr(self, 'cz_vision_multiplier', 1.0)
             if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
-                legendary_multiplier *= self.devasini_liquidity_factor
+                legendary_multiplier *= getattr(self, 'devasini_liquidity_factor', 1.0)
             if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
-                legendary_multiplier *= self.armstrong_institutional_edge
+                legendary_multiplier *= getattr(self, 'armstrong_institutional_edge', 1.0)
             
-            final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
+            legendary_boost = getattr(self, 'legendary_confidence_boost', 0.0)
+            final_confidence = min(0.95, base_confidence * legendary_multiplier + legendary_boost)
             # Enhanced returns with legendary strategies
             base_return = 2.0
-            if self.titan_mode_active:
-                expected_return = base_return * self.legendary_profit_multiplier
+            if getattr(self, 'titan_mode_active', False):
+                expected_return = base_return * getattr(self, 'legendary_profit_multiplier', 1.0)
             else:
                 expected_return = base_return * legendary_multiplier
             
@@ -5905,17 +5908,18 @@ class LegendaryCryptoTitanBot:
             # Apply legendary titan strategies
             legendary_multiplier = 1.0
             if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
-                legendary_multiplier *= self.cz_vision_multiplier
+                legendary_multiplier *= getattr(self, 'cz_vision_multiplier', 1.0)
             if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
-                legendary_multiplier *= self.devasini_liquidity_factor
+                legendary_multiplier *= getattr(self, 'devasini_liquidity_factor', 1.0)
             if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
-                legendary_multiplier *= self.armstrong_institutional_edge
+                legendary_multiplier *= getattr(self, 'armstrong_institutional_edge', 1.0)
             
-            final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
+            legendary_boost = getattr(self, 'legendary_confidence_boost', 0.0)
+            final_confidence = min(0.95, base_confidence * legendary_multiplier + legendary_boost)
             # Enhanced returns with legendary strategies
             base_return = 2.0
-            if self.titan_mode_active:
-                expected_return = base_return * self.legendary_profit_multiplier
+            if getattr(self, 'titan_mode_active', False):
+                expected_return = base_return * getattr(self, 'legendary_profit_multiplier', 1.0)
             else:
                 expected_return = base_return * legendary_multiplier
             
@@ -5998,17 +6002,18 @@ class LegendaryCryptoTitanBot:
                 # Apply legendary titan strategies
                 legendary_multiplier = 1.0
                 if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
-                    legendary_multiplier *= self.cz_vision_multiplier
+                    legendary_multiplier *= getattr(self, 'cz_vision_multiplier', 1.0)
                 if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
-                    legendary_multiplier *= self.devasini_liquidity_factor
+                    legendary_multiplier *= getattr(self, 'devasini_liquidity_factor', 1.0)
                 if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
-                    legendary_multiplier *= self.armstrong_institutional_edge
+                    legendary_multiplier *= getattr(self, 'armstrong_institutional_edge', 1.0)
                 
-                final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
+                legendary_boost = getattr(self, 'legendary_confidence_boost', 0.0)
+                final_confidence = min(0.95, base_confidence * legendary_multiplier + legendary_boost)
                 # Enhanced returns with legendary strategies
                 base_return = 2.0
-                if self.titan_mode_active:
-                    expected_return = base_return * self.legendary_profit_multiplier
+                if getattr(self, 'titan_mode_active', False):
+                    expected_return = base_return * getattr(self, 'legendary_profit_multiplier', 1.0)
                 else:
                     expected_return = base_return * legendary_multiplier
                 
