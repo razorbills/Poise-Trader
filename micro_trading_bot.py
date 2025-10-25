@@ -4247,13 +4247,16 @@ class LegendaryCryptoTitanBot:
                 continue
             
             # Update adaptive risk manager with price history (if available)
-            if ADVANCED_SYSTEMS_AVAILABLE:
-                self.adaptive_risk_manager.update_volatility(list(self.price_history[symbol]))
-                
-                # Check if trading should be avoided due to extreme volatility
-                if self.adaptive_risk_manager.should_avoid_trading():
-                    print(f"⚠️ {symbol}: Avoiding trading due to extreme volatility")
-                    continue
+            if ADVANCED_SYSTEMS_AVAILABLE and self.adaptive_risk_manager is not None:
+                try:
+                    self.adaptive_risk_manager.update_volatility(list(self.price_history[symbol]))
+                    
+                    # Check if trading should be avoided due to extreme volatility
+                    if self.adaptive_risk_manager.should_avoid_trading():
+                        print(f"⚠️ {symbol}: Avoiding trading due to extreme volatility")
+                        continue
+                except Exception as e:
+                    print(f"   ⚠️ Adaptive risk manager error: {e}")
             
             # Initialize price history if needed
             if symbol not in self.price_history:
