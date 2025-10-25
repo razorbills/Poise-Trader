@@ -4383,7 +4383,7 @@ class LegendaryCryptoTitanBot:
             else:  # SELL
                 stop_loss = current_price * (1 + self.stop_loss/100)
                 take_profit = current_price * (1 - self.take_profit/100)
-            position_size = self.position_size
+            position_size = getattr(self, 'position_size', self.min_trade_size)
             strategy = TradingStrategy.MOMENTUM
             ai_reasoning = 'Enhanced momentum signal'
             sentiment_score = 0.5
@@ -4418,7 +4418,7 @@ class LegendaryCryptoTitanBot:
             except:
                 pass
             
-            if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain:
+            if ADVANCED_SYSTEMS_AVAILABLE and getattr(self, 'multi_strategy_brain', None):
                 allocation = self.multi_strategy_brain.get_strategy_allocation(strategy_enum)
                 signal.position_size *= allocation  # Adjust position size by allocation
             else:

@@ -404,7 +404,7 @@ class PoiseSystemValidator:
                 
                 # Test other integrations...
                 try:
-                    from core.portfolio_optimizer import PortfolioOptimizer
+                    from core.portfolio_optimization import PortfolioOptimizer
                     optimizer = PortfolioOptimizer()
                     
                     if hasattr(optimizer, 'optimize_portfolio'):

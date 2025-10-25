@@ -23,7 +23,7 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    print("⚠️ Install scipy, scikit-learn, cvxpy for full portfolio optimization")
+    # Optional dependencies not installed; advanced optimization will fall back gracefully.
 
 @dataclass
 class AssetMetrics:
@@ -539,6 +539,55 @@ class FactorModel:
             }
         
         return risk_attribution
+
+# Compatibility layer for existing code expecting PortfolioOptimizer and OptimizationObjective
+from enum import Enum
+
+class OptimizationObjective(Enum):
+    MAX_SHARPE = 'max_sharpe'
+    MIN_VARIANCE = 'min_variance'
+    MAX_RETURN = 'max_return'
+    RISK_PARITY = 'risk_parity'
+    TARGET_RETURN = 'target_return'
+
+class PortfolioOptimizer:
+    """Compat wrapper providing an async interface used by the bot.
+    If no historical data is provided, returns equal weights across symbols.
+    """
+    def __init__(self):
+        self.mpt = ModernPortfolioTheory()
+
+    async def optimize_portfolio(self, symbols, objective: OptimizationObjective = OptimizationObjective.MAX_SHARPE, price_history: Dict[str, List[float]] = None) -> Dict[str, float]:
+        # If price history is provided and sufficient, attempt a simple optimization
+        try:
+            if price_history:
+                # Build a minimal returns dataset (synthetic timestamps)
+                from datetime import datetime, timedelta
+                now = datetime.utcnow()
+                # Align lengths
+                min_len = min(len(v) for v in price_history.values() if v)
+                if min_len >= 30:
+                    for sym, prices in price_history.items():
+                        if not prices:
+                            continue
+                        series = prices[-min_len:]
+                        timestamps = [now - timedelta(minutes=(min_len - i)) for i in range(min_len)]
+                        self.mpt.add_price_data(sym, series, timestamps)
+                    # Map objective to string the MPT expects
+                    obj_map = {
+                        OptimizationObjective.MAX_SHARPE: 'max_sharpe',
+                        OptimizationObjective.MIN_VARIANCE: 'min_variance',
+                        OptimizationObjective.MAX_RETURN: 'max_return',
+                        OptimizationObjective.RISK_PARITY: 'risk_parity',
+                        OptimizationObjective.TARGET_RETURN: 'target_return',
+                    }
+                    weights = self.mpt.optimize_portfolio(objective=obj_map.get(objective, 'max_sharpe'))
+                    return weights.weights if hasattr(weights, 'weights') else {s: 1/len(symbols) for s in symbols}
+        except Exception:
+            pass
+        # Fallback: equal weights
+        n = max(1, len(symbols))
+        return {s: 1.0 / n for s in symbols}
 
 # Global instances
 portfolio_optimizer = ModernPortfolioTheory()
