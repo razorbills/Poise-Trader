@@ -4453,7 +4453,7 @@ class LegendaryCryptoTitanBot:
             viable_symbols = []
             
             # Market score threshold based on trading mode
-            min_score = 6.0 if self.trading_mode == 'PRECISION' else 4.0
+            min_score = 4.0 if self.trading_mode == 'PRECISION' else 3.0
             
             if market_score < min_score:
                 print(f"   ⚠️ Market score ({market_score:.1f}) below threshold ({min_score}) - reducing viable symbols")
