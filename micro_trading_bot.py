@@ -2045,15 +2045,15 @@ class LegendaryCryptoTitanBot:
         self.adaptive_risk_manager = None
         self.orderbook_analyzer = None
         
-        # Initialize all system feature flags
+        # Initialize all system feature flags - ALL ENABLED FOR MAXIMUM PERFORMANCE
         self.backtesting_enabled = True
         self.walk_forward_enabled = True
         self.monte_carlo_enabled = True
         self.ml_enabled = True
-        self.optimization_enabled = False
-        self.alt_data_enabled = False
-        self.advanced_strategies_enabled = False
-        self.advanced_features_enabled = False
+        self.optimization_enabled = True  # ✅ ENABLED: Portfolio optimization with MPT + Black-Litterman
+        self.alt_data_enabled = True  # ✅ ENABLED: Alternative data (social + on-chain + macro)
+        self.advanced_strategies_enabled = True  # ✅ ENABLED: Arbitrage + volatility + statistical arbitrage
+        self.advanced_features_enabled = True  # ✅ ENABLED: Options + regime-switching + news analysis
         self.venues_connected = False
         
         # NO MOCK BRAIN ATTRIBUTES - Use real components only
@@ -2256,29 +2256,29 @@ class LegendaryCryptoTitanBot:
             # Portfolio Optimization  
             try:
                 self.portfolio_optimizer = PortfolioOptimizer()
-                self.optimization_enabled = True
                 print("   ✅ Portfolio optimizer loaded (MPT + Black-Litterman)")
             except Exception as e:
-                print(f"   ⚠️ Portfolio optimizer error: {e}")
-                self.optimization_enabled = False
+                print(f"   ⚠️ Portfolio optimizer error: {e} - continuing without it")
+                self.portfolio_optimizer = None
+                # Keep optimization_enabled=True, will gracefully skip if None
             
             # Alternative Data Feeds
             try:
                 self.alt_data_aggregator = AlternativeDataAggregator()
-                self.alt_data_enabled = True
                 print("   ✅ Alternative data feeds active (social + on-chain + macro)")
             except Exception as e:
-                print(f"   ⚠️ Alternative data error: {e}")
-                self.alt_data_enabled = False
+                print(f"   ⚠️ Alternative data error: {e} - continuing without it")
+                self.alt_data_aggregator = None
+                # Keep alt_data_enabled=True, will gracefully skip if None
             
             # Advanced Strategies Engine
             try:
                 self.advanced_strategies = AdvancedStrategyEngine()
-                self.advanced_strategies_enabled = True
                 print("   ✅ Advanced strategies loaded (arbitrage + volatility + statistical)")
             except Exception as e:
-                print(f"   ⚠️ Advanced strategies error: {e}")
-                self.advanced_strategies_enabled = False
+                print(f"   ⚠️ Advanced strategies error: {e} - continuing without it")
+                self.advanced_strategies = None
+                # Keep advanced_strategies_enabled=True, will gracefully skip if None
             
             # Real-time Monitoring Dashboard
             try:
@@ -2311,11 +2311,11 @@ class LegendaryCryptoTitanBot:
             # Advanced Features (Options, Regime-Switching, News)
             try:
                 self.advanced_features = AdvancedFeaturesManager()
-                self.advanced_features_enabled = True
                 print("   ✅ Advanced features loaded (options + regime models + news analysis)")
             except Exception as e:
-                print(f"   ⚠️ Advanced features error: {e}")
-                self.advanced_features_enabled = False
+                print(f"   ⚠️ Advanced features error: {e} - continuing without it")
+                self.advanced_features = None
+                # Keep advanced_features_enabled=True, will gracefully skip if None
             
             print("   🎯 INSTITUTIONAL-GRADE SYSTEMS FULLY INTEGRATED!")
             
@@ -2485,7 +2485,7 @@ class LegendaryCryptoTitanBot:
                     print(f"   ⚠️ Multi-venue connection error: {e}")
             
             # Initialize advanced features with REAL historical data from price history
-            if hasattr(self, 'advanced_features') and self.advanced_features_enabled:
+            if hasattr(self, 'advanced_features') and self.advanced_features_enabled and self.advanced_features is not None:
                 try:
                     # Build real historical data from collected price history
                     if self.price_history:
@@ -2554,7 +2554,7 @@ class LegendaryCryptoTitanBot:
         
         try:
             # Advanced strategy signals
-            if hasattr(self, 'advanced_strategies') and self.advanced_strategies_enabled:
+            if hasattr(self, 'advanced_strategies') and self.advanced_strategies_enabled and self.advanced_strategies is not None:
                 try:
                     market_data = {
                         'prices': list(self.price_history.get('BTC/USDT', [])),
@@ -2580,7 +2580,7 @@ class LegendaryCryptoTitanBot:
                     print(f"   ⚠️ Advanced strategies signal error: {e}")
             
             # Alternative data signals
-            if hasattr(self, 'alt_data_aggregator') and self.alt_data_enabled:
+            if hasattr(self, 'alt_data_aggregator') and self.alt_data_enabled and self.alt_data_aggregator is not None:
                 try:
                     alt_data = await self.alt_data_aggregator.get_comprehensive_data('BTC')
                     
@@ -2618,7 +2618,7 @@ class LegendaryCryptoTitanBot:
                     print(f"   ⚠️ Multi-venue signal error: {e}")
             
             # Portfolio optimization recommendations
-            if hasattr(self, 'portfolio_optimizer') and self.optimization_enabled:
+            if hasattr(self, 'portfolio_optimizer') and self.optimization_enabled and self.portfolio_optimizer is not None:
                 try:
                     symbols = list(self.symbols)[:3]
                     optimal_weights = await self.portfolio_optimizer.optimize_portfolio(
@@ -7110,7 +7110,7 @@ class LegendaryCryptoTitanBot:
             if INSTITUTIONAL_SYSTEMS_AVAILABLE:
                 
                 # Alternative Data Analysis
-                if hasattr(self, 'alt_data_enabled') and self.alt_data_enabled:
+                if hasattr(self, 'alt_data_enabled') and self.alt_data_enabled and self.alt_data_aggregator is not None:
                     try:
                         alt_data = await self.alt_data_aggregator.get_comprehensive_data('BTC')
                         intelligence_data['alternative_data'] = {
@@ -7123,7 +7123,7 @@ class LegendaryCryptoTitanBot:
                         print(f"   ⚠️ Alternative data error: {e}")
                 
                 # Advanced Strategy Opportunities
-                if hasattr(self, 'advanced_strategies_enabled') and self.advanced_strategies_enabled:
+                if hasattr(self, 'advanced_strategies_enabled') and self.advanced_strategies_enabled and self.advanced_strategies is not None:
                     try:
                         market_data = {'prices': list(self.price_history.get('BTC/USDT', [])), 'volume': []}
                         opportunities = await self.advanced_strategies.scan_opportunities(market_data)
@@ -7145,7 +7145,7 @@ class LegendaryCryptoTitanBot:
                         print(f"   ⚠️ Multi-venue data error: {e}")
                 
                 # Regime-Switching Analysis
-                if hasattr(self, 'advanced_features_enabled') and self.advanced_features_enabled:
+                if hasattr(self, 'advanced_features_enabled') and self.advanced_features_enabled and self.advanced_features is not None:
                     try:
                         # Use REAL historical data from price history
                         if self.price_history:
@@ -7171,7 +7171,7 @@ class LegendaryCryptoTitanBot:
                     intelligence_data['overall_regime'] = overall_regime_type
             
             # Portfolio optimization recommendations
-            if hasattr(self, 'optimization_enabled') and self.optimization_enabled:
+            if hasattr(self, 'optimization_enabled') and self.optimization_enabled and self.portfolio_optimizer is not None:
                 try:
                     symbols = list(self.symbols)[:3]  # Limit to 3 symbols for micro account
                     portfolio_weights = await self.portfolio_optimizer.optimize_portfolio(
