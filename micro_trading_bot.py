@@ -2044,6 +2044,8 @@ class LegendaryCryptoTitanBot:
         self.multi_strategy_brain = None
         self.adaptive_risk_manager = None
         self.orderbook_analyzer = None
+        # Ensure AI brain is available early to prevent AttributeError
+        self.ai_brain = ai_brain
         
         # Initialize all system feature flags - ALL ENABLED FOR MAXIMUM PERFORMANCE
         self.backtesting_enabled = True
@@ -4191,7 +4193,11 @@ class LegendaryCryptoTitanBot:
                         ultra_ai_signals.append(ultra_signal)
                         
                 except Exception as e:
+                    import traceback
                     print(f"      ⚠️ Ultra AI error for {symbol}: {e}")
+                    # Print full traceback for numpy array errors
+                    if "ambiguous" in str(e).lower():
+                        print(f"         Full error: {traceback.format_exc()}")
                     continue
             
             if ultra_ai_signals:
@@ -4311,7 +4317,8 @@ class LegendaryCryptoTitanBot:
                     'volume': technical_indicators.get('volume', 1.0)
                 }
             }
-            enhanced_pred = self.ai_brain.get_enhanced_prediction(symbol, prices, market_data) if len(prices) >= 10 else {'confidence': 0.5, 'win_probability': 0.5, 'pattern_strength': 0.5, 'risk_score': 0.5, 'action': action}
+            local_ai_brain = getattr(self, 'ai_brain', ai_brain)
+            enhanced_pred = local_ai_brain.get_enhanced_prediction(symbol, prices, market_data) if len(prices) >= 10 else {'confidence': 0.5, 'win_probability': 0.5, 'pattern_strength': 0.5, 'risk_score': 0.5, 'action': action}
             base_confidence = enhanced_pred['confidence']
             
             # Apply legendary titan strategies
@@ -4336,7 +4343,7 @@ class LegendaryCryptoTitanBot:
             time_horizon = 60
             # Get current price from price history
             if symbol not in self.price_history or len(self.price_history[symbol]) == 0:
-                return None
+                continue
             current_price = list(self.price_history[symbol])[-1]
             if action == 'BUY':
                 stop_loss = current_price * (1 - self.stop_loss/100)

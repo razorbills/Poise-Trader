@@ -185,7 +185,7 @@ class FeatureEngineer:
         features = {}
         
         # 1. Volume-Weighted Momentum
-        if volumes:
+        if volumes is not None and len(volumes) > 0:
             volumes = np.array(volumes)
             returns = np.diff(prices) / prices[:-1]
             vwm = np.sum(returns[-20:] * volumes[-20:]) / np.sum(volumes[-20:])
@@ -217,7 +217,7 @@ class FeatureEngineer:
         features['dynamic_resistance'] = resistance
         
         # 4. Price-Volume Correlation
-        if volumes and len(volumes) >= 20:
+        if volumes is not None and len(volumes) >= 20:
             price_returns = np.diff(prices[-20:]) / prices[-21:-1]
             volume_changes = np.diff(volumes[-20:]) / volumes[-21:-1]
             
@@ -225,7 +225,7 @@ class FeatureEngineer:
             features['price_volume_correlation'] = correlation if not np.isnan(correlation) else 0
         
         # 5. Order Flow Imbalance (simplified)
-        if volumes and len(volumes) >= 10:
+        if volumes is not None and len(volumes) >= 10:
             recent_volume = np.mean(volumes[-5:])
             avg_volume = np.mean(volumes[-20:])
             
