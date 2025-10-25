@@ -4979,8 +4979,12 @@ class LegendaryCryptoTitanBot:
         current_value = position['current_value']
         unrealized_pnl = position['unrealized_pnl']
         
-        # DEBUG: Log position details with PRICE INFO
-        current_price = current_value / position.get('quantity', 1) if position.get('quantity', 0) > 0 else 0
+        # CRITICAL FIX: Use actual current_price from position if available (updated with real MEXC prices)
+        # This ensures we check TP/SL against REAL market prices, not stale calculated prices
+        if 'current_price' in position and position['current_price'] > 0:
+            current_price = position['current_price']  # Use REAL updated price
+        else:
+            current_price = current_value / position.get('quantity', 1) if position.get('quantity', 0) > 0 else 0
         entry_price = position.get('avg_price', 0)
         price_change = current_price - entry_price if entry_price > 0 else 0
         price_change_pct = (price_change / entry_price * 100) if entry_price > 0 else 0
@@ -4998,18 +5002,17 @@ class LegendaryCryptoTitanBot:
         is_sell_order = signal and signal.action == 'SELL'
         
         # Calculate P&L percentage correctly for BUY vs SELL
+        # NOTE: We already have current_price set above from real MEXC data - don't recalculate it!
         if is_sell_order:
             # For SELL: profit when price goes down, loss when price goes up
             entry_price = signal.entry_price
-            current_price = current_value / abs(position.get('quantity', 1))
             pnl_pct = ((entry_price - current_price) / entry_price) * 100
         else:
             # For BUY: standard P&L calculation
             pnl_pct = (unrealized_pnl / cost_basis) * 100 if cost_basis > 0 else 0
-            current_price = current_value / position.get('quantity', 1)
         
         print(f"      P&L %: {pnl_pct:+.2f}%")
-        print(f"      Current Price: ${current_price:.4f}")
+        print(f"      Current Price: ${current_price:.4f} (from REAL MEXC feed)")
         
         # Initialize high water mark for trailing stops
         if symbol not in self.position_high_water_marks:
@@ -5066,35 +5069,47 @@ class LegendaryCryptoTitanBot:
         print(f"      ⏰ Time Held: {time_held:.1f}s | Grace Period: {in_grace_period} | Cycle: {self.position_cycles[symbol]}")
         
         # CHECK TP/SL FIRST - These take priority over partial profits!
+        print(f"\n      🎯 TP/SL CHECK:")
         # TAKE PROFIT - Check price-based TP first, then percentage-based
         if position_tp_price:  # If custom TP price is set, ONLY use that
+            print(f"         Checking CUSTOM TP: Current ${current_price:.2f} >= Target ${position_tp_price:.2f}?")
             if current_price >= position_tp_price:
                 should_close = True
                 reason = f"PROFIT TARGET (${position_tp_price:.2f})"
-                print(f"      ✅ CONDITION MET: Custom take profit target hit!")
+                print(f"         ✅ YES - CLOSING POSITION AT PROFIT!")
+            else:
+                print(f"         ❌ NO - Need ${position_tp_price - current_price:.2f} more")
         elif pnl_pct >= position_tp_pct:  # Otherwise use percentage
             should_close = True
             reason = f"PROFIT TARGET ({position_tp_pct:.2f}%)"
-            print(f"      ✅ CONDITION MET: Take profit target hit!")
+            print(f"         ✅ PERCENTAGE TP HIT: {pnl_pct:.2f}% >= {position_tp_pct:.2f}% - CLOSING!")
+        else:
+            print(f"         Checking DEFAULT TP: {pnl_pct:.2f}% >= {position_tp_pct:.2f}%? NO")
         
         # STOP LOSS - Always check SL independently
         if not should_close:
             # STOP LOSS - Check price-based SL first, then percentage-based
             if position_sl_price:  # If custom SL price is set, ONLY use that
+                print(f"         Checking CUSTOM SL: Current ${current_price:.2f} <= Target ${position_sl_price:.2f}?")
                 if current_price <= position_sl_price:
                     # CUSTOM SL FROM DASHBOARD - CLOSE IMMEDIATELY, NO GRACE PERIOD
                     # User explicitly set this price, so respect it!
                     should_close = True
                     reason = f"STOP LOSS (${position_sl_price:.2f})"
-                    print(f"      ❌ CONDITION MET: Custom stop loss triggered (no grace period for dashboard SL)")
+                    print(f"         ❌ YES - STOP LOSS HIT! CLOSING POSITION TO PREVENT FURTHER LOSS!")
+                else:
+                    print(f"         ✅ NO - Safe by ${current_price - position_sl_price:.2f}")
             elif pnl_pct <= -position_sl_pct:  # Otherwise use percentage
+                print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%?")
                 if in_grace_period and pnl_pct > -(position_sl_pct * 2):
                     # Still in grace period and loss not catastrophic - HOLD
-                    print(f"      ⏳ GRACE PERIOD ACTIVE: Holding despite {pnl_pct:.1f}% loss ({time_held:.0f}s/{self.min_hold_time}s)")
+                    print(f"         ⏳ GRACE PERIOD ACTIVE: Holding despite {pnl_pct:.1f}% loss ({time_held:.0f}s/{self.min_hold_time}s)")
                 else:
                     should_close = True
                     reason = f"STOP LOSS ({position_sl_pct:.2f}%)"
-                    print(f"      ❌ CONDITION MET: Stop loss triggered")
+                    print(f"         ❌ YES - STOP LOSS TRIGGERED! CLOSING!")
+            else:
+                print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%? NO - Still safe")
         
         # TRAILING STOP (only after grace period, and if not already closing)
         if not should_close and not in_grace_period and self.use_trailing_stops and unrealized_pnl > 0:

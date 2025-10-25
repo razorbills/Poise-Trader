@@ -326,15 +326,14 @@ class PaperTradingManager:
             # Add value of all positions
             for symbol, position in self.positions.items():
                 if position['quantity'] > 0:
-                    # Get current market price from position history or use entry price with market movement
-                    if 'current_price' in position:
+                    # CRITICAL: Get current market price - PREFER REAL MEXC PRICE IF AVAILABLE
+                    if 'current_price' in position and position['current_price'] > 0:
+                        # Use REAL MEXC price updated by trading bot
                         current_price = position['current_price']
                     elif 'entry_price' in position:
-                        # Apply realistic price movement for demo purposes
-                        import random
-                        price_change = random.uniform(-0.02, 0.02)  # ±2% movement
-                        current_price = position['entry_price'] * (1 + price_change)
-                        position['current_price'] = current_price  # Cache for consistency
+                        # Fallback: Use entry price if no current price available (shouldn't happen in live trading)
+                        current_price = position['entry_price']
+                        self.logger.warning(f"No current_price for {symbol}, using entry price ${current_price:.2f}")
                     else:
                         # Fallback to reasonable crypto prices
                         if 'BTC' in symbol:
