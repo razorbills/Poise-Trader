@@ -187,17 +187,22 @@ class LiveMexcDataFeed:
             if response.status_code == 200:
                 data = response.json()
                 
+                # Safely parse values with None handling
+                count_value = data.get('count', 0)
+                if count_value is None:
+                    count_value = 0
+                
                 ticker = {
                     'symbol': symbol,
-                    'price_change': float(data.get('priceChange', 0)),
-                    'price_change_pct': float(data.get('priceChangePercent', 0)),
-                    'high_24h': float(data.get('highPrice', 0)),
-                    'low_24h': float(data.get('lowPrice', 0)),
-                    'volume_24h': float(data.get('volume', 0)),
-                    'quote_volume_24h': float(data.get('quoteVolume', 0)),
-                    'trades_count': int(data.get('count', 0)),
-                    'open_price': float(data.get('openPrice', 0)),
-                    'close_price': float(data.get('lastPrice', 0)),
+                    'price_change': float(data.get('priceChange') or 0),
+                    'price_change_pct': float(data.get('priceChangePercent') or 0),
+                    'high_24h': float(data.get('highPrice') or 0),
+                    'low_24h': float(data.get('lowPrice') or 0),
+                    'volume_24h': float(data.get('volume') or 0),
+                    'quote_volume_24h': float(data.get('quoteVolume') or 0),
+                    'trades_count': int(float(count_value)) if count_value else 0,
+                    'open_price': float(data.get('openPrice') or 0),
+                    'close_price': float(data.get('lastPrice') or 0),
                     'timestamp': datetime.now()
                 }
                 
@@ -225,22 +230,34 @@ class LiveMexcDataFeed:
             if response.status_code == 200:
                 data = response.json()
                 
+                # Validate data is a list
+                if not isinstance(data, list) or len(data) == 0:
+                    return []
+                
                 klines = []
                 for k in data:
-                    klines.append({
-                        'open_time': k[0],
-                        'open': float(k[1]),
-                        'high': float(k[2]),
-                        'low': float(k[3]),
-                        'close': float(k[4]),
-                        'volume': float(k[5]),
-                        'close_time': k[6],
-                        'quote_volume': float(k[7]),
-                        'trades_count': int(k[8])
-                    })
+                    # Validate kline has enough elements
+                    if not isinstance(k, list) or len(k) < 9:
+                        continue
+                    
+                    try:
+                        klines.append({
+                            'open_time': k[0],
+                            'open': float(k[1]),
+                            'high': float(k[2]),
+                            'low': float(k[3]),
+                            'close': float(k[4]),
+                            'volume': float(k[5]),
+                            'close_time': k[6],
+                            'quote_volume': float(k[7]),
+                            'trades_count': int(float(k[8])) if k[8] else 0
+                        })
+                    except (ValueError, TypeError, IndexError) as e:
+                        # Skip invalid klines
+                        continue
                 
                 self.klines_cache[f"{symbol}_{interval}"] = klines
-                return klines
+                return klines if klines else []
             
             return None
         except Exception as e:

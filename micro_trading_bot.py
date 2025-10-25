@@ -6785,18 +6785,18 @@ class LegendaryCryptoTitanBot:
                                     
                                     # Print summary
                                     print(f"   ✅ {primary_symbol} comprehensive data collected:")
-                                    if comprehensive_data.get('orderbook'):
+                                    if comprehensive_data.get('orderbook') and isinstance(comprehensive_data['orderbook'], dict):
                                         ob = comprehensive_data['orderbook']
                                         print(f"      📖 Orderbook: Spread {ob.get('spread_pct', 0):.4f}%, Imbalance {ob.get('volume_imbalance', 0):+.2f}")
-                                    if comprehensive_data.get('recent_trades'):
+                                    if comprehensive_data.get('recent_trades') and isinstance(comprehensive_data['recent_trades'], dict):
                                         trades = comprehensive_data['recent_trades']
                                         print(f"      📊 Trades: Buy/Sell ratio {trades.get('buy_sell_ratio', 0):.2f}, Pressure {trades.get('volume_pressure', 0):+.2f}")
-                                    if comprehensive_data.get('ticker_24h'):
+                                    if comprehensive_data.get('ticker_24h') and isinstance(comprehensive_data['ticker_24h'], dict):
                                         ticker = comprehensive_data['ticker_24h']
                                         print(f"      📈 24h: {ticker.get('price_change_pct', 0):+.2f}%, Vol {ticker.get('volume_24h', 0):,.0f}")
-                                    if comprehensive_data.get('klines'):
+                                    if comprehensive_data.get('klines') and isinstance(comprehensive_data['klines'], dict):
                                         klines = comprehensive_data['klines']
-                                        print(f"      🕯️ Klines: 1m({len(klines.get('1m', []))}), 5m({len(klines.get('5m', []))}), 15m({len(klines.get('15m', []))})")
+                                        print(f"      🕯️ Klines: 1m({len(klines.get('1m', []) or [])}), 5m({len(klines.get('5m', []) or [])}), 15m({len(klines.get('15m', []) or [])})")
                                     
                                     print(f"      🧠 AI Scores: Sentiment {comprehensive_data.get('market_sentiment', 0):+.2f}, " + 
                                           f"Liquidity {comprehensive_data.get('liquidity_score', 0):.2f}, " +
@@ -6805,7 +6805,7 @@ class LegendaryCryptoTitanBot:
                                 # Fallback: fetch individual data types
                                 print("   ℹ️ Fetching basic market data...")
                                 orderbook = await self.data_feed.get_orderbook(primary_symbol) if hasattr(self.data_feed, 'get_orderbook') else None
-                                if orderbook:
+                                if orderbook and isinstance(orderbook, dict):
                                     print(f"      ✅ Orderbook: {len(orderbook.get('bids', []))} bids, {len(orderbook.get('asks', []))} asks")
                     except Exception as e:
                         print(f"   ⚠️ Error fetching comprehensive data: {str(e)[:80]}")
