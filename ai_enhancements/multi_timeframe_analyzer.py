@@ -95,7 +95,19 @@ class MultiTimeframeAnalyzerAI:
     
     def _analyze_single_timeframe(self, prices: List[float], timeframe: str) -> Dict:
         """Analyze a single timeframe"""
-        prices = np.array(prices)
+        try:
+            prices = np.array(prices)
+            
+            # Validate price data
+            if len(prices) == 0:
+                return self._default_timeframe_result()
+            
+            # Ensure all prices are numeric and valid
+            prices = prices[~np.isnan(prices)]
+            if len(prices) == 0:
+                return self._default_timeframe_result()
+        except (ValueError, TypeError):
+            return self._default_timeframe_result()
         
         # Calculate trend
         sma_20 = np.mean(prices[-20:]) if len(prices) >= 20 else np.mean(prices)
@@ -142,9 +154,15 @@ class MultiTimeframeAnalyzerAI:
     
     def _calculate_slope(self, prices: np.ndarray) -> float:
         """Calculate price slope"""
-        x = np.arange(len(prices))
-        slope, _ = np.polyfit(x, prices, 1)
-        return slope
+        try:
+            if len(prices) < 2:
+                return 0.0
+            x = np.arange(len(prices))
+            slope, _ = np.polyfit(x, prices, 1)
+            return slope
+        except (np.linalg.LinAlgError, ValueError) as e:
+            # Handle edge cases where polyfit fails
+            return 0.0
     
     def _calculate_alignment(self, timeframe_trends: Dict) -> Dict:
         """Calculate how aligned the timeframes are"""
@@ -215,6 +233,18 @@ class MultiTimeframeAnalyzerAI:
         normalized = min(1.0, avg_strength / 10.0)  # 10% strength = 1.0
         
         return normalized
+    
+    def _default_timeframe_result(self) -> Dict:
+        """Default result for invalid single timeframe"""
+        return {
+            'trend': 'NEUTRAL',
+            'strength': 0.0,
+            'momentum': 0.0,
+            'slope': 0.0,
+            'current_price': 0.0,
+            'sma_20': 0.0,
+            'sma_50': 0.0
+        }
     
     def _default_analysis(self) -> Dict:
         """Default analysis when no data"""

@@ -1943,7 +1943,7 @@ class LegendaryCryptoTitanBot:
         # By default, all symbols are active
         self.active_symbols = self.symbols.copy()
         self.trading_mode = "PRECISION"  # Default trading mode
-        self.confidence_threshold = 0.65  # MUCH HIGHER - only take high-quality trades!
+        self.confidence_threshold = 0.30  # Start with reasonable threshold (will be adjusted by mode config)
         self.max_positions = 3  # REDUCED - focus on quality, not quantity
         self.max_concurrent_positions = 2  # Only 2 positions at once - laser focus!
         self.max_risk_per_trade = 0.015  # Lower risk per trade (1.5%)
@@ -2936,9 +2936,9 @@ class LegendaryCryptoTitanBot:
         self.atr_period = 14  # 14-period ATR
         
         # Dynamic configuration based on mode (will be updated after user selection)
-        self.target_accuracy = 0.90
-        self.min_confidence_for_trade = 0.85
-        self.ensemble_threshold = 0.80
+        self.target_accuracy = 0.70  # Will be adjusted by mode config
+        self.min_confidence_for_trade = 0.30  # Will be adjusted by mode config (30% for PRECISION, 10% for AGGRESSIVE)
+        self.ensemble_threshold = 0.30  # Will be adjusted by mode config
         self.multi_timeframe_confirmation = True
         
         # ENSEMBLE PREDICTION MODELS
@@ -3008,9 +3008,17 @@ class LegendaryCryptoTitanBot:
             self.ml_components_available = False
         
         # LEGENDARY TRADING SYSTEMS
-        self.cz_global_strategy = self._init_cz_strategy()
-        self.devasini_market_making = self._init_devasini_strategy()
-        self.armstrong_institutional = self._init_armstrong_strategy()
+        try:
+            self.cz_global_strategy = self._init_cz_strategy()
+            self.devasini_market_making = self._init_devasini_strategy()
+            self.armstrong_institutional = self._init_armstrong_strategy()
+            print("🏆 Legendary trading systems initialized")
+        except Exception as e:
+            print(f"⚠️ Legendary systems init error: {e}")
+            # Fallback to basic strategies
+            self.cz_global_strategy = {'global_market_dominance': False}
+            self.devasini_market_making = {'spread_optimization': False, 'liquidity_provision': False}
+            self.armstrong_institutional = {'institutional_grade_execution': False}
         
         # UNDEFEATABLE AI ENHANCEMENTS
         self.legendary_win_streak = 0
@@ -3316,15 +3324,15 @@ class LegendaryCryptoTitanBot:
         enhanced_confidence = signal.confidence
         
         # Apply CZ's global vision
-        if self.cz_global_strategy['global_market_dominance']:
+        if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
             enhanced_confidence *= self.cz_vision_multiplier
         
         # Apply Devasini's liquidity expertise
-        if self.devasini_market_making['liquidity_provision']:
+        if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('liquidity_provision'):
             enhanced_confidence *= self.devasini_liquidity_factor
         
         # Apply Armstrong's institutional approach
-        if self.armstrong_institutional['institutional_grade_execution']:
+        if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
             enhanced_confidence *= self.armstrong_institutional_edge
         
         # Titan mode boost
@@ -4108,21 +4116,37 @@ class LegendaryCryptoTitanBot:
                 try:
                     # Prepare comprehensive market data for Ultra AI
                     prices = list(self.price_history[symbol])
+                    
+                    # Ensure we have consistent array lengths for multi-timeframe analysis
+                    # to avoid numpy broadcasting errors
+                    def safe_downsample(arr, factor):
+                        """Safely downsample array to avoid length mismatches"""
+                        if len(arr) < factor * 10:  # Need at least 10 points after downsampling
+                            return arr  # Return original if too short
+                        sampled = arr[::factor]
+                        # Pad to minimum length if needed
+                        min_len = 10
+                        if len(sampled) < min_len:
+                            return arr[-min_len:] if len(arr) >= min_len else arr
+                        return sampled
+                    
                     ultra_market_data = {
                         'symbol': symbol,
                         'prices': prices,
                         'volumes': [1000] * len(prices),  # Placeholder volumes
                         'price_data_mtf': {
                             '1m': prices,
-                            '5m': prices[::5] if len(prices) >= 5 else prices,
-                            '15m': prices[::15] if len(prices) >= 15 else prices,
-                            '1h': prices[::60] if len(prices) >= 60 else prices
+                            '5m': safe_downsample(prices, 5),
+                            '15m': safe_downsample(prices, 15),
+                            '1h': safe_downsample(prices, 60)
                         },
                         'current_price': prices[-1],
                         'timeframe': '1m'
                     }
                     
                     # Run Ultra AI analysis
+                    if not self.ultra_ai:
+                        continue
                     ultra_result = self.ultra_ai.ultra_analysis(ultra_market_data)
                     
                     if ultra_result['should_trade']:
@@ -4194,10 +4218,16 @@ class LegendaryCryptoTitanBot:
                         
                 except Exception as e:
                     import traceback
-                    print(f"      ⚠️ Ultra AI error for {symbol}: {e}")
-                    # Print full traceback for numpy array errors
-                    if "ambiguous" in str(e).lower():
-                        print(f"         Full error: {traceback.format_exc()}")
+                    error_msg = str(e)
+                    print(f"      ⚠️ Ultra AI error for {symbol}: {error_msg}")
+                    
+                    # Print full traceback for numpy/array-related errors
+                    if any(keyword in error_msg.lower() for keyword in ["broadcast", "ambiguous", "shape", "dimension"]):
+                        print(f"         Array mismatch detected. Full traceback:")
+                        print(f"         {traceback.format_exc()}")
+                        if symbol in self.price_history:
+                            prices_len = len(self.price_history[symbol])
+                            print(f"         Price history length: {prices_len}")
                     continue
             
             if ultra_ai_signals:
@@ -4323,11 +4353,11 @@ class LegendaryCryptoTitanBot:
             
             # Apply legendary titan strategies
             legendary_multiplier = 1.0
-            if self.cz_global_strategy['global_market_dominance']:
+            if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
                 legendary_multiplier *= self.cz_vision_multiplier
-            if self.devasini_market_making['spread_optimization']:
+            if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
                 legendary_multiplier *= self.devasini_liquidity_factor
-            if self.armstrong_institutional['institutional_grade_execution']:
+            if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
                 legendary_multiplier *= self.armstrong_institutional_edge
             
             final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
@@ -4339,7 +4369,7 @@ class LegendaryCryptoTitanBot:
                 expected_return = base_return * legendary_multiplier
             
             # Optimized risk with institutional approach
-            risk_score = 0.25 if self.armstrong_institutional['compliance_first_trading'] else 0.3
+            risk_score = 0.25 if (hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('compliance_first_trading')) else 0.3
             time_horizon = 60
             # Get current price from price history
             if symbol not in self.price_history or len(self.price_history[symbol]) == 0:
@@ -4386,7 +4416,7 @@ class LegendaryCryptoTitanBot:
             except:
                 pass
             
-            if ADVANCED_SYSTEMS_AVAILABLE:
+            if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain:
                 allocation = self.multi_strategy_brain.get_strategy_allocation(strategy_enum)
                 signal.position_size *= allocation  # Adjust position size by allocation
             else:
@@ -5299,15 +5329,16 @@ class LegendaryCryptoTitanBot:
                         }
                         
                         # Record trade outcome - all AI modules learn!
-                        self.ultra_ai.record_trade_outcome(ultra_trade_data)
-                        print(f"   🚀 Ultra AI Learning: All 10 modules updated from {symbol} trade!")
+                        if self.ultra_ai:
+                            self.ultra_ai.record_trade_outcome(ultra_trade_data)
+                            print(f"   🚀 Ultra AI Learning: All 10 modules updated from {symbol} trade!")
                     except Exception as e:
                         print(f"   ⚠️ Ultra AI learning error: {e}")
                 
                 if not (self.enhanced_ai_initialized and self.enhanced_ai_learning):
                     # Fallback to traditional AI brain
                     # RL learning update
-                    if symbol in self.ml_predictions:
+                    if symbol in self.ml_predictions and self.rl_optimizer:
                         ml_pred = self.ml_predictions[symbol]
                         if isinstance(ml_pred, dict) and 'rl_action' in ml_pred:
                             market_state = self.rl_optimizer.get_state({
@@ -5325,7 +5356,7 @@ class LegendaryCryptoTitanBot:
 
                 if strategy_name in [s.value for s in TradingStrategy]:
                     strategy = TradingStrategy(strategy_name)
-                    if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain:
+                    if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain and hasattr(self.multi_strategy_brain, 'update_strategy_performance'):
                         self.multi_strategy_brain.update_strategy_performance(
                             strategy, pnl, {
                                 'symbol': symbol,
@@ -5427,9 +5458,9 @@ class LegendaryCryptoTitanBot:
                     'position_size': self.min_trade_size,
                     'account_size': 'legendary_micro',
                     'legendary_attributes': {
-                        'cz_vision': self.cz_global_strategy['global_market_dominance'],
-                        'devasini_liquidity': self.devasini_market_making['liquidity_provision'],
-                        'armstrong_institutional': self.armstrong_institutional['institutional_grade_execution'],
+                        'cz_vision': self.cz_global_strategy.get('global_market_dominance', False) if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy else False,
+                        'devasini_liquidity': self.devasini_market_making.get('liquidity_provision', False) if hasattr(self, 'devasini_market_making') and self.devasini_market_making else False,
+                        'armstrong_institutional': self.armstrong_institutional.get('institutional_grade_execution', False) if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional else False,
                         'titan_mode': self.titan_mode_active,
                         'win_streak': self.legendary_win_streak
                     },
@@ -5484,7 +5515,7 @@ class LegendaryCryptoTitanBot:
         
         # Advanced AI System Status
         print(f"\n🧠 AI SYSTEM STATUS:")
-        health_status = "🟢 HEALTHY" if self.enhanced_watchdog and self.enhanced_watchdog.is_healthy else "🔴 COMPROMISED"
+        health_status = "🟢 HEALTHY" if self.enhanced_watchdog and hasattr(self.enhanced_watchdog, 'is_healthy') and self.enhanced_watchdog.is_healthy else "🔴 COMPROMISED"
         print(f"   🛡️ System Health: {health_status}")
         print(f"   🎯 Confidence Threshold: {self.confidence_threshold:.1%}")
         regime_confidence = getattr(self.regime_detector, 'regime_confidence', 0.5) if self.regime_detector else 0.5
@@ -5766,11 +5797,11 @@ class LegendaryCryptoTitanBot:
             
             # Apply legendary titan strategies
             legendary_multiplier = 1.0
-            if self.cz_global_strategy['global_market_dominance']:
+            if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
                 legendary_multiplier *= self.cz_vision_multiplier
-            if self.devasini_market_making['spread_optimization']:
+            if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
                 legendary_multiplier *= self.devasini_liquidity_factor
-            if self.armstrong_institutional['institutional_grade_execution']:
+            if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
                 legendary_multiplier *= self.armstrong_institutional_edge
             
             final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
@@ -5782,7 +5813,7 @@ class LegendaryCryptoTitanBot:
                 expected_return = base_return * legendary_multiplier
             
             # Optimized risk with institutional approach
-            risk_score = 0.25 if self.armstrong_institutional['compliance_first_trading'] else 0.3
+            risk_score = 0.25 if (hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('compliance_first_trading')) else 0.3
             time_horizon = 60
             # Get current price from price history
             if symbol not in self.price_history or len(self.price_history[symbol]) == 0:
@@ -5873,11 +5904,11 @@ class LegendaryCryptoTitanBot:
             
             # Apply legendary titan strategies
             legendary_multiplier = 1.0
-            if self.cz_global_strategy['global_market_dominance']:
+            if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
                 legendary_multiplier *= self.cz_vision_multiplier
-            if self.devasini_market_making['spread_optimization']:
+            if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
                 legendary_multiplier *= self.devasini_liquidity_factor
-            if self.armstrong_institutional['institutional_grade_execution']:
+            if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
                 legendary_multiplier *= self.armstrong_institutional_edge
             
             final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
@@ -5889,7 +5920,7 @@ class LegendaryCryptoTitanBot:
                 expected_return = base_return * legendary_multiplier
             
             # Optimized risk with institutional approach
-            risk_score = 0.25 if self.armstrong_institutional['compliance_first_trading'] else 0.3
+            risk_score = 0.25 if (hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('compliance_first_trading')) else 0.3
             time_horizon = 60
             current_price = current_price
             if action == 'BUY':
@@ -5966,11 +5997,11 @@ class LegendaryCryptoTitanBot:
                 
                 # Apply legendary titan strategies
                 legendary_multiplier = 1.0
-                if self.cz_global_strategy['global_market_dominance']:
+                if hasattr(self, 'cz_global_strategy') and self.cz_global_strategy and self.cz_global_strategy.get('global_market_dominance'):
                     legendary_multiplier *= self.cz_vision_multiplier
-                if self.devasini_market_making['spread_optimization']:
+                if hasattr(self, 'devasini_market_making') and self.devasini_market_making and self.devasini_market_making.get('spread_optimization'):
                     legendary_multiplier *= self.devasini_liquidity_factor
-                if self.armstrong_institutional['institutional_grade_execution']:
+                if hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('institutional_grade_execution'):
                     legendary_multiplier *= self.armstrong_institutional_edge
                 
                 final_confidence = min(0.95, base_confidence * legendary_multiplier + self.legendary_confidence_boost)
@@ -5982,7 +6013,7 @@ class LegendaryCryptoTitanBot:
                     expected_return = base_return * legendary_multiplier
                 
                 # Optimized risk with institutional approach
-                risk_score = 0.25 if self.armstrong_institutional['compliance_first_trading'] else 0.3
+                risk_score = 0.25 if (hasattr(self, 'armstrong_institutional') and self.armstrong_institutional and self.armstrong_institutional.get('compliance_first_trading')) else 0.3
                 time_horizon = 60
                 current_price = current_price
                 stop_loss = current_price * 0.98
@@ -6062,9 +6093,10 @@ class LegendaryCryptoTitanBot:
         
         # Ensure reasonable bounds based on trading mode
         if self.trading_mode == 'AGGRESSIVE':
-            self.confidence_threshold = max(0.30, min(0.70, self.confidence_threshold))
+            self.confidence_threshold = max(0.10, min(0.70, self.confidence_threshold))
         else:  # PRECISION mode
-            self.confidence_threshold = max(0.80, min(0.95, self.confidence_threshold))
+            # Use the configured min_confidence_for_trade, don't override it
+            self.confidence_threshold = max(self.min_confidence_for_trade, min(0.95, self.confidence_threshold))
     
     async def _update_market_regime(self, live_prices: Dict[str, float]):
         """Update market regime detection for context-aware trading"""
@@ -7931,7 +7963,7 @@ class LegendaryCryptoTitanBot:
         strategy_name = signal.strategy_name.replace('LEGENDARY_Enhanced_', '').replace('Enhanced_', '')
 
         # RL learning update
-        if symbol in self.ml_predictions:
+        if symbol in self.ml_predictions and self.rl_optimizer:
             ml_pred = self.ml_predictions[symbol]
             if isinstance(ml_pred, dict) and 'rl_action' in ml_pred:
                 market_state = self.rl_optimizer.get_state({
@@ -7949,7 +7981,7 @@ class LegendaryCryptoTitanBot:
 
         if strategy_name in [s.value for s in TradingStrategy]:
             strategy = TradingStrategy(strategy_name)
-            if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain:
+            if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain and hasattr(self.multi_strategy_brain, 'update_strategy_performance'):
                 self.multi_strategy_brain.update_strategy_performance(
                     strategy, pnl, {
                         'symbol': symbol,
@@ -8623,7 +8655,7 @@ class LegendaryCryptoTitanBot:
                         'legendary_boost': True,
                         'execution_speed': 'ultra_fast'
                     }
-                    if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain:
+                    if ADVANCED_SYSTEMS_AVAILABLE and self.multi_strategy_brain and hasattr(self.multi_strategy_brain, 'update_strategy_performance'):
                         self.multi_strategy_brain.update_strategy_performance(
                             strategy, pnl * 1.2, legendary_performance_data  # 20% learning boost
                         )
