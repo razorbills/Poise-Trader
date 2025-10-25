@@ -1968,7 +1968,7 @@ class LegendaryCryptoTitanBot:
         self.daily_start_capital = initial_capital
         self.daily_pnl = 0.0
         self.consecutive_losses = 0
-        self.max_consecutive_losses = 2
+        self.max_consecutive_losses = 3  # Increased from 2 to allow more trading opportunities
         self.max_daily_drawdown = 0.03
         self.active_signals = {}
         self.price_history = {}
@@ -2395,8 +2395,8 @@ class LegendaryCryptoTitanBot:
         try:
             print("   🎯 Initializing PROFESSIONAL QUALITY FILTER...")
             self.win_rate_optimizer_enabled = True  # ALWAYS ENABLED - Professional trader standards!
-            self.min_trade_quality_score = 75.0  # HIGH STANDARD - Only excellent setups
-            self.min_confidence_for_trade = 0.65  # 65% minimum confidence
+            self.min_trade_quality_score = 60.0  # BALANCED STANDARD - Quality setups (will be overridden by mode config)
+            self.min_confidence_for_trade = 0.30  # 30% minimum confidence (will be overridden by mode config)
             self.min_risk_reward_ratio = 1.8  # Minimum 1.8:1 RR ratio
             self.optimal_risk_reward = 2.0  # Target 2:1 RR
             
@@ -2846,7 +2846,7 @@ class LegendaryCryptoTitanBot:
         self.total_completed_trades = 0
         self.winning_trades = 0
         self.consecutive_losses = 0
-        self.max_consecutive_losses = 2  # Even tighter than orchestrator
+        self.max_consecutive_losses = 3  # Balanced limit (increased from 2)
         
         # 📊 ADVANCED PERFORMANCE METRICS (Built-in)
         self.sharpe_ratio = 0.0
@@ -3446,9 +3446,9 @@ class LegendaryCryptoTitanBot:
         
         # PRECISION MODE: STRICT PROFESSIONAL STANDARDS
         # Check confidence threshold - MUST be high quality
-        if signal_confidence < self.min_confidence_threshold:
-            print(f"      ❌ REJECTED: Confidence {signal_confidence:.1%} < {self.min_confidence_threshold:.1%}")
-            return False, f"Confidence too low: {signal_confidence:.2%} < {self.min_confidence_threshold:.2%}"
+        if signal_confidence < self.min_confidence_for_trade:
+            print(f"      ❌ REJECTED: Confidence {signal_confidence:.1%} < {self.min_confidence_for_trade:.1%}")
+            return False, f"Confidence too low: {signal_confidence:.2%} < {self.min_confidence_for_trade:.2%}"
         
         # Check quality score - PROFESSIONAL STANDARD
         min_quality = getattr(self, 'min_trade_quality_score', 75.0)
@@ -3457,7 +3457,7 @@ class LegendaryCryptoTitanBot:
             return False, f"Quality score too low: {quality_score:.1f} < {min_quality}"
         
         # Pause trading during losing streaks - PROTECT CAPITAL
-        if self.consecutive_losses >= 2:
+        if self.consecutive_losses >= 3:
             print(f"      ⚠️ REJECTED: {self.consecutive_losses} consecutive losses - pausing for market reassessment")
             return False, f"Paused after {self.consecutive_losses} losses - protecting capital"
         
@@ -3866,22 +3866,21 @@ class LegendaryCryptoTitanBot:
                     self.confidence_adjustment_factor = 0.01
                     self.aggressive_trade_guarantee = False
                     self.cycle_sleep_override = None
-                    # PRECISION MODE: Ultra-selective, highest quality only
+                    # PRECISION MODE: Balanced quality trading
                     self.win_rate_optimizer_enabled = True
-                    self.min_trade_quality_score = 75.0  # PROFESSIONAL STANDARD
-                    self.min_confidence_for_trade = 0.65  # 65% minimum
-                    self.confidence_threshold = 0.65
+                    self.min_trade_quality_score = 60.0  # BALANCED STANDARD (lowered from 75 to allow more trades)
+                    # Use config values for confidence (30%)
                     self.max_concurrent_positions = 2  # Focused positions
                     self.max_positions = 3
                     self.take_profit = 3.5  # Professional profit target (3.5%)
                     self.stop_loss = 1.5  # Controlled risk (1.5%)
                     self.min_hold_time = 600  # Professional grace period (10 minutes minimum)
                     self.partial_profit_levels = [2.0, 2.75]  # Partial profits at 2.0% and 2.75%
-                    self.max_consecutive_losses = 2  # Strict loss limit
-                    print("\n🎯 PRECISION (PROFESSIONAL) MODE SELECTED!")
+                    self.max_consecutive_losses = 3  # Balanced loss limit (increased from 2)
+                    print("\n🎯 PRECISION (NORMAL) MODE SELECTED!")
                     print("   💎 Win rate optimizer: ENABLED")
-                    print("   🎯 Minimum Quality: 75/100, Confidence: 65%")
-                    print("   🏆 Target Win Rate: 85%+")
+                    print("   🎯 Minimum Quality: 60/100, Confidence: 30%")
+                    print("   🏆 Target Win Rate: 70%+")
                     print("   📊 Fewer trades, bigger winners")
                     print("   💰 TP: 3.5% | SL: 1.5% | Max Positions: 2")
                     print("   ⚡ Partial profits at 2.0% and 2.75%")
