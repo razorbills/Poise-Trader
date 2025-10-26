@@ -178,6 +178,24 @@ except ImportError as e:
     COMPREHENSIVE_TA_AVAILABLE = False
     print(f"⚠️ Comprehensive TA not available: {e}")
 
+# 🧠 CONTINUOUS LEARNING ENGINE - FEEDS ON MILLIONS OF DATA POINTS
+try:
+    from continuous_learning_engine import (
+        ContinuousLearningEngine, 
+        DataAggregator, 
+        MassiveDataTrainer
+    )
+    CONTINUOUS_LEARNING_AVAILABLE = True
+    print("🧠 CONTINUOUS LEARNING ENGINE LOADED!")
+    print("   ✓ Multi-source data aggregation (live + synthetic)")
+    print("   ✓ Learns from millions of data points")
+    print("   ✓ Pattern discovery and cataloging")
+    print("   ✓ Self-improving strategies")
+    print("   ✓ Experience replay from 10,000+ trades")
+except ImportError as e:
+    CONTINUOUS_LEARNING_AVAILABLE = False
+    print(f"⚠️ Continuous learning not available: {e}")
+
 # 🏆 PROFESSIONAL TRADING ENHANCEMENTS
 try:
     from professional_bot_integration import ProfessionalBotIntegration
@@ -2081,6 +2099,18 @@ class LegendaryCryptoTitanBot:
         else:
             self.comprehensive_ta = None
         
+        # 🧠 CONTINUOUS LEARNING ENGINE - SELF-IMPROVING AI
+        if CONTINUOUS_LEARNING_AVAILABLE:
+            self.learning_engine = ContinuousLearningEngine()
+            self.data_trainer = None  # Will be initialized when bot starts
+            self.continuous_learning_enabled = True
+            print("✅ Continuous learning engine initialized")
+            print("   🧠 Bot will feed on millions of data points")
+        else:
+            self.learning_engine = None
+            self.data_trainer = None
+            self.continuous_learning_enabled = False
+        
         # Initialize data feed FIRST - REAL DATA ONLY!
         try:
             self.data_feed = LiveMexcDataFeed()
@@ -3598,6 +3628,25 @@ class LegendaryCryptoTitanBot:
         # Start background price fetcher (runs even when paused)
         asyncio.create_task(self._background_price_fetcher())
         
+        # 🧠 START CONTINUOUS LEARNING ENGINE (Background training)
+        if self.continuous_learning_enabled and self.learning_engine:
+            print("\n🧠 STARTING CONTINUOUS LEARNING ENGINE...")
+            print("   📚 Bot will learn from millions of data points")
+            print("   🎓 Every trade improves the AI")
+            
+            self.data_trainer = MassiveDataTrainer(self.learning_engine)
+            
+            # Start background training (runs continuously)
+            asyncio.create_task(
+                self.data_trainer.start_continuous_training(
+                    self.data_feed, 
+                    self.active_symbols, 
+                    self.price_history
+                )
+            )
+            
+            print("   ✅ Continuous learning activated!")
+        
         # Main trading loop - checks bot_running flag each cycle
         waiting_printed = False
         for cycle in range(1, cycles + 1):
@@ -4594,6 +4643,35 @@ class LegendaryCryptoTitanBot:
                     except Exception as e:
                         print(f"   ⚠️ TA analysis error for {symbol}: {e}")
             
+            # 🧠 GET AI LEARNED RECOMMENDATION (Self-improving intelligence)
+            if self.continuous_learning_enabled and self.learning_engine:
+                try:
+                    # Create state representation for AI
+                    if symbol in self.price_history and len(self.price_history[symbol]) >= 5:
+                        prices = list(self.price_history[symbol])
+                        momentum = (prices[-1] - prices[-5]) / prices[-5]
+                        volatility = np.std([prices[i]/prices[i-1]-1 for i in range(-5, 0)])
+                        
+                        momentum_bucket = "up" if momentum > 0.01 else "down" if momentum < -0.01 else "flat"
+                        vol_bucket = "high" if volatility > 0.02 else "low"
+                        state = f"{momentum_bucket}_{vol_bucket}"
+                        
+                        # Get AI recommendation based on learned patterns
+                        ai_rec = self.learning_engine.get_recommendation(symbol, state)
+                        
+                        # Apply AI learned wisdom
+                        if ai_rec['action'] == action and ai_rec['confidence'] > 0.3:
+                            # AI agrees based on historical learning - BOOST!
+                            boost = 1 + (ai_rec['confidence'] * 0.15)  # Up to +15% boost
+                            signal.confidence = min(0.95, signal.confidence * boost)
+                            print(f"   🧠 {symbol}: AI LEARNED confirmation ({ai_rec['learned_from_samples']:,} samples) - Confidence: {signal.confidence:.1%}")
+                        elif ai_rec['action'] != 'HOLD' and ai_rec['action'] != action:
+                            # AI learned this setup doesn't work well - WARNING
+                            signal.confidence = max(0.2, signal.confidence * 0.85)
+                            print(f"   ⚠️ {symbol}: AI LEARNED caution (prefers {ai_rec['action']}) - Reduced confidence")
+                except Exception as e:
+                    pass  # Don't break signal generation if learning engine has issues
+            
             signals.append(signal)
             print(f"   📈 {symbol}: {action} signal generated (Confidence: {final_confidence:.1%}, Allocation: {allocation:.1%})")
         
@@ -5402,29 +5480,8 @@ class LegendaryCryptoTitanBot:
                 current_price = self.price_history[symbol][-1] if symbol in self.price_history and self.price_history[symbol] else 0
                 self.live_chart.close_trade_on_chart(
                     symbol=symbol,
-                    exit_price=current_price,
-                    reason=reason,
-                    pnl=pnl
+                    exit_price=current_price
                 )
-            
-            # Update professional trading statistics
-            self.total_completed_trades += 1
-            if pnl > 0:
-                self.winning_trades += 1
-                self.consecutive_losses = 0
-                self.current_loss_streak = 0
-                self.current_win_streak += 1
-                if self.current_win_streak > self.longest_win_streak:
-                    self.longest_win_streak = self.current_win_streak
-                print(f"   ✅ WIN #{self.winning_trades} - Consecutive losses reset")
-            else:
-                self.consecutive_losses += 1
-                self.current_win_streak = 0
-                self.current_loss_streak += 1
-                print(f"   ❌ LOSS #{self.consecutive_losses} consecutive (Loss streak: {self.current_loss_streak})")
-            
-            self.win_rate = self.winning_trades / self.total_completed_trades if self.total_completed_trades > 0 else 0
-            self.daily_pnl += pnl
             
             # Update adaptive confidence threshold based on performance
             self._update_confidence_threshold()
@@ -5603,6 +5660,20 @@ class LegendaryCryptoTitanBot:
                     print(f"   📚 Loss analysis completed for forced closure")
             
             ai_brain.learn_from_trade(trade_data)
+            
+            # 🧠 CONTINUOUS LEARNING ENGINE: Feed every trade to self-improving AI
+            if self.continuous_learning_enabled and self.learning_engine:
+                try:
+                    self.learning_engine.learn_from_trade(trade_data)
+                    
+                    # Show learning insights every 10 trades
+                    if self.total_trades % 10 == 0:
+                        insights = self.learning_engine.get_learned_insights()
+                        print(f"   📚 AI PROGRESS: {insights['total_training_samples']:,} samples | {insights['learned_rules_count']} rules")
+                        if insights.get('best_strategy') and insights.get('best_strategy_win_rate', 0) > 0.6:
+                            print(f"   🏆 Best: {insights['best_strategy']} ({insights['best_strategy_win_rate']:.1%})")
+                except Exception as e:
+                    pass  # Silent fail - don't interrupt trading
             
             # 🏆 RECORD TRADE OUTCOME FOR 90% WIN RATE TRACKING
             if self.win_rate_optimizer_enabled and symbol in self.active_signals:
