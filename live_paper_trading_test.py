@@ -403,7 +403,13 @@ class LivePaperTradingManager:
             
             # Update positions
             if symbol not in self.positions:
-                self.positions[symbol] = {"quantity": 0, "avg_price": 0, "total_cost": 0}
+                self.positions[symbol] = {
+                    "quantity": 0, 
+                    "avg_price": 0, 
+                    "total_cost": 0,
+                    "take_profit": None,
+                    "stop_loss": None
+                }
             
             old_quantity = self.positions[symbol]["quantity"]
             old_cost = self.positions[symbol]["total_cost"]
@@ -414,7 +420,9 @@ class LivePaperTradingManager:
             self.positions[symbol] = {
                 "quantity": new_quantity,
                 "avg_price": new_cost / new_quantity if new_quantity > 0 else 0,
-                "total_cost": new_cost
+                "total_cost": new_cost,
+                "take_profit": take_profit,  # Store TP/SL for position management
+                "stop_loss": stop_loss
             }
             
             self.cash_balance -= amount_usd
@@ -485,14 +493,31 @@ class LivePaperTradingManager:
             
             for symbol, position in self.positions.items():
                 if position["quantity"] > 0 and symbol in live_prices:
-                    current_value = position["quantity"] * live_prices[symbol]
+                    current_price = live_prices[symbol]
+                    current_value = position["quantity"] * current_price
                     portfolio_value += current_value
+                    
+                    # CRITICAL FIX: Update self.positions with current_price so bot can access it
+                    position["current_price"] = current_price
+                    position["current_value"] = current_value
+                    position["cost_basis"] = position["total_cost"]
+                    position["unrealized_pnl"] = current_value - position["total_cost"]
+                    position["avg_price"] = position.get("avg_price", current_price)  # Keep avg_price
+                    # Preserve TP/SL if they exist
+                    if "take_profit" not in position:
+                        position["take_profit"] = None
+                    if "stop_loss" not in position:
+                        position["stop_loss"] = None
+                    
                     position_values[symbol] = {
                         "quantity": position["quantity"],
-                        "current_price": live_prices[symbol],
+                        "current_price": current_price,
                         "current_value": current_value,
                         "cost_basis": position["total_cost"],
-                        "unrealized_pnl": current_value - position["total_cost"]
+                        "unrealized_pnl": current_value - position["total_cost"],
+                        "avg_price": position.get("avg_price", current_price),
+                        "take_profit": position.get("take_profit"),
+                        "stop_loss": position.get("stop_loss")
                     }
         
         return {

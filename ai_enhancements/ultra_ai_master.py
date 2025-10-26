@@ -433,7 +433,13 @@ class UltraAdvancedAIMaster:
         mtf = analysis['ai_insights'].get('mtf')
         if mtf and mtf.get('should_trade'):
             weight = meta_weights.get('mtf_analyzer', 1.0) * 2
-            votes[mtf['recommended_action']] += weight * mtf['confidence']
+            mtf_action = mtf.get('recommended_action', 'HOLD')
+            # Normalize action labels: map WAIT -> HOLD
+            if mtf_action == 'WAIT':
+                mtf_action = 'HOLD'
+            if mtf_action not in votes:
+                mtf_action = 'HOLD'
+            votes[mtf_action] += weight * mtf['confidence']
         
         # Determine winner
         winner = max(votes, key=votes.get)
