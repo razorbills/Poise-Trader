@@ -2896,7 +2896,7 @@ class LegendaryCryptoTitanBot:
         
         # 🚀 INITIALIZE HIGH-IMPACT OPTIMIZATIONS
         self.performance_optimizations_enabled = PERFORMANCE_OPTIMIZATIONS
-        if self.performance_optimizations_enabled:
+        if getattr(self, 'performance_optimizations_enabled', False):
             print("🏆 Initializing performance optimizations...")
             # Memory management for price history
             memory_manager.register_price_cache(max_symbols=20, max_points_per_symbol=200)
@@ -3234,7 +3234,7 @@ class LegendaryCryptoTitanBot:
         except Exception:
             pass
         # 💾 OPTIMIZED PRICE HISTORY MANAGEMENT
-        if self.performance_optimizations_enabled:
+        if getattr(self, 'performance_optimizations_enabled', False):
             self.price_history = {}  # Keep original for compatibility
             # Use memory manager for efficient price storage
             memory_manager.cleanup_old_data()
@@ -3401,7 +3401,7 @@ class LegendaryCryptoTitanBot:
     
     def _calculate_trade_quality_score(self, signal: 'AITradingSignal', market_data: Dict = None) -> float:
         """🎯 Calculate comprehensive trade quality score (0-100) for 90% win rate filtering"""
-        if not self.win_rate_optimizer_enabled:
+        if not getattr(self, 'win_rate_optimizer_enabled', True):
             return 100.0  # Pass all trades if optimizer disabled
         
         try:
@@ -3629,7 +3629,7 @@ class LegendaryCryptoTitanBot:
         asyncio.create_task(self._background_price_fetcher())
         
         # 🧠 START CONTINUOUS LEARNING ENGINE (Background training)
-        if self.continuous_learning_enabled and self.learning_engine:
+        if getattr(self, 'continuous_learning_enabled', False) and getattr(self, 'learning_engine', None):
             print("\n🧠 STARTING CONTINUOUS LEARNING ENGINE...")
             print("   📚 Bot will learn from millions of data points")
             print("   🎓 Every trade improves the AI")
@@ -3801,7 +3801,7 @@ class LegendaryCryptoTitanBot:
                 await self._execute_micro_trades(signals)
                 
                 # Professional trade journaling
-                if self.professional_mode and self.total_completed_trades > 0:
+                if getattr(self, 'professional_mode', False) and self.total_completed_trades > 0:
                     try:
                         # Log recent trades to journal
                         if hasattr(self, 'trade_history') and self.trade_history:
@@ -4260,7 +4260,7 @@ class LegendaryCryptoTitanBot:
         
         # 🚀 ULTRA-ADVANCED AI ANALYSIS (ALL 10 AI MODULES)
         ultra_ai_signals = []
-        if self.ultra_ai_enabled and self.ultra_ai:
+        if getattr(self, 'ultra_ai_enabled', False) and getattr(self, 'ultra_ai', None):
             print("   🚀 Activating ULTRA-ADVANCED AI SYSTEM V2.0...")
             
             for symbol in viable_symbols[:5]:  # Analyze top 5 viable symbols
@@ -4457,7 +4457,7 @@ class LegendaryCryptoTitanBot:
             closes = list(self.price_history[symbol]) if symbol in self.price_history else []
             
             # 🚀 ENHANCED TECHNICAL ANALYSIS WITH ADVANCED FEATURES
-            if self.performance_optimizations_enabled and len(closes) >= 20:
+            if getattr(self, 'performance_optimizations_enabled', False) and getattr(self, 'feature_engineer', None) and len(closes) >= 20:
                 # Generate advanced features for better signal quality
                 enhanced_features = self.feature_engineer.generate_features(closes)
                 technical_indicators = {
@@ -4579,7 +4579,7 @@ class LegendaryCryptoTitanBot:
                 allocation = 1.0  # Full allocation in basic mode
             
             # 🎯 PRECISION MODE: Boost signals with institutional confirmation
-            if self.precision_mode_enabled and hasattr(self, 'current_institutional_intel'):
+            if getattr(self, 'precision_mode_enabled', False) and hasattr(self, 'current_institutional_intel'):
                 inst_intel = self.current_institutional_intel
                 
                 # Check timeframe alignment for this symbol
@@ -4604,7 +4604,7 @@ class LegendaryCryptoTitanBot:
                     print(f"   💼 {symbol}: ORDER FLOW {order_flow} - Confidence boosted to {signal.confidence:.1%}")
                 
                 # 📊 COMPREHENSIVE TECHNICAL ANALYSIS CHECK
-                if self.comprehensive_ta and symbol in self.price_history and len(self.price_history[symbol]) >= 50:
+                if getattr(self, 'comprehensive_ta', None) and symbol in self.price_history and len(self.price_history[symbol]) >= 50:
                     try:
                         print(f"   📊 Running comprehensive TA for {symbol}...")
                         prices = list(self.price_history[symbol])
@@ -4644,7 +4644,7 @@ class LegendaryCryptoTitanBot:
                         print(f"   ⚠️ TA analysis error for {symbol}: {e}")
             
             # 🧠 GET AI LEARNED RECOMMENDATION (Self-improving intelligence)
-            if self.continuous_learning_enabled and self.learning_engine:
+            if getattr(self, 'continuous_learning_enabled', False) and getattr(self, 'learning_engine', None):
                 try:
                     # Create state representation for AI
                     if symbol in self.price_history and len(self.price_history[symbol]) >= 5:
@@ -5099,7 +5099,7 @@ class LegendaryCryptoTitanBot:
                 continue
             
             # Execute the micro trade with Elite Execution Engine if available
-            if self.elite_engine and ELITE_EXECUTION_AVAILABLE:
+            if getattr(self, 'elite_engine', None) and ELITE_EXECUTION_AVAILABLE:
                 # Create ExecutionOrder for elite engine
                 from datetime import timedelta
                 import uuid
@@ -5449,8 +5449,8 @@ class LegendaryCryptoTitanBot:
                     del self.position_entry_time[symbol]
         else:
             status = "💚" if unrealized_pnl > 0 else "❤️" if unrealized_pnl < 0 else "💛"
-            trailing_info = f" Trail: ${self.position_high_water_marks[symbol]:.2f}" if self.use_trailing_stops and unrealized_pnl > 0 else ""
-            cycles_info = f" [Cycle {self.position_cycles[symbol]}/{self.max_hold_cycles}]" if self.force_learning_mode else ""
+            trailing_info = f" Trail: ${self.position_high_water_marks[symbol]:.2f}" if getattr(self, 'use_trailing_stops', True) and unrealized_pnl > 0 else ""
+            cycles_info = f" [Cycle {self.position_cycles[symbol]}/{self.max_hold_cycles}]" if getattr(self, 'force_learning_mode', False) else ""
             print(f"   {status} {symbol}: ${current_value:.2f} ({pnl_pct:+.2f}%){trailing_info} - HOLDING{cycles_info}")
             
             if symbol in self.active_signals:
@@ -5495,7 +5495,7 @@ class LegendaryCryptoTitanBot:
                 strategy_name = signal.strategy_name.replace('LEGENDARY_Enhanced_', '').replace('Enhanced_', '')
 
                 # Use Enhanced AI Learning System if available
-                if self.enhanced_ai_initialized and self.enhanced_ai_learning:
+                if getattr(self, 'enhanced_ai_initialized', False) and getattr(self, 'enhanced_ai_learning', None):
                     # 🔥 Get comprehensive market data if available
                     comprehensive_market_data = {}
                     if hasattr(self, 'market_data_history') and symbol in self.market_data_history and len(self.market_data_history[symbol]) > 0:
@@ -5523,7 +5523,7 @@ class LegendaryCryptoTitanBot:
                     print(f"   🧠 Enhanced AI Learning: Trade data + market data processed for {symbol}")
                 
                 # 🚀 ULTRA AI LEARNING (ALL 10 MODULES!)
-                if self.ultra_ai_enabled and self.ultra_ai:
+                if getattr(self, 'ultra_ai_enabled', False) and getattr(self, 'ultra_ai', None):
                     try:
                         # Prepare comprehensive trade data for Ultra AI
                         ultra_trade_data = {
@@ -5652,7 +5652,7 @@ class LegendaryCryptoTitanBot:
             }
             
             # Add loss analysis if it's a loss
-            if pnl < 0 and self.loss_learning_mode:
+            if pnl < 0 and getattr(self, 'loss_learning_mode', True):
                 # Only do loss analysis if we have the signal
                 if symbol in self.active_signals:
                     loss_analysis = self._analyze_trading_loss(symbol, self.active_signals[symbol], pnl, position)
@@ -5662,7 +5662,7 @@ class LegendaryCryptoTitanBot:
             ai_brain.learn_from_trade(trade_data)
             
             # 🧠 CONTINUOUS LEARNING ENGINE: Feed every trade to self-improving AI
-            if self.continuous_learning_enabled and self.learning_engine:
+            if getattr(self, 'continuous_learning_enabled', False) and getattr(self, 'learning_engine', None):
                 try:
                     self.learning_engine.learn_from_trade(trade_data)
                     
@@ -5676,7 +5676,7 @@ class LegendaryCryptoTitanBot:
                     pass  # Silent fail - don't interrupt trading
             
             # 🏆 RECORD TRADE OUTCOME FOR 90% WIN RATE TRACKING
-            if self.win_rate_optimizer_enabled and symbol in self.active_signals:
+            if getattr(self, 'win_rate_optimizer_enabled', True) and symbol in self.active_signals:
                 sig_for_quality = self.active_signals[symbol]
                 quality_score = self._calculate_trade_quality_score(sig_for_quality, {'price': sig_for_quality.entry_price})
                 self._record_trade_outcome(
@@ -8784,7 +8784,7 @@ class LegendaryCryptoTitanBot:
                 continue
             
             # 🎯 90% WIN RATE QUALITY FILTER
-            if self.win_rate_optimizer_enabled and getattr(signal, 'strategy_name', '') != 'FORCED_LEARNING':
+            if getattr(self, 'win_rate_optimizer_enabled', True) and getattr(signal, 'strategy_name', '') != 'FORCED_LEARNING':
                 quality_score = self._calculate_trade_quality_score(signal, {'price': signal.entry_price})
                 should_take, reason = self._should_take_trade(quality_score, signal.confidence)
                 
@@ -8927,7 +8927,7 @@ class LegendaryCryptoTitanBot:
                 continue
             
             # 🎯 90% WIN RATE QUALITY FILTER FOR LEGENDARY TRADES
-            if self.win_rate_optimizer_enabled:
+            if getattr(self, 'win_rate_optimizer_enabled', True):
                 quality_score = self._calculate_trade_quality_score(signal, {'price': signal.entry_price})
                 should_take, reason = self._should_take_trade(quality_score, signal.confidence)
                 
@@ -9042,7 +9042,7 @@ class LegendaryCryptoTitanBot:
                     reason = f"LEGENDARY STOP ({position_sl_pct:.2f}%)"
             
             # FORCED LEARNING MODE: Close after max_hold_cycles
-            elif self.force_learning_mode and self.position_cycles[symbol] >= self.max_hold_cycles:
+            elif getattr(self, 'force_learning_mode', False) and self.position_cycles[symbol] >= self.max_hold_cycles:
                 should_close = True
                 reason = f"LEGENDARY FORCED LEARNING CLOSE (Cycle {self.position_cycles[symbol]})"
                 print(f"   🎓 {symbol}: LEGENDARY FORCED CLOSE for AI learning after {self.position_cycles[symbol]} cycles")
@@ -9057,7 +9057,7 @@ class LegendaryCryptoTitanBot:
                     del self.position_cycles[symbol]
             else:
                 status = "🏆" if unrealized_pnl > 0 else "🔥" if unrealized_pnl < 0 else "💎"
-                cycles_info = f" [Cycle {self.position_cycles[symbol]}/{self.max_hold_cycles}]" if self.force_learning_mode else ""
+                cycles_info = f" [Cycle {self.position_cycles[symbol]}/{self.max_hold_cycles}]" if getattr(self, 'force_learning_mode', False) else ""
                 print(f"   {status} {symbol}: ${current_value:.2f} ({pnl_pct:+.2f}%) - LEGENDARY HOLD{cycles_info}")
                 
                 # ALSO LEARN FROM OPEN LEGENDARY POSITIONS (continuous learning)
@@ -9097,7 +9097,7 @@ class LegendaryCryptoTitanBot:
                         )
                 
                 # 🎓 ADVANCED LOSS LEARNING SYSTEM
-                if pnl < 0 and self.loss_learning_mode:
+                if pnl < 0 and getattr(self, 'loss_learning_mode', True):
                     loss_analysis = self._analyze_trading_loss(symbol, signal, pnl, position)
                     print(f"\n🧠 LOSS ANALYSIS FOR {symbol}:")
                     print(f"   📉 Loss Amount: ${pnl:+.2f}")
@@ -9143,12 +9143,12 @@ class LegendaryCryptoTitanBot:
                 }
                 
                 # Add loss analysis to trade data if it's a loss
-                if pnl < 0 and self.loss_learning_mode:
+                if pnl < 0 and getattr(self, 'loss_learning_mode', True):
                     legendary_trade_data['loss_analysis'] = loss_analysis
                 ai_brain.learn_from_trade(legendary_trade_data)
                 
                 # 🏆 RECORD LEGENDARY TRADE OUTCOME FOR 90% WIN RATE TRACKING
-                if self.win_rate_optimizer_enabled:
+                if getattr(self, 'win_rate_optimizer_enabled', True):
                     quality_score = self._calculate_trade_quality_score(signal, {'price': signal.entry_price})
                     self._record_trade_outcome(
                         symbol=symbol,
