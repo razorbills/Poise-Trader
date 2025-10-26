@@ -284,11 +284,37 @@ class LiveMexcDataFeed:
     """Live MEXC data feed (simulated for paper trading)"""
     
     def __init__(self):
-        self.symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT']
+        self.symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'XRP/USDT', 
+                       'ADA/USDT', 'DOGE/USDT', 'MATIC/USDT', 'DOT/USDT', 'AVAX/USDT',
+                       'LINK/USDT', 'UNI/USDT', 'ATOM/USDT', 'LTC/USDT', 'APT/USDT',
+                       'ARB/USDT', 'OP/USDT', 'SUI/USDT', 'TIA/USDT', 'SEI/USDT',
+                       'XAU/USDT', 'XAG/USDT', 'WTI/USDT']
         self.base_prices = {
+            # Cryptocurrencies
             'BTC/USDT': 65000,
             'ETH/USDT': 3500,
-            'BNB/USDT': 580
+            'BNB/USDT': 580,
+            'SOL/USDT': 150,
+            'XRP/USDT': 0.55,
+            'ADA/USDT': 0.45,
+            'DOGE/USDT': 0.12,
+            'MATIC/USDT': 0.85,
+            'DOT/USDT': 7.5,
+            'AVAX/USDT': 38,
+            'LINK/USDT': 14,
+            'UNI/USDT': 8.5,
+            'ATOM/USDT': 9.5,
+            'LTC/USDT': 85,
+            'APT/USDT': 10,
+            'ARB/USDT': 1.2,
+            'OP/USDT': 2.5,
+            'SUI/USDT': 1.8,
+            'TIA/USDT': 8.0,
+            'SEI/USDT': 0.45,
+            # Precious Metals & Commodities
+            'XAU/USDT': 2050,    # Gold (simulated USDT price)
+            'XAG/USDT': 24.5,    # Silver (simulated USDT price)
+            'WTI/USDT': 78.0     # Crude Oil (simulated USDT price)
         }
         
     async def get_multiple_prices(self, symbols: List[str]) -> Dict[str, float]:
@@ -305,6 +331,9 @@ class LiveMexcDataFeed:
                 # Update base price for next call
                 self.base_prices[symbol] = new_price
                 prices[symbol] = new_price
+            else:
+                # Silently skip invalid symbols (they won't appear in returned dict)
+                pass
                 
         return prices
     

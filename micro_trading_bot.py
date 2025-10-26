@@ -2046,6 +2046,8 @@ class LegendaryCryptoTitanBot:
         self.asset_multipliers = {
             'BTC/USDT': 1.2,   # Bitcoin gets higher allocation (market leader)
             'ETH/USDT': 1.1,   # Ethereum second priority
+            'SOL/USDT': 1.0,   # Solana - standard
+            'BNB/USDT': 1.0,   # Binance Coin - standard
             'XAU/USDT': 0.8,   # Gold - safer, smaller positions
             'XAG/USDT': 0.7,   # Silver - even smaller
             'WTI/USDT': 0.9    # Oil - moderate
@@ -2965,6 +2967,8 @@ class LegendaryCryptoTitanBot:
         self.asset_multipliers = {
             'BTC/USDT': 1.2,   # Bitcoin gets higher allocation (market leader)
             'ETH/USDT': 1.1,   # Ethereum second priority
+            'SOL/USDT': 1.0,   # Solana - standard
+            'BNB/USDT': 1.0,   # Binance Coin - standard
             'XAU/USDT': 0.8,   # Gold - safer, smaller positions
             'XAG/USDT': 0.7,   # Silver - even smaller
             'WTI/USDT': 0.9    # Oil - moderate
@@ -3249,6 +3253,7 @@ class LegendaryCryptoTitanBot:
             self.symbols = [
                 'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
                 'ADA/USDT', 'DOGE/USDT', 'MATIC/USDT', 'LINK/USDT', 'AVAX/USDT',
+                'DOT/USDT', 'ATOM/USDT', 'LTC/USDT',
                 'XAU/USDT', 'XAG/USDT', 'WTI/USDT'
             ]
         self.confidence_threshold = 0.15  # ULTRA AGGRESSIVE: 15% threshold for more trades!
@@ -3624,6 +3629,16 @@ class LegendaryCryptoTitanBot:
                 print("✅ Professional features activated!")
             except Exception as e:
                 print(f"⚠️ Error activating professional features: {e}")
+        
+        # Validate and filter symbols (remove any invalid symbols)
+        valid_symbols = []
+        if hasattr(self.data_feed, 'base_prices'):
+            valid_symbols = [s for s in self.active_symbols if s in self.data_feed.base_prices]
+            if len(valid_symbols) < len(self.active_symbols):
+                invalid = [s for s in self.active_symbols if s not in self.data_feed.base_prices]
+                print(f"\n⚠️  Filtered out {len(invalid)} invalid symbols: {', '.join(invalid)}")
+                self.active_symbols = valid_symbols
+                print(f"✅ Trading with {len(valid_symbols)} valid symbols")
         
         # Start background price fetcher (runs even when paused)
         asyncio.create_task(self._background_price_fetcher())
