@@ -576,12 +576,57 @@ class LivePaperTradingManager:
             return False
     
     def _load_state(self):
-        """Load trading state from file"""
+        """Load trading state from file - with automatic stale data detection"""
         try:
             if os.path.exists(self.state_file):
                 with open(self.state_file, 'r') as f:
                     state = json.load(f)
                 
+                # Check if state is stale (older than 30 minutes = probably from old deployment)
+                last_save_time = state.get('last_save_time')
+                is_stale = False
+                
+                if last_save_time:
+                    try:
+                        last_save = datetime.fromisoformat(last_save_time)
+                        age_minutes = (datetime.now() - last_save).total_seconds() / 60
+                        
+                        if age_minutes > 30:
+                            is_stale = True
+                            print(f"⚠️ State is {age_minutes:.1f} minutes old - STALE DATA DETECTED")
+                    except:
+                        pass
+                
+                # Check for unrealistic position prices (indicates old/corrupted data)
+                positions = state.get("positions", {})
+                has_unrealistic_prices = False
+                
+                for symbol, pos in positions.items():
+                    if pos.get('quantity', 0) > 0:
+                        avg_price = pos.get('avg_price', 0)
+                        # Check if prices are wildly unrealistic
+                        if symbol == "BTC/USDT" and (avg_price > 120000 or avg_price < 20000):
+                            has_unrealistic_prices = True
+                            print(f"⚠️ Unrealistic BTC price detected: ${avg_price:,.2f}")
+                        elif symbol == "ETH/USDT" and (avg_price > 10000 or avg_price < 1000):
+                            has_unrealistic_prices = True
+                            print(f"⚠️ Unrealistic ETH price detected: ${avg_price:,.2f}")
+                
+                # If data is stale or has unrealistic prices, start fresh
+                if is_stale or has_unrealistic_prices:
+                    print("🔄 STARTING FRESH - Stale/corrupted data detected")
+                    print(f"   Reason: {'Stale timestamp' if is_stale else 'Unrealistic prices'}")
+                    
+                    # Delete the stale state file
+                    try:
+                        os.remove(self.state_file)
+                        print(f"   🗑️ Deleted stale state file")
+                    except:
+                        pass
+                    
+                    return False  # Start fresh
+                
+                # Data looks good - load it
                 self.cash_balance = state.get("cash_balance", self.initial_capital)
                 self.positions = state.get("positions", {})
                 self.trade_history = state.get("trade_history", [])
@@ -592,7 +637,7 @@ class LivePaperTradingManager:
                 if "initial_capital" in state:
                     self.initial_capital = state["initial_capital"]
                 
-                print(f"📂 Loaded state from {state.get('last_save_time', 'unknown time')}")
+                print(f"✅ Loaded valid state from {state.get('last_save_time', 'unknown time')}")
                 return True
             return False
         except Exception as e:

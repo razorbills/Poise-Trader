@@ -165,6 +165,19 @@ from live_paper_trading_test import LiveMexcDataFeed, LivePaperTradingManager
 from ai_brain import ai_brain
 from real_data_apis import real_data_apis
 
+# 📊 COMPREHENSIVE TECHNICAL ANALYSIS - ALL INDICATORS & PATTERNS
+try:
+    from comprehensive_technical_analysis import ComprehensiveTechnicalAnalysis, PatternSignal
+    COMPREHENSIVE_TA_AVAILABLE = True
+    print("📊 COMPREHENSIVE TECHNICAL ANALYSIS LOADED!")
+    print("   ✓ 5 Core Indicators (MA, EMA, MACD, RSI, Bollinger)")
+    print("   ✓ 8 Chart Patterns (Triangles, H&S, Double Tops/Bottoms)")
+    print("   ✓ 10+ Candlestick Patterns (Doji, Engulfing, Hammers)")
+    print("   ✓ 6 Harmonic Patterns (Gartley, Butterfly, Crab)")
+except ImportError as e:
+    COMPREHENSIVE_TA_AVAILABLE = False
+    print(f"⚠️ Comprehensive TA not available: {e}")
+
 # 🏆 PROFESSIONAL TRADING ENHANCEMENTS
 try:
     from professional_bot_integration import ProfessionalBotIntegration
@@ -2060,6 +2073,13 @@ class LegendaryCryptoTitanBot:
         
         # NO MOCK BRAIN ATTRIBUTES - Use real components only
         # If advanced brain components are not available, the bot will gracefully skip them
+        
+        # 📊 COMPREHENSIVE TECHNICAL ANALYSIS ENGINE
+        if COMPREHENSIVE_TA_AVAILABLE:
+            self.comprehensive_ta = ComprehensiveTechnicalAnalysis()
+            print("✅ Comprehensive TA engine initialized")
+        else:
+            self.comprehensive_ta = None
         
         # Initialize data feed FIRST - REAL DATA ONLY!
         try:
@@ -4510,7 +4530,7 @@ class LegendaryCryptoTitanBot:
                 allocation = 1.0  # Full allocation in basic mode
             
             # 🎯 PRECISION MODE: Boost signals with institutional confirmation
-            if getattr(self, 'precision_mode_enabled', False) and hasattr(self, 'current_institutional_intel'):
+            if self.precision_mode_enabled and hasattr(self, 'current_institutional_intel'):
                 inst_intel = self.current_institutional_intel
                 
                 # Check timeframe alignment for this symbol
@@ -4533,6 +4553,46 @@ class LegendaryCryptoTitanBot:
                 if (action == 'BUY' and 'BUY' in order_flow) or (action == 'SELL' and 'SELL' in order_flow):
                     signal.confidence = min(0.95, signal.confidence * 1.05)
                     print(f"   💼 {symbol}: ORDER FLOW {order_flow} - Confidence boosted to {signal.confidence:.1%}")
+                
+                # 📊 COMPREHENSIVE TECHNICAL ANALYSIS CHECK
+                if self.comprehensive_ta and symbol in self.price_history and len(self.price_history[symbol]) >= 50:
+                    try:
+                        print(f"   📊 Running comprehensive TA for {symbol}...")
+                        prices = list(self.price_history[symbol])
+                        ta_result = self.comprehensive_ta.analyze(prices)
+                        
+                        if 'error' not in ta_result:
+                            ta_action = ta_result.get('recommended_action', 'HOLD')
+                            ta_confidence = ta_result.get('confidence', 0.0)
+                            ta_score = ta_result.get('score', 0.0)
+                            
+                            # Check if TA agrees with signal
+                            if (action == 'BUY' and ta_action == 'BUY') or (action == 'SELL' and ta_action == 'SELL'):
+                                # TA confirms signal - BOOST!
+                                boost_factor = 1 + (ta_confidence * 0.2)  # Up to +20% boost
+                                signal.confidence = min(0.95, signal.confidence * boost_factor)
+                                print(f"   📈 {symbol}: TA CONFIRMS {ta_action} (Score: {ta_score:.1f}/10) - Confidence: {signal.confidence:.1%}")
+                                
+                                # Log detected patterns
+                                patterns = ta_result.get('chart_patterns', [])
+                                if patterns:
+                                    pattern_names = [p.pattern_type for p in patterns[:3]]
+                                    print(f"      🔍 Patterns: {', '.join(pattern_names)}")
+                                
+                                indicators = ta_result.get('indicators', {})
+                                if indicators:
+                                    rsi = indicators.get('rsi', 50)
+                                    macd_signal = indicators.get('macd_crossover', 'N/A')
+                                    trend = indicators.get('trend', 'N/A')
+                                    print(f"      📊 RSI: {rsi:.1f} | MACD: {macd_signal} | Trend: {trend}")
+                            elif ta_action == 'HOLD':
+                                print(f"   ⚠️ {symbol}: TA suggests HOLD (Score: {ta_score:.1f}/10) - Neutral confirmation")
+                            else:
+                                # TA disagrees with signal - WARNING
+                                print(f"   ⚠️ {symbol}: TA CONFLICT! TA says {ta_action} but signal is {action}")
+                                signal.confidence = max(0.2, signal.confidence * 0.90)  # Reduce confidence by 10%
+                    except Exception as e:
+                        print(f"   ⚠️ TA analysis error for {symbol}: {e}")
             
             signals.append(signal)
             print(f"   📈 {symbol}: {action} signal generated (Confidence: {final_confidence:.1%}, Allocation: {allocation:.1%})")
