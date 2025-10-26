@@ -4136,7 +4136,7 @@ class LegendaryCryptoTitanBot:
         portfolio_data = comprehensive_analysis.get('portfolio_ai', {})
         
         # 🎯 PRECISION MODE: INSTITUTIONAL-GRADE DEEP MARKET ANALYSIS
-        if self.precision_mode_enabled:
+        if getattr(self, 'precision_mode_enabled', False):
             print("\n🎯 PRECISION MODE: INSTITUTIONAL-GRADE ANALYSIS ACTIVATED")
             print("   📊 Analyzing order flow, market microstructure, and trader behavior...")
             
@@ -4510,7 +4510,7 @@ class LegendaryCryptoTitanBot:
                 allocation = 1.0  # Full allocation in basic mode
             
             # 🎯 PRECISION MODE: Boost signals with institutional confirmation
-            if self.precision_mode_enabled and hasattr(self, 'current_institutional_intel'):
+            if getattr(self, 'precision_mode_enabled', False) and hasattr(self, 'current_institutional_intel'):
                 inst_intel = self.current_institutional_intel
                 
                 # Check timeframe alignment for this symbol
