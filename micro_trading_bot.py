@@ -2445,7 +2445,7 @@ class LegendaryCryptoTitanBot:
         try:
             print("   🎯 Initializing PROFESSIONAL QUALITY FILTER...")
             self.win_rate_optimizer_enabled = True  # ALWAYS ENABLED - Professional trader standards!
-            self.min_trade_quality_score = 60.0  # BALANCED STANDARD - Quality setups (will be overridden by mode config)
+            self.min_trade_quality_score = 65.0  # BALANCED STANDARD - Quality setups (will be overridden by mode config)
             self.min_confidence_for_trade = 0.30  # 30% minimum confidence (will be overridden by mode config)
             self.min_risk_reward_ratio = 1.8  # Minimum 1.8:1 RR ratio
             self.optimal_risk_reward = 2.0  # Target 2:1 RR
@@ -3542,7 +3542,7 @@ class LegendaryCryptoTitanBot:
             return False, f"Confidence too low: {signal_confidence:.2%} < {self.min_confidence_for_trade:.2%}"
         
         # Check quality score - PROFESSIONAL STANDARD
-        min_quality = getattr(self, 'min_trade_quality_score', 75.0)
+        min_quality = getattr(self, 'min_trade_quality_score', 65.0)
         if quality_score < min_quality:
             print(f"      ❌ REJECTED: Quality {quality_score:.1f} < {min_quality}")
             return False, f"Quality score too low: {quality_score:.1f} < {min_quality}"
@@ -3552,13 +3552,13 @@ class LegendaryCryptoTitanBot:
         if hasattr(self, 'current_institutional_intel') and self.current_institutional_intel:
             inst_score = self.current_institutional_intel.get('institutional_score', 5.0)
             
-            # Require minimum institutional score for PRECISION trades
-            if inst_score < 6.0:
+            # Require minimum institutional score for PRECISION trades (lowered from 6.0 to 4.5)
+            if inst_score < 4.5:
                 print(f"      ❌ REJECTED: Institutional score too low ({inst_score:.1f}/10)")
-                print(f"         Professional traders not active enough for high-probability setup")
-                return False, f"Institutional score {inst_score:.1f} < 6.0 - waiting for better conditions"
+                print(f"         Market conditions not favorable for high-probability setup")
+                return False, f"Institutional score {inst_score:.1f} < 4.5 - waiting for better conditions"
             else:
-                print(f"      ✅ INSTITUTIONAL: Score {inst_score:.1f}/10 - Professional activity detected")
+                print(f"      ✅ INSTITUTIONAL: Score {inst_score:.1f}/10 - Market conditions acceptable")
         
         # Pause trading during losing streaks - PROTECT CAPITAL
         if self.consecutive_losses >= 3:
@@ -3995,7 +3995,7 @@ class LegendaryCryptoTitanBot:
                     self.base_confidence_threshold = config['min_confidence']
                     self.fast_mode_enabled = False
                     self.precision_mode_enabled = True
-                    self.min_price_history = 50
+                    self.min_price_history = 30  # Reduced from 50 - start trading sooner
                     self.confidence_adjustment_factor = 0.01
                     self.aggressive_trade_guarantee = False
                     self.cycle_sleep_override = None
@@ -4042,7 +4042,7 @@ class LegendaryCryptoTitanBot:
                 self.base_confidence_threshold = config['min_confidence']
                 self.fast_mode_enabled = False
                 self.precision_mode_enabled = True
-                self.min_price_history = 50
+                self.min_price_history = 30  # Reduced from 50 - start trading sooner
                 self.confidence_adjustment_factor = 0.01
                 self.aggressive_trade_guarantee = False
                 self.cycle_sleep_override = None
@@ -4242,9 +4242,12 @@ class LegendaryCryptoTitanBot:
             
             # Check if market conditions are favorable for high-quality trades
             institutional_score = institutional_intel.get('institutional_score', 5.0)
-            if institutional_score < 6.0:
+            if institutional_score < 4.5:
                 print(f"   ⚠️ CAUTION: Institutional score low ({institutional_score:.1f}/10)")
-                print(f"   📉 Market conditions not optimal for high-probability trades")
+                print(f"   📉 Market conditions below threshold - trades may be limited")
+            elif institutional_score >= 6.0:
+                print(f"   ✅ EXCELLENT: Institutional score strong ({institutional_score:.1f}/10)")
+                print(f"   📈 Market conditions favorable for high-probability trades")
         
         # Apply geopolitical defense mode if needed
         current_defense_mode = geo_intelligence.get('defense_mode', 'NORMAL')
@@ -8075,8 +8078,8 @@ class LegendaryCryptoTitanBot:
             analyzed_symbols = 0
             
             for symbol in self.active_symbols[:10]:  # Analyze top 10 symbols
-                if symbol not in self.price_history or len(self.price_history[symbol]) < 30:
-                    continue
+                if symbol not in self.price_history or len(self.price_history[symbol]) < 20:
+                    continue  # Reduced from 30 to 20 - analyze sooner
                 
                 prices = list(self.price_history[symbol])
                 analyzed_symbols += 1
@@ -8180,17 +8183,21 @@ class LegendaryCryptoTitanBot:
                 # Calculate Institutional Score (0-10)
                 score = 5.0  # Base neutral
                 
-                # Boost for smart money activity
+                # Boost for smart money activity (more lenient - any activity counts)
+                if smart_total > 0:
+                    score += 1.0  # Some institutional activity detected
                 if smart_total > 2:
-                    score += 1.5
+                    score += 0.5  # Strong institutional activity
                 
                 # Boost for timeframe alignment
                 aligned_count = sum(1 for s in analysis['timeframe_alignment'].values() if s.get('aligned'))
                 score += (aligned_count / max(analyzed_symbols, 1)) * 2.0
                 
-                # Boost for clear order flow
+                # Boost for clear order flow (more lenient)
                 if analysis['order_flow_bias'] in ['STRONG BUY', 'STRONG SELL']:
                     score += 1.0
+                elif analysis['order_flow_bias'] in ['BUY', 'SELL']:
+                    score += 0.5  # Even moderate directional bias helps
                 
                 # Penalty for high retail panic
                 if retail_total > 5:  # Too much retail noise
@@ -8217,11 +8224,12 @@ class LegendaryCryptoTitanBot:
             print(f"   ⚠️ Error in institutional analysis: {e}")
             import traceback
             traceback.print_exc()
+            # Return neutral score that will allow trading to continue
             return {
                 'order_flow_bias': 'NEUTRAL',
                 'smart_money_direction': 'NEUTRAL',
                 'retail_sentiment': 0.5,
-                'institutional_score': 5.0,
+                'institutional_score': 5.0,  # Neutral score allows trades above 4.5 threshold
                 'volume_profile': {},
                 'liquidity_analysis': {},
                 'timeframe_alignment': {},
@@ -10836,7 +10844,7 @@ class TradingGUI:
             config = self.bot.mode_config['PRECISION']
             self.bot.fast_mode_enabled = False
             self.bot.precision_mode_enabled = True
-            self.bot.min_price_history = 50
+            self.bot.min_price_history = 30  # Reduced from 50 - start trading sooner
             self.bot.confidence_adjustment_factor = 0.01
             # Disable guarantee in Normal mode
             self.bot.aggressive_trade_guarantee = False
@@ -11144,7 +11152,7 @@ async def main(legendary_bot):
         legendary_bot.base_confidence_threshold = _cfg['min_confidence']
         legendary_bot.fast_mode_enabled = False
         legendary_bot.precision_mode_enabled = True
-        legendary_bot.min_price_history = 50
+        legendary_bot.min_price_history = 30  # Reduced from 50 - start trading sooner
         legendary_bot.confidence_adjustment_factor = 0.01
         legendary_bot.aggressive_trade_guarantee = False
         legendary_bot.cycle_sleep_override = None
