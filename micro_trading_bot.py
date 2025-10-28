@@ -2445,7 +2445,7 @@ class LegendaryCryptoTitanBot:
         try:
             print("   🎯 Initializing PROFESSIONAL QUALITY FILTER...")
             self.win_rate_optimizer_enabled = True  # ALWAYS ENABLED - Professional trader standards!
-            self.min_trade_quality_score = 65.0  # BALANCED STANDARD - Quality setups (will be overridden by mode config)
+            self.min_trade_quality_score = 55.0  # BALANCED STANDARD - Filters weak trades, allows decent setups
             self.min_confidence_for_trade = 0.30  # 30% minimum confidence (will be overridden by mode config)
             self.min_risk_reward_ratio = 1.8  # Minimum 1.8:1 RR ratio
             self.optimal_risk_reward = 2.0  # Target 2:1 RR
@@ -3413,38 +3413,62 @@ class LegendaryCryptoTitanBot:
             score = 0.0
             market_data = market_data or {}
             
-            # 1. Confidence Score (30% weight)
-            confidence_score = signal.confidence * 30
+            # 1. Confidence Score (30% weight) - More demanding
+            # Require 50%+ confidence for decent scores
+            if signal.confidence >= 0.70:
+                confidence_score = 30.0  # Excellent
+            elif signal.confidence >= 0.60:
+                confidence_score = 25.0  # Very good
+            elif signal.confidence >= 0.50:
+                confidence_score = 20.0  # Good
+            elif signal.confidence >= 0.40:
+                confidence_score = 15.0  # Acceptable
+            else:
+                confidence_score = signal.confidence * 20  # Weak
             score += confidence_score
             
-            # 2. Risk/Reward Score (25% weight)
+            # 2. Risk/Reward Score (25% weight) - STRICT
             # Calculate R/R from signal take_profit and stop_loss
             entry_price = market_data.get('price', signal.entry_price if hasattr(signal, 'entry_price') else 0)
             if entry_price > 0:
-                tp = signal.take_profit if hasattr(signal, 'take_profit') else entry_price * 1.03
-                sl = signal.stop_loss if hasattr(signal, 'stop_loss') else entry_price * 0.99
+                tp = signal.take_profit if hasattr(signal, 'take_profit') else entry_price * 1.035
+                sl = signal.stop_loss if hasattr(signal, 'stop_loss') else entry_price * 0.985
                 risk = abs(entry_price - sl)
                 reward = abs(tp - entry_price)
                 rr_ratio = reward / risk if risk > 0 else 0
                 
+                # PRECISION mode needs good R/R
                 if rr_ratio >= 3.0:
-                    rr_score = 25.0
+                    rr_score = 25.0  # Excellent 3:1
+                elif rr_ratio >= 2.5:
+                    rr_score = 22.0  # Very good
                 elif rr_ratio >= 2.0:
-                    rr_score = 20.0
+                    rr_score = 18.0  # Good 2:1
                 elif rr_ratio >= 1.5:
-                    rr_score = 15.0
+                    rr_score = 12.0  # Acceptable
                 else:
-                    rr_score = 5.0
+                    rr_score = 3.0  # Poor R/R - barely passing
                 score += rr_score
             else:
-                score += 15.0  # Default moderate score
+                score += 12.0  # Default acceptable score
             
-            # 3. Market Condition Score (20% weight)
+            # 3. Market Condition Score (20% weight) - Favor clear trends
             market_score = 0.0
-            if market_data.get('regime') == 'trending':
-                market_score += 10
-            if market_data.get('volatility', 'normal') == 'normal':
-                market_score += 10
+            regime = market_data.get('regime', 'unknown')
+            if regime == 'trending':
+                market_score += 15  # Trends are best for profits
+            elif regime == 'ranging':
+                market_score += 5   # Risky in ranges
+            else:
+                market_score += 10  # Unknown = moderate
+            
+            volatility = market_data.get('volatility', 'normal')
+            if volatility == 'normal':
+                market_score += 5   # Stable conditions
+            elif volatility == 'low':
+                market_score += 3   # Less opportunity
+            else:
+                market_score += 0   # High vol = risky
             score += market_score
             
             # 4. Technical Score (15% weight)
@@ -3480,13 +3504,17 @@ class LegendaryCryptoTitanBot:
                 timing_score = 5.0
             score += timing_score
             
-            # Bonus for winning streaks
+            # Bonus for winning streaks - momentum is real
             if self.current_win_streak >= 3:
-                score += 5.0  # Confidence bonus
+                score += 8.0  # Strong confidence bonus
+            elif self.current_win_streak >= 2:
+                score += 4.0  # Moderate bonus
             
-            # Penalty for losing streaks
-            if self.current_loss_streak >= 2:
-                score -= 5.0
+            # Stricter penalty for losing streaks - stop digging
+            if self.current_loss_streak >= 3:
+                score -= 15.0  # Major penalty - take a break
+            elif self.current_loss_streak >= 2:
+                score -= 8.0   # Moderate penalty - be more careful
             
             # Cap score at 100
             score = min(100.0, max(0.0, score))
@@ -3536,13 +3564,19 @@ class LegendaryCryptoTitanBot:
             return True, f"⚡ AGGRESSIVE: {grade}"
         
         # PRECISION MODE: STRICT PROFESSIONAL STANDARDS
+        
+        # CRITICAL: Stop trading after 3 consecutive losses - take a break!
+        if self.current_loss_streak >= 3:
+            print(f"      ❌ REJECTED: Loss streak ({self.current_loss_streak}) - Taking a break")
+            return False, f"Loss streak protection: {self.current_loss_streak} consecutive losses"
+        
         # Check confidence threshold - MUST be high quality
         if signal_confidence < self.min_confidence_for_trade:
             print(f"      ❌ REJECTED: Confidence {signal_confidence:.1%} < {self.min_confidence_for_trade:.1%}")
             return False, f"Confidence too low: {signal_confidence:.2%} < {self.min_confidence_for_trade:.2%}"
         
         # Check quality score - PROFESSIONAL STANDARD
-        min_quality = getattr(self, 'min_trade_quality_score', 65.0)
+        min_quality = getattr(self, 'min_trade_quality_score', 55.0)
         if quality_score < min_quality:
             print(f"      ❌ REJECTED: Quality {quality_score:.1f} < {min_quality}")
             return False, f"Quality score too low: {quality_score:.1f} < {min_quality}"
@@ -4001,7 +4035,7 @@ class LegendaryCryptoTitanBot:
                     self.cycle_sleep_override = None
                     # PRECISION MODE: Balanced quality trading
                     self.win_rate_optimizer_enabled = True
-                    self.min_trade_quality_score = 60.0  # BALANCED STANDARD (lowered from 75 to allow more trades)
+                    self.min_trade_quality_score = 55.0  # BALANCED - Filters weak trades, allows decent setups
                     # Use config values for confidence (30%)
                     self.max_concurrent_positions = 2  # Focused positions
                     self.max_positions = 3
@@ -4012,7 +4046,7 @@ class LegendaryCryptoTitanBot:
                     self.max_consecutive_losses = 3  # Balanced loss limit (increased from 2)
                     print("\n🎯 PRECISION (NORMAL) MODE SELECTED!")
                     print("   💎 Win rate optimizer: ENABLED")
-                    print("   🎯 Minimum Quality: 60/100, Confidence: 30%")
+                    print("   🎯 Minimum Quality: 55/100, Confidence: 30%")
                     print("   🏆 Target Win Rate: 70%+")
                     print("   📊 Fewer trades, bigger winners")
                     print("   💰 TP: 3.5% | SL: 1.5% | Max Positions: 2")
@@ -4048,7 +4082,7 @@ class LegendaryCryptoTitanBot:
                 self.cycle_sleep_override = None
                 # PRECISION MODE: Balanced quality trading
                 self.win_rate_optimizer_enabled = True
-                self.min_trade_quality_score = 60.0
+                self.min_trade_quality_score = 55.0
                 self.max_concurrent_positions = 2
                 self.max_positions = 3
                 self.take_profit = 3.5  # Professional profit target (3.5%)
@@ -4058,7 +4092,7 @@ class LegendaryCryptoTitanBot:
                 self.max_consecutive_losses = 3
                 print("\n🎯 PRECISION (NORMAL) MODE SELECTED (Auto)!")
                 print("   💎 Win rate optimizer: ENABLED")
-                print("   🎯 Minimum Quality: 60/100, Confidence: 30%")
+                print("   🎯 Minimum Quality: 55/100, Confidence: 30%")
                 print("   🏆 Target Win Rate: 70%+")
                 print("   📊 Fewer trades, bigger winners")
                 print("   💰 TP: 3.5% | SL: 1.5% | Max Positions: 2")
