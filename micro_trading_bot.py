@@ -2002,7 +2002,13 @@ class LegendaryCryptoTitanBot:
         self.daily_pnl = 0.0
         self.consecutive_losses = 0
         self.max_consecutive_losses = 3  # Increased from 2 to allow more trading opportunities
-        self.max_daily_drawdown = 0.03
+        # Dynamic drawdown limit based on account size
+        if initial_capital < 50:
+            self.max_daily_drawdown = 0.20  # 20% for micro accounts
+        elif initial_capital < 500:
+            self.max_daily_drawdown = 0.10  # 10% for small accounts
+        else:
+            self.max_daily_drawdown = 0.05  # 5% for larger accounts
         self.active_signals = {}
         self.price_history = {}
         self.trade_history = []
@@ -2911,7 +2917,13 @@ class LegendaryCryptoTitanBot:
         
         # 🛡️ WORLD-CLASS RISK MANAGEMENT (Better than Orchestrator)
         self.max_risk_per_trade = 0.01  # 1% risk per trade (ultra-conservative for $5)
-        self.max_daily_drawdown = 0.03  # 3% max daily loss (tighter than orchestrator)
+        # Dynamic drawdown limit: 20% for micro accounts (<$50), 10% for small (<$500), 5% for larger
+        if initial_capital < 50:
+            self.max_daily_drawdown = 0.20  # 20% for micro accounts ($1-2 loss on $5)
+        elif initial_capital < 500:
+            self.max_daily_drawdown = 0.10  # 10% for small accounts
+        else:
+            self.max_daily_drawdown = 0.05  # 5% for larger accounts
         self.max_portfolio_risk = 0.05  # 5% total portfolio risk
         self.var_confidence = 0.99  # 99% VaR confidence (better than orchestrator's 95%)
         
@@ -3636,6 +3648,16 @@ class LegendaryCryptoTitanBot:
         try:
             portfolio = await self.trader.get_portfolio_value()
             positions = portfolio.get('positions', {})
+            
+            # 🔥 FIX: Update daily_start_capital to CURRENT balance (not original initial_capital)
+            # This prevents false "daily drawdown" triggers from previous days' losses
+            current_cash = portfolio.get('cash', self.initial_capital)
+            current_value = portfolio.get('total_value', self.initial_capital)
+            self.daily_start_capital = current_value
+            max_loss = current_value * self.max_daily_drawdown
+            print(f"💰 Daily start capital set to current balance: ${current_value:.2f}")
+            print(f"🛡️ Daily drawdown limit: {self.max_daily_drawdown:.0%} (max loss today: ${max_loss:.2f})")
+            
             import time as _time_module
             for symbol, pos in positions.items():
                 if pos.get('quantity', 0) > 0 and symbol not in self.position_entry_time:
@@ -5273,11 +5295,15 @@ class LegendaryCryptoTitanBot:
             print("   ℹ️ No positions to manage")
             return
         
-        # Check daily drawdown limit
+        # Check daily drawdown limit (today's losses only)
         current_total = portfolio['total_value']
-        daily_drawdown = (self.daily_start_capital - current_total) / self.daily_start_capital
-        if daily_drawdown >= self.max_daily_drawdown:
+        daily_drawdown = (self.daily_start_capital - current_total) / self.daily_start_capital if self.daily_start_capital > 0 else 0
+        
+        # Only trigger if we actually lost money TODAY (drawdown > 0)
+        if daily_drawdown >= self.max_daily_drawdown and daily_drawdown > 0:
             print(f"\n🚨 DAILY DRAWDOWN LIMIT REACHED: {daily_drawdown:.1%} >= {self.max_daily_drawdown:.1%}")
+            print(f"   📉 Started today at: ${self.daily_start_capital:.2f}")
+            print(f"   💰 Current balance: ${current_total:.2f}")
             print(f"   🛑 CLOSING ALL POSITIONS FOR RISK MANAGEMENT")
             for symbol, position in positions.items():
                 if position.get('quantity', 0) > 0:

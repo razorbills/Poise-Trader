@@ -261,11 +261,27 @@ class AIBrain:
             current_hour = datetime.now().hour
             current_day = datetime.now().weekday()
             
-            self.brain['time_patterns']['hour_performance'][str(current_hour)]['trades'] += 1
-            self.brain['time_patterns']['hour_performance'][str(current_hour)]['profit'] += profit_loss
+            # Ensure time_patterns structure exists (backward compatibility)
+            if 'time_patterns' not in self.brain:
+                self.brain['time_patterns'] = {
+                    'hour_performance': {str(i): {'trades': 0, 'profit': 0.0} for i in range(24)},
+                    'day_performance': {str(i): {'trades': 0, 'profit': 0.0} for i in range(7)}
+                }
             
-            self.brain['time_patterns']['day_performance'][str(current_day)]['trades'] += 1
-            self.brain['time_patterns']['day_performance'][str(current_day)]['profit'] += profit_loss
+            # Ensure time pattern keys exist (in case loaded from old brain file)
+            hour_key = str(current_hour)
+            day_key = str(current_day)
+            
+            if hour_key not in self.brain['time_patterns']['hour_performance']:
+                self.brain['time_patterns']['hour_performance'][hour_key] = {'trades': 0, 'profit': 0.0}
+            if day_key not in self.brain['time_patterns']['day_performance']:
+                self.brain['time_patterns']['day_performance'][day_key] = {'trades': 0, 'profit': 0.0}
+            
+            self.brain['time_patterns']['hour_performance'][hour_key]['trades'] += 1
+            self.brain['time_patterns']['hour_performance'][hour_key]['profit'] += profit_loss
+            
+            self.brain['time_patterns']['day_performance'][day_key]['trades'] += 1
+            self.brain['time_patterns']['day_performance'][day_key]['profit'] += profit_loss
             
             # Store recent trade for pattern recognition
             trade_record = {
