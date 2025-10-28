@@ -3843,8 +3843,12 @@ class LegendaryCryptoTitanBot:
                 
                 if signals:
                     print(f"   ✅ Generated {len(signals)} signals")
+                    sell_count = sum(1 for sig in signals if sig.action == 'SELL')
+                    if sell_count > 0:
+                        print(f"   ℹ️ {sell_count} SELL signals will be converted to BUY (spot trading only)")
                     for sig in signals[:3]:
-                        print(f"      • {sig.action} {sig.symbol} (Confidence: {sig.confidence:.0%})")
+                        action_display = f"{sig.action} → BUY" if sig.action == 'SELL' else sig.action
+                        print(f"      • {action_display} {sig.symbol} (Confidence: {sig.confidence:.0%})")
                 else:
                     print("   ⚠️ No signals generated")
                 
@@ -8877,10 +8881,18 @@ class LegendaryCryptoTitanBot:
                 else:
                     print(f"   🎯 {signal.symbol}: {reason}")
             
+            # 🚨 SPOT TRADING ONLY: Convert SELL signals to BUY signals
+            # In spot trading, you can only BUY to open positions (no short selling)
+            # SELL is only for closing positions
+            trade_action = signal.action
+            if trade_action == 'SELL':
+                print(f"   🔄 {signal.symbol}: Converting SELL signal to BUY (spot trading - no short selling)")
+                trade_action = 'BUY'
+            
             # Execute micro trade with Ultra AI precision!
             result = await self.trader.execute_live_trade(
                 signal.symbol,
-                signal.action,
+                trade_action,  # Use converted action
                 position_size,
                 signal.stop_loss,
                 signal.take_profit
