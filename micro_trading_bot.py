@@ -657,6 +657,12 @@ class MultiVenueDataAggregator:
         
     async def initialize_venues(self):
         """Initialize connections to multiple exchanges"""
+        try:
+            import ccxt  # type: ignore
+        except ImportError:
+            print("   ⚠️ ccxt library not available - multi-venue aggregation disabled")
+            return
+        
         venue_configs = {
             'mexc': {'sandbox': False, 'rateLimit': 100},
             'binance': {'sandbox': False, 'rateLimit': 1200},
@@ -2918,9 +2924,9 @@ class LegendaryCryptoTitanBot:
         # 🛡️ WORLD-CLASS RISK MANAGEMENT (Better than Orchestrator)
         self.max_risk_per_trade = 0.01  # 1% risk per trade (ultra-conservative for $5)
         # Dynamic drawdown limit: 20% for micro accounts (<$50), 10% for small (<$500), 5% for larger
-        if initial_capital < 50:
+        if self.initial_capital < 50:
             self.max_daily_drawdown = 0.20  # 20% for micro accounts ($1-2 loss on $5)
-        elif initial_capital < 500:
+        elif self.initial_capital < 500:
             self.max_daily_drawdown = 0.10  # 10% for small accounts
         else:
             self.max_daily_drawdown = 0.05  # 5% for larger accounts
@@ -2929,7 +2935,7 @@ class LegendaryCryptoTitanBot:
         
         # Performance tracking
         self.daily_pnl = 0.0
-        self.daily_start_capital = initial_capital
+        self.daily_start_capital = self.initial_capital
         self.win_rate = 0.0
         self.total_completed_trades = 0
         self.winning_trades = 0
@@ -3098,7 +3104,7 @@ class LegendaryCryptoTitanBot:
         # Attributes already initialized early in __init__, just load the systems here
         if ADVANCED_SYSTEMS_AVAILABLE:
             try:
-                self.advanced_intelligence = AdvancedTradingIntelligence(initial_capital)
+                self.advanced_intelligence = AdvancedTradingIntelligence(self.initial_capital)
                 self.multi_strategy_brain = self.advanced_intelligence.multi_strategy_brain
                 self.regime_detector = self.advanced_intelligence.regime_detector
                 self.sentiment_analyzer = self.advanced_intelligence.sentiment_analyzer
@@ -3270,18 +3276,18 @@ class LegendaryCryptoTitanBot:
             ]
         self.confidence_threshold = 0.15  # ULTRA AGGRESSIVE: 15% threshold for more trades!
         self.min_trade_size = 1.00  # Increased for visible P&L
-        self.max_position_size = initial_capital * 0.3
+        self.max_position_size = self.initial_capital * 0.3
         self.trade_count = 0
         
         # Initialize trader for live paper trading
-        self.trader = LivePaperTradingManager(initial_capital)
+        self.trader = LivePaperTradingManager(self.initial_capital)
         self.active_signals = {}  # Track active trading signals
         
         # Initialize Elite Trade Execution Engine
         if ELITE_EXECUTION_AVAILABLE:
             self.elite_engine = EliteTradeExecutionEngine(
-                capital=initial_capital,
-                max_position_size=initial_capital * 0.3,
+                capital=self.initial_capital,
+                max_position_size=self.initial_capital * 0.3,
                 risk_per_trade=self.max_risk_per_trade
             )
             print("⚡ ELITE TRADE EXECUTION ENGINE ACTIVATED!")
@@ -3327,7 +3333,7 @@ class LegendaryCryptoTitanBot:
         print(f"   💧 Devasini's Liquidity: {getattr(self, 'devasini_liquidity_factor', 1.0)}x factor")
         print(f"   🏛️ Armstrong's Edge: {getattr(self, 'armstrong_institutional_edge', 1.0)}x advantage")
         print(f"   ⚡ Legendary Boost: +{getattr(self, 'legendary_confidence_boost', 0.0)*100}% confidence")
-        print(f"   💰 Starting with {initial_capital} SATS for world domination!")
+        print(f"   💰 Starting with {self.initial_capital} SATS for world domination!")
         print(f"   🧠 Advanced Intelligence: Multi-strategy brain, regime detection, sentiment analysis")
         print(f"   🛡️ Self-healing watchdog with auto-recovery and max drawdown protection")
         print(f"   📊 On-chain intelligence and adaptive risk management active")
@@ -5882,7 +5888,8 @@ class LegendaryCryptoTitanBot:
             
             await asyncio.sleep(10)  # Wait 10 seconds
             wait_cycle += 1
-        
+    
+    async def _display_active_positions_detailed(self):
         """Show enhanced micro trading status with all AI features"""
         portfolio = await self.trader.get_portfolio_value()
         
@@ -5891,11 +5898,6 @@ class LegendaryCryptoTitanBot:
         print(f"   📈 Open Trades: {self._get_open_trades_count()}")
         print(f"   🔄 Active Positions: {len(self.trader.positions)}")
         print(f"   🎯 Current Regime: {getattr(self.regime_detector, 'current_regime', type('obj', (object,), {'value': 'sideways'})).value if self.regime_detector else 'sideways'}")
-        print(f"   🧠 AI Win Rate: {ai_brain.brain.get('win_rate', 0):.1%}")
-        print(f"   🤖 ML Accuracy: {ai_brain.brain.get('ml_performance', {}).get('neural_accuracy', 0):.1%}")
-        print(f"   📊 Pattern Success: {ai_brain.brain.get('ml_performance', {}).get('pattern_success', 0):.1%}")
-        print(f"   🎲 RL Reward: {ai_brain.brain.get('ml_performance', {}).get('rl_reward', 0):.2f}")
-        print(f"🔄 Total Trades: {self.trade_count}")
         
         # Advanced AI System Status
         print(f"\n🧠 AI SYSTEM STATUS:")
@@ -5917,11 +5919,14 @@ class LegendaryCryptoTitanBot:
             print(f"   📊 Basic mode - advanced strategy allocations not available")
         
         # Cross-bot learning insights
-        shared_trades = cross_bot_learning.shared_knowledge.get('cross_bot_trades', 0)
-        if shared_trades > 0:
-            print(f"\n🤝 CROSS-BOT LEARNING:")
-            print(f"   🔄 Shared Trades: {shared_trades}")
-            print(f"   🎓 Learning from Profit Bot: Active")
+        try:
+            shared_trades = cross_bot_learning.shared_knowledge.get('cross_bot_trades', 0)
+            if shared_trades > 0:
+                print(f"\n🤝 CROSS-BOT LEARNING:")
+                print(f"   🔄 Shared Trades: {shared_trades}")
+                print(f"   🎓 Learning from Profit Bot: Active")
+        except:
+            pass  # Skip if cross_bot_learning not available
         
         # Active positions with AI insights
         active_pos = [p for p in portfolio['positions'].values() if p.get('quantity', 0) > 0]
@@ -5942,16 +5947,20 @@ class LegendaryCryptoTitanBot:
                     
                     print(f"   {emoji} {symbol:12} ${pos['current_value']:>8,.2f} ({pnl_pct:+6.2f}%){signal_info}")
         
-        # Growth metrics for micro accounts
+        # Growth metrics for micro accounts (simplified - doesn't require cycle count)
         if portfolio['total_value'] > self.initial_capital:
-            growth_rate = ((portfolio['total_value'] / self.initial_capital) ** (1/cycle)) - 1 if cycle > 0 else 0
+            total_growth_pct = ((portfolio['total_value'] / self.initial_capital) - 1) * 100
             print(f"\n🚀 MICRO GROWTH METRICS:")
-            print(f"   📈 Growth Rate: {growth_rate * 100:+.2f}% per cycle")
-            if growth_rate > 0:
-                cycles_to_double = 70 / (growth_rate * 100) if growth_rate > 0 else 0
-                daily_rate = growth_rate * 48  # Assuming 48 cycles per day
+            print(f"   📈 Total Growth: {total_growth_pct:+.2f}%")
+            if total_growth_pct > 0:
+                # Estimate cycles based on number of trades (rough approximation)
+                estimated_cycles = max(self.total_completed_trades, 1)
+                growth_per_cycle = total_growth_pct / estimated_cycles
+                cycles_to_double = 100 / growth_per_cycle if growth_per_cycle > 0 else 0
+                daily_rate = growth_per_cycle * 48  # Assuming 48 cycles per day
+                print(f"   📈 Growth Rate: ~{growth_per_cycle:+.2f}% per cycle (estimated)")
                 print(f"   💫 Cycles to Double: ~{cycles_to_double:.0f}")
-                print(f"   📅 Daily Growth: ~{daily_rate * 100:+.2f}%")
+                print(f"   📅 Daily Growth: ~{daily_rate:+.2f}%")
         
         print("=" * 70)
     
