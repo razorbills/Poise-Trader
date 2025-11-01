@@ -5441,6 +5441,60 @@ class LegendaryCryptoTitanBot:
         position_tp_price = position.get('take_profit', None)
         position_sl_price = position.get('stop_loss', None)
         
+        # CRITICAL FIX: Validate TP/SL values - they must make sense for the position type
+        # For BUY: TP should be > entry, SL should be < entry
+        # For SELL: TP should be < entry, SL should be > entry
+        # IMPORTANT: Also update the position dict so the fix persists
+        if position_tp_price and entry_price > 0:
+            original_tp = position_tp_price
+            if is_sell_order:
+                # SELL: TP should be below entry
+                if position_tp_price > entry_price:
+                    print(f"      ⚠️ WARNING: Invalid TP for SELL position! TP (${position_tp_price:.2f}) > Entry (${entry_price:.2f})")
+                    print(f"      🔧 Auto-correcting TP to be below entry...")
+                    position_tp_price = entry_price * 0.997  # Default 0.3% below
+                    # Update in position dict too
+                    if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
+                        if symbol in self.trader.positions:
+                            self.trader.positions[symbol]['take_profit'] = position_tp_price
+                    print(f"      ✅ TP corrected: ${original_tp:.2f} → ${position_tp_price:.2f}")
+            else:
+                # BUY: TP should be above entry
+                if position_tp_price < entry_price:
+                    print(f"      ⚠️ WARNING: Invalid TP for BUY position! TP (${position_tp_price:.2f}) < Entry (${entry_price:.2f})")
+                    print(f"      🔧 Auto-correcting TP to be above entry...")
+                    position_tp_price = entry_price * 1.003  # Default 0.3% above
+                    # Update in position dict too
+                    if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
+                        if symbol in self.trader.positions:
+                            self.trader.positions[symbol]['take_profit'] = position_tp_price
+                    print(f"      ✅ TP corrected: ${original_tp:.2f} → ${position_tp_price:.2f}")
+        
+        if position_sl_price and entry_price > 0:
+            original_sl = position_sl_price
+            if is_sell_order:
+                # SELL: SL should be above entry
+                if position_sl_price < entry_price:
+                    print(f"      ⚠️ WARNING: Invalid SL for SELL position! SL (${position_sl_price:.2f}) < Entry (${entry_price:.2f})")
+                    print(f"      🔧 Auto-correcting SL to be above entry...")
+                    position_sl_price = entry_price * 1.003  # Default 0.3% above
+                    # Update in position dict too
+                    if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
+                        if symbol in self.trader.positions:
+                            self.trader.positions[symbol]['stop_loss'] = position_sl_price
+                    print(f"      ✅ SL corrected: ${original_sl:.2f} → ${position_sl_price:.2f}")
+            else:
+                # BUY: SL should be below entry
+                if position_sl_price > entry_price:
+                    print(f"      ⚠️ WARNING: Invalid SL for BUY position! SL (${position_sl_price:.2f}) > Entry (${entry_price:.2f})")
+                    print(f"      🔧 Auto-correcting SL to be below entry...")
+                    position_sl_price = entry_price * 0.997  # Default 0.3% below
+                    # Update in position dict too
+                    if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
+                        if symbol in self.trader.positions:
+                            self.trader.positions[symbol]['stop_loss'] = position_sl_price
+                    print(f"      ✅ SL corrected: ${original_sl:.2f} → ${position_sl_price:.2f}")
+        
         # Log if custom TP/SL found
         if position_tp_price or position_sl_price:
             print(f"      🎯 CUSTOM TP/SL DETECTED from Dashboard!")
@@ -5529,8 +5583,10 @@ class LegendaryCryptoTitanBot:
                         should_close = True
                         reason = f"STOP LOSS (${position_sl_price:.2f})"
                         print(f"         ❌ YES - STOP LOSS HIT ON BUY! CLOSING POSITION TO PREVENT FURTHER LOSS!")
+                        print(f"         🚨 URGENT: Current price ${current_price:.2f} <= SL ${position_sl_price:.2f} - FORCING CLOSE!")
                     else:
-                        print(f"         ✅ NO - Safe by ${current_price - position_sl_price:.2f}")
+                        price_diff = position_sl_price - current_price
+                        print(f"         ✅ NO - Safe by ${price_diff:.2f} (Current ${current_price:.2f} > SL ${position_sl_price:.2f})")
             elif pnl_pct <= -position_sl_pct:  # Otherwise use percentage
                 print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%?")
                 if in_grace_period and pnl_pct > -(position_sl_pct * 2):
