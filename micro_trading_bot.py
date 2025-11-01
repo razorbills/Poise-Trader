@@ -5403,11 +5403,16 @@ class LegendaryCryptoTitanBot:
         # Initialize high water mark for trailing stops
         # CRITICAL FIX: For SELL positions, track LOWEST price (best profit point)
         # For BUY positions, track HIGHEST price (best profit point)
+        # IMPORTANT: Only initialize high water mark AFTER grace period to avoid premature trailing stops
         if symbol not in self.position_high_water_marks:
-            self.position_high_water_marks[symbol] = current_price
+            # Initialize with entry price - will be updated only after grace period or when profitable
+            self.position_high_water_marks[symbol] = entry_price if entry_price > 0 else current_price
         
         # Update high water mark if price moved favorably
-        if unrealized_pnl > 0:  # Only update if in profit
+        # CRITICAL: Only update high water mark if we're past grace period OR already in significant profit
+        # This prevents trailing stops from triggering on normal market noise
+        min_profit_for_watermark_update = 0.5  # Must be at least 0.5% in profit to update watermark
+        if unrealized_pnl > 0 and (not in_grace_period or pnl_pct >= min_profit_for_watermark_update):
             if is_sell_order:
                 # SELL: Track LOWEST price (best profit point)
                 self.position_high_water_marks[symbol] = min(self.position_high_water_marks[symbol], current_price)
@@ -5538,9 +5543,11 @@ class LegendaryCryptoTitanBot:
             else:
                 print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%? NO - Still safe")
         
-        # TRAILING STOP (only after grace period, and if not already closing)
-        # CRITICAL FIX: Handle BUY vs SELL positions correctly!
-        if not should_close and not in_grace_period and self.use_trailing_stops and unrealized_pnl > 0:
+        # TRAILING STOP (only after grace period, only if profitable enough, and if not already closing)
+        # CRITICAL FIX: Don't let trailing stops close positions too early in PRECISION mode!
+        # Requirements: 1) After grace period, 2) Minimum profit threshold reached, 3) Not already closing
+        min_profit_for_trailing = 1.0  # Must be at least 1% in profit before trailing stop activates
+        if not should_close and not in_grace_period and self.use_trailing_stops and unrealized_pnl > 0 and pnl_pct >= min_profit_for_trailing:
             water_mark = self.position_high_water_marks[symbol]
             if is_sell_order:
                 # SELL: Trailing stop triggers when price goes UP from lowest point
@@ -5557,8 +5564,10 @@ class LegendaryCryptoTitanBot:
                     reason = f"TRAILING STOP (${trailing_stop_price:.2f})"
                     print(f"      ✅ CONDITION MET: Trailing stop hit on BUY (price dropped)")
         
-        # SMART PROFIT TAKING - Only if not already closing at TP/SL/Trailing
-        if not should_close:
+        # SMART PROFIT TAKING - Only if not already closing at TP/SL/Trailing AND after grace period
+        # CRITICAL FIX: Don't take partial profits too early - let positions develop!
+        # In PRECISION mode, we want positions to reach their full TP target
+        if not should_close and not in_grace_period:
             if pnl_pct >= self.partial_profit_levels[0] and pnl_pct < self.partial_profit_levels[1]:
                 partial_close = True
                 close_percentage = 0.5  # Close 50% at first level - LOCK IN PROFIT!
