@@ -412,15 +412,19 @@ class MockTrader:
                 if amount_usd > self.cash_balance:
                     return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
                 commission = amount_usd * 0.001
-                net_amount = amount_usd - commission
+                net_amount = amount_usd - commission  # Amount available to buy after commission
                 quantity = net_amount / current_price
 
                 pos = self.positions.get(symbol, {"quantity": 0, "avg_price": 0, "total_cost": 0})
                 new_qty = pos["quantity"] + quantity
-                new_cost = pos["total_cost"] + net_amount
+                # CRITICAL FIX: total_cost should include FULL amount paid (including commission)
+                # This is our true cost basis - what we actually spent from cash
+                new_cost = pos["total_cost"] + amount_usd  # Include commission in cost basis!
                 self.positions[symbol] = {
                     "quantity": new_qty,
-                    "avg_price": (new_cost / new_qty) if new_qty > 0 else 0,
+                    # avg_price is what we paid per unit (after commission), used for calculations
+                    "avg_price": (net_amount / quantity) if quantity > 0 else 0,
+                    # total_cost is what we spent total (including commission) - our true cost basis
                     "total_cost": new_cost
                 }
                 self.cash_balance -= amount_usd
@@ -483,7 +487,14 @@ class MockTrader:
                         pass  # Use fallback
                 
                 current_value = pos["quantity"] * current_price
-                total_value += current_value
+                # CRITICAL FIX: Account for sell commission when calculating unrealized P&L
+                # What we'll actually get when we sell = current_value - sell_commission
+                sell_commission = current_value * 0.001  # 0.1% commission on sell
+                net_current_value = current_value - sell_commission
+                # unrealized_pnl = what we'd get if we sold now - what we actually paid
+                unrealized_pnl = net_current_value - pos["total_cost"]
+                
+                total_value += current_value  # Portfolio value includes full market value
                 position_values[symbol] = {
                     "symbol": symbol,
                     "quantity": pos["quantity"],
@@ -491,7 +502,7 @@ class MockTrader:
                     "entry_price": pos["avg_price"],
                     "current_value": current_value,
                     "cost_basis": pos["total_cost"],
-                    "unrealized_pnl": current_value - pos["total_cost"],
+                    "unrealized_pnl": unrealized_pnl,  # Now correctly accounts for both commissions
                     "avg_price": pos["avg_price"],  # Include for calculations
                     # CRITICAL: Include custom TP/SL from dashboard!
                     "take_profit": pos.get("take_profit", None),
@@ -514,7 +525,14 @@ class MockTrader:
                 # Get EXACT current price from position or fallback to avg_price
                 current_price = pos.get("current_price", pos["avg_price"])  # Use stored current price
                 current_value = pos["quantity"] * current_price
-                total_value += current_value
+                # CRITICAL FIX: Account for sell commission when calculating unrealized P&L
+                # What we'll actually get when we sell = current_value - sell_commission
+                sell_commission = current_value * 0.001  # 0.1% commission on sell
+                net_current_value = current_value - sell_commission
+                # unrealized_pnl = what we'd get if we sold now - what we actually paid
+                unrealized_pnl = net_current_value - pos["total_cost"]
+                
+                total_value += current_value  # Portfolio value includes full market value
                 position_values[symbol] = {
                     "symbol": symbol,
                     "quantity": pos["quantity"],
@@ -522,7 +540,7 @@ class MockTrader:
                     "entry_price": pos["avg_price"],
                     "current_value": current_value,
                     "cost_basis": pos["total_cost"],
-                    "unrealized_pnl": current_value - pos["total_cost"],
+                    "unrealized_pnl": unrealized_pnl,  # Now correctly accounts for both commissions
                     "avg_price": pos["avg_price"],  # Include for calculations
                     # CRITICAL: Include custom TP/SL from dashboard!
                     "take_profit": pos.get("take_profit", None),
