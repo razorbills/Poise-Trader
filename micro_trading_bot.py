@@ -5389,16 +5389,31 @@ class LegendaryCryptoTitanBot:
         
         # Calculate P&L percentage correctly for BUY vs SELL
         # NOTE: We already have current_price set above from real MEXC data - don't recalculate it!
+        # CRITICAL FIX: Ensure signal and entry_price exist before accessing
         if is_sell_order:
             # For SELL: profit when price goes down, loss when price goes up
-            entry_price = signal.entry_price
-            pnl_pct = ((entry_price - current_price) / entry_price) * 100
+            if signal and hasattr(signal, 'entry_price') and signal.entry_price > 0:
+                entry_price = signal.entry_price
+            else:
+                # Fallback to position's avg_price if signal entry_price not available
+                entry_price = position.get('avg_price', 0)
+            if entry_price > 0:
+                pnl_pct = ((entry_price - current_price) / entry_price) * 100
+            else:
+                # Fallback calculation if entry_price unavailable
+                pnl_pct = (unrealized_pnl / cost_basis) * 100 if cost_basis > 0 else 0
         else:
             # For BUY: standard P&L calculation
             pnl_pct = (unrealized_pnl / cost_basis) * 100 if cost_basis > 0 else 0
         
         print(f"      P&L %: {pnl_pct:+.2f}%")
         print(f"      Current Price: ${current_price:.4f} (from REAL MEXC feed)")
+        
+        # CHECK GRACE PERIOD - Calculate early so it can be used in watermark logic
+        import time as _time_module
+        entry_time = self.position_entry_time.get(symbol, 0)
+        time_held = _time_module.time() - entry_time if entry_time > 0 else 999
+        in_grace_period = time_held < self.min_hold_time
         
         # Initialize high water mark for trailing stops
         # CRITICAL FIX: For SELL positions, track LOWEST price (best profit point)
@@ -5430,12 +5445,6 @@ class LegendaryCryptoTitanBot:
         partial_close = False
         close_percentage = 1.0
         reason = ""
-        
-        # CHECK GRACE PERIOD - Don't close on stop loss too early
-        import time as _time_module
-        entry_time = self.position_entry_time.get(symbol, 0)
-        time_held = _time_module.time() - entry_time if entry_time > 0 else 999
-        in_grace_period = time_held < self.min_hold_time
         
         # Check for position-specific TP/SL values (from dashboard updates)
         position_tp_price = position.get('take_profit', None)
