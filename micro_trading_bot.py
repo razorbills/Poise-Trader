@@ -5371,7 +5371,15 @@ class LegendaryCryptoTitanBot:
         
         # Get signal info to determine if BUY or SELL
         signal = self.active_signals.get(symbol)
-        is_sell_order = signal and signal.action == 'SELL'
+        # CRITICAL FIX: Default to BUY if signal not found (spot trading only supports long positions)
+        # In spot trading, having quantity > 0 means it's a BUY position
+        if signal:
+            is_sell_order = signal.action == 'SELL'
+        else:
+            # Fallback: Check if position data has action field, otherwise default to BUY (spot = long only)
+            is_sell_order = position.get('action', 'BUY').upper() == 'SELL'
+            if not is_sell_order:
+                print(f"      ⚠️ No signal found for {symbol}, assuming BUY position (spot trading)")
         
         # Calculate P&L percentage correctly for BUY vs SELL
         # NOTE: We already have current_price set above from real MEXC data - don't recalculate it!
@@ -5387,12 +5395,19 @@ class LegendaryCryptoTitanBot:
         print(f"      Current Price: ${current_price:.4f} (from REAL MEXC feed)")
         
         # Initialize high water mark for trailing stops
+        # CRITICAL FIX: For SELL positions, track LOWEST price (best profit point)
+        # For BUY positions, track HIGHEST price (best profit point)
         if symbol not in self.position_high_water_marks:
             self.position_high_water_marks[symbol] = current_price
         
         # Update high water mark if price moved favorably
         if unrealized_pnl > 0:  # Only update if in profit
-            self.position_high_water_marks[symbol] = max(self.position_high_water_marks[symbol], current_price)
+            if is_sell_order:
+                # SELL: Track LOWEST price (best profit point)
+                self.position_high_water_marks[symbol] = min(self.position_high_water_marks[symbol], current_price)
+            else:
+                # BUY: Track HIGHEST price (best profit point)
+                self.position_high_water_marks[symbol] = max(self.position_high_water_marks[symbol], current_price)
         
         # Track position holding cycles
         if symbol not in self.position_cycles:
@@ -5443,14 +5458,30 @@ class LegendaryCryptoTitanBot:
         # CHECK TP/SL FIRST - These take priority over partial profits!
         print(f"\n      🎯 TP/SL CHECK:")
         # TAKE PROFIT - Check price-based TP first, then percentage-based
+        # CRITICAL FIX: Handle BUY vs SELL positions correctly!
+        # BUY: TP when price goes UP (current_price >= tp_price)
+        # SELL: TP when price goes DOWN (current_price <= tp_price)
         if position_tp_price:  # If custom TP price is set, ONLY use that
-            print(f"         Checking CUSTOM TP: Current ${current_price:.2f} >= Target ${position_tp_price:.2f}?")
-            if current_price >= position_tp_price:
-                should_close = True
-                reason = f"PROFIT TARGET (${position_tp_price:.2f})"
-                print(f"         ✅ YES - CLOSING POSITION AT PROFIT!")
+            if is_sell_order:
+                # SELL position: TP triggers when price goes DOWN (current_price <= tp_price)
+                print(f"         Checking CUSTOM TP (SELL): Current ${current_price:.2f} <= Target ${position_tp_price:.2f}?")
+                tp_hit = current_price <= position_tp_price
+                if tp_hit:
+                    should_close = True
+                    reason = f"PROFIT TARGET (${position_tp_price:.2f})"
+                    print(f"         ✅ YES - CLOSING SELL POSITION AT PROFIT! (Price dropped to target)")
+                else:
+                    print(f"         ❌ NO - Need ${current_price - position_tp_price:.2f} more drop")
             else:
-                print(f"         ❌ NO - Need ${position_tp_price - current_price:.2f} more")
+                # BUY position: TP triggers when price goes UP (current_price >= tp_price)
+                print(f"         Checking CUSTOM TP (BUY): Current ${current_price:.2f} >= Target ${position_tp_price:.2f}?")
+                tp_hit = current_price >= position_tp_price
+                if tp_hit:
+                    should_close = True
+                    reason = f"PROFIT TARGET (${position_tp_price:.2f})"
+                    print(f"         ✅ YES - CLOSING BUY POSITION AT PROFIT! (Price rose to target)")
+                else:
+                    print(f"         ❌ NO - Need ${position_tp_price - current_price:.2f} more")
         elif pnl_pct >= position_tp_pct:  # Otherwise use percentage
             should_close = True
             reason = f"PROFIT TARGET ({position_tp_pct:.2f}%)"
@@ -5459,18 +5490,36 @@ class LegendaryCryptoTitanBot:
             print(f"         Checking DEFAULT TP: {pnl_pct:.2f}% >= {position_tp_pct:.2f}%? NO")
         
         # STOP LOSS - Always check SL independently
+        # CRITICAL FIX: Handle BUY vs SELL positions correctly!
+        # BUY: SL when price goes DOWN (current_price <= sl_price)
+        # SELL: SL when price goes UP (current_price >= sl_price)
         if not should_close:
             # STOP LOSS - Check price-based SL first, then percentage-based
             if position_sl_price:  # If custom SL price is set, ONLY use that
-                print(f"         Checking CUSTOM SL: Current ${current_price:.2f} <= Target ${position_sl_price:.2f}?")
-                if current_price <= position_sl_price:
-                    # CUSTOM SL FROM DASHBOARD - CLOSE IMMEDIATELY, NO GRACE PERIOD
-                    # User explicitly set this price, so respect it!
-                    should_close = True
-                    reason = f"STOP LOSS (${position_sl_price:.2f})"
-                    print(f"         ❌ YES - STOP LOSS HIT! CLOSING POSITION TO PREVENT FURTHER LOSS!")
+                if is_sell_order:
+                    # SELL position: SL triggers when price goes UP (current_price >= sl_price)
+                    print(f"         Checking CUSTOM SL (SELL): Current ${current_price:.2f} >= Target ${position_sl_price:.2f}?")
+                    sl_hit = current_price >= position_sl_price
+                    if sl_hit:
+                        # CUSTOM SL FROM DASHBOARD - CLOSE IMMEDIATELY, NO GRACE PERIOD
+                        # User explicitly set this price, so respect it!
+                        should_close = True
+                        reason = f"STOP LOSS (${position_sl_price:.2f})"
+                        print(f"         ❌ YES - STOP LOSS HIT ON SELL! CLOSING POSITION TO PREVENT FURTHER LOSS!")
+                    else:
+                        print(f"         ✅ NO - Safe by ${position_sl_price - current_price:.2f}")
                 else:
-                    print(f"         ✅ NO - Safe by ${current_price - position_sl_price:.2f}")
+                    # BUY position: SL triggers when price goes DOWN (current_price <= sl_price)
+                    print(f"         Checking CUSTOM SL (BUY): Current ${current_price:.2f} <= Target ${position_sl_price:.2f}?")
+                    sl_hit = current_price <= position_sl_price
+                    if sl_hit:
+                        # CUSTOM SL FROM DASHBOARD - CLOSE IMMEDIATELY, NO GRACE PERIOD
+                        # User explicitly set this price, so respect it!
+                        should_close = True
+                        reason = f"STOP LOSS (${position_sl_price:.2f})"
+                        print(f"         ❌ YES - STOP LOSS HIT ON BUY! CLOSING POSITION TO PREVENT FURTHER LOSS!")
+                    else:
+                        print(f"         ✅ NO - Safe by ${current_price - position_sl_price:.2f}")
             elif pnl_pct <= -position_sl_pct:  # Otherwise use percentage
                 print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%?")
                 if in_grace_period and pnl_pct > -(position_sl_pct * 2):
@@ -5484,13 +5533,23 @@ class LegendaryCryptoTitanBot:
                 print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%? NO - Still safe")
         
         # TRAILING STOP (only after grace period, and if not already closing)
+        # CRITICAL FIX: Handle BUY vs SELL positions correctly!
         if not should_close and not in_grace_period and self.use_trailing_stops and unrealized_pnl > 0:
-            high_water_mark = self.position_high_water_marks[symbol]
-            trailing_stop_price = high_water_mark * (1 - self.trailing_stop_distance / 100)
-            if current_price <= trailing_stop_price:
-                should_close = True
-                reason = f"TRAILING STOP (${trailing_stop_price:.2f})"
-                print(f"      ✅ CONDITION MET: Trailing stop hit")
+            water_mark = self.position_high_water_marks[symbol]
+            if is_sell_order:
+                # SELL: Trailing stop triggers when price goes UP from lowest point
+                trailing_stop_price = water_mark * (1 + self.trailing_stop_distance / 100)
+                if current_price >= trailing_stop_price:
+                    should_close = True
+                    reason = f"TRAILING STOP (${trailing_stop_price:.2f})"
+                    print(f"      ✅ CONDITION MET: Trailing stop hit on SELL (price rose)")
+            else:
+                # BUY: Trailing stop triggers when price goes DOWN from highest point
+                trailing_stop_price = water_mark * (1 - self.trailing_stop_distance / 100)
+                if current_price <= trailing_stop_price:
+                    should_close = True
+                    reason = f"TRAILING STOP (${trailing_stop_price:.2f})"
+                    print(f"      ✅ CONDITION MET: Trailing stop hit on BUY (price dropped)")
         
         # SMART PROFIT TAKING - Only if not already closing at TP/SL/Trailing
         if not should_close:
