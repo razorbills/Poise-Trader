@@ -5284,6 +5284,16 @@ class LegendaryCryptoTitanBot:
                 self.trade_count += 1
                 self.active_signals[signal.symbol] = signal
                 
+                # Persist TP/SL and action onto the live position for accurate management
+                if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
+                    if signal.symbol in self.trader.positions:
+                        try:
+                            self.trader.positions[signal.symbol]['take_profit'] = getattr(signal, 'take_profit', None)
+                            self.trader.positions[signal.symbol]['stop_loss'] = getattr(signal, 'stop_loss', None)
+                            self.trader.positions[signal.symbol]['action'] = signal.action
+                        except Exception:
+                            pass
+
                 # Track entry time for grace period
                 import time as _time_module
                 self.position_entry_time[signal.symbol] = _time_module.time()
@@ -5700,8 +5710,18 @@ class LegendaryCryptoTitanBot:
         amount_to_close = close_amount if close_amount else position['current_value']
         is_partial = close_amount is not None
         
+        # Determine correct closing side: SELL to close BUY (long), BUY to close SELL (short)
+        is_sell_order = False
+        signal = self.active_signals.get(symbol)
+        if signal:
+            is_sell_order = signal.action == 'SELL'
+        else:
+            is_sell_order = position.get('action', 'BUY').upper() == 'SELL'
+
+        close_side = 'BUY' if is_sell_order else 'SELL'
+
         result = await self.trader.execute_live_trade(
-            symbol, 'SELL', amount_to_close, f'CLOSE_{reason}'
+            symbol, close_side, amount_to_close, f'CLOSE_{reason}'
         )
         
         if result['success']:
