@@ -5626,13 +5626,9 @@ class LegendaryCryptoTitanBot:
                         print(f"         ✅ NO - Safe by ${price_diff:.2f} (Current ${current_price:.2f} > SL ${position_sl_price:.2f})")
             elif pnl_pct <= -position_sl_pct:  # Otherwise use percentage
                 print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%?")
-                if in_grace_period and pnl_pct > -(position_sl_pct * 2):
-                    # Still in grace period and loss not catastrophic - HOLD
-                    print(f"         ⏳ GRACE PERIOD ACTIVE: Holding despite {pnl_pct:.1f}% loss ({time_held:.0f}s/{self.min_hold_time}s)")
-                else:
-                    should_close = True
-                    reason = f"STOP LOSS ({position_sl_pct:.2f}%)"
-                    print(f"         ❌ YES - STOP LOSS TRIGGERED! CLOSING!")
+                should_close = True
+                reason = f"STOP LOSS ({position_sl_pct:.2f}%)"
+                print(f"         ❌ YES - STOP LOSS TRIGGERED! CLOSING!")
             else:
                 print(f"         Checking DEFAULT SL: {pnl_pct:.2f}% <= -{position_sl_pct:.2f}%? NO - Still safe")
         
