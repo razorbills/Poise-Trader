@@ -5556,6 +5556,8 @@ class LegendaryCryptoTitanBot:
             print(f"         Using DEFAULT SL: -{position_sl_pct:.2f}%")
         
         print(f"      ⏰ Time Held: {time_held:.1f}s | Grace Period: {in_grace_period} | Cycle: {self.position_cycles[symbol]}")
+
+        eps = max(1e-8, abs(current_price) * 1e-6)
         
         # CHECK TP/SL FIRST - These take priority over partial profits!
         print(f"\n      🎯 TP/SL CHECK:")
@@ -5567,7 +5569,7 @@ class LegendaryCryptoTitanBot:
             if is_sell_order:
                 # SELL position: TP triggers when price goes DOWN (current_price <= tp_price)
                 print(f"         Checking CUSTOM TP (SELL): Current ${current_price:.2f} <= Target ${position_tp_price:.2f}?")
-                tp_hit = current_price <= position_tp_price
+                tp_hit = current_price <= (position_tp_price + eps)
                 if tp_hit:
                     should_close = True
                     reason = f"PROFIT TARGET (${position_tp_price:.2f})"
@@ -5577,7 +5579,7 @@ class LegendaryCryptoTitanBot:
             else:
                 # BUY position: TP triggers when price goes UP (current_price >= tp_price)
                 print(f"         Checking CUSTOM TP (BUY): Current ${current_price:.2f} >= Target ${position_tp_price:.2f}?")
-                tp_hit = current_price >= position_tp_price
+                tp_hit = current_price >= (position_tp_price - eps)
                 if tp_hit:
                     should_close = True
                     reason = f"PROFIT TARGET (${position_tp_price:.2f})"
@@ -5601,7 +5603,7 @@ class LegendaryCryptoTitanBot:
                 if is_sell_order:
                     # SELL position: SL triggers when price goes UP (current_price >= sl_price)
                     print(f"         Checking CUSTOM SL (SELL): Current ${current_price:.2f} >= Target ${position_sl_price:.2f}?")
-                    sl_hit = current_price >= position_sl_price
+                    sl_hit = current_price >= (position_sl_price - eps)
                     if sl_hit:
                         # CUSTOM SL FROM DASHBOARD - CLOSE IMMEDIATELY, NO GRACE PERIOD
                         # User explicitly set this price, so respect it!
@@ -5613,7 +5615,7 @@ class LegendaryCryptoTitanBot:
                 else:
                     # BUY position: SL triggers when price goes DOWN (current_price <= sl_price)
                     print(f"         Checking CUSTOM SL (BUY): Current ${current_price:.2f} <= Target ${position_sl_price:.2f}?")
-                    sl_hit = current_price <= position_sl_price
+                    sl_hit = current_price <= (position_sl_price + eps)
                     if sl_hit:
                         # CUSTOM SL FROM DASHBOARD - CLOSE IMMEDIATELY, NO GRACE PERIOD
                         # User explicitly set this price, so respect it!
@@ -9064,24 +9066,40 @@ class LegendaryCryptoTitanBot:
             if trade_action == 'SELL':
                 print(f"   🔄 {signal.symbol}: Converting SELL signal to BUY (spot trading - no short selling)")
                 trade_action = 'BUY'
+
+            try:
+                signal.action = trade_action
+            except Exception:
+                pass
             
             # Execute micro trade with Ultra AI precision!
             result = await self.trader.execute_live_trade(
                 signal.symbol,
                 trade_action,  # Use converted action
                 position_size,
-                signal.stop_loss,
-                signal.take_profit
+                strategy=f"ULTRA_{getattr(signal, 'strategy_name', 'MICRO')}",
+                stop_loss=getattr(signal, 'stop_loss', None),
+                take_profit=getattr(signal, 'take_profit', None)
             )
             
             if result.get('success', False):
                 trades_executed += 1
                 available_cash -= position_size
+
+                self.active_signals[signal.symbol] = signal
+                if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
+                    if signal.symbol in self.trader.positions:
+                        try:
+                            self.trader.positions[signal.symbol]['take_profit'] = getattr(signal, 'take_profit', None)
+                            self.trader.positions[signal.symbol]['stop_loss'] = getattr(signal, 'stop_loss', None)
+                            self.trader.positions[signal.symbol]['action'] = trade_action
+                        except Exception:
+                            pass
                 
                 # TRACK POSITION ENTRY TIME FOR GRACE PERIOD!
                 import time as _t
                 self.position_entry_time[signal.symbol] = _t.time()
-                print(f"   ✅ {signal.symbol}: {signal.action} ${position_size:.2f} @ {signal.confidence:.1%} confidence")
+                print(f"   ✅ {signal.symbol}: {trade_action} ${position_size:.2f} @ {signal.confidence:.1%} confidence")
                 print(f"      📊 Ultra AI: Win Prob {getattr(signal, 'win_probability', 'N/A')} | Risk {getattr(signal, 'risk_score', 'N/A')}")
                 print(f"      ⏰ Entry Time Tracked: Grace period {self.min_hold_time}s active")
                 
@@ -9135,12 +9153,20 @@ class LegendaryCryptoTitanBot:
                         # Execute the forced signal directly, bypassing optimizer
                         max_pos_size = getattr(self, 'max_position_size', available_cash * 0.3)
                         position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
+                        forced_action = getattr(forced, 'action', 'BUY')
+                        if forced_action == 'SELL':
+                            forced_action = 'BUY'
+                        try:
+                            forced.action = forced_action
+                        except Exception:
+                            pass
                         exec_result = await self.trader.execute_live_trade(
                             forced.symbol,
-                            forced.action,
+                            forced_action,
                             position_size,
-                            forced.stop_loss,
-                            forced.take_profit
+                            strategy='AGGRESSIVE_GUARANTEE',
+                            stop_loss=getattr(forced, 'stop_loss', None),
+                            take_profit=getattr(forced, 'take_profit', None)
                         )
                         if exec_result.get('success', False):
                             print(f"   ✅ GUARANTEE {forced.symbol}: {forced.action} ${position_size:.2f}")
@@ -9208,24 +9234,47 @@ class LegendaryCryptoTitanBot:
                 else:
                     print(f"   🏆 {signal.symbol}: LEGENDARY {reason}")
             
+            # 🚨 SPOT TRADING ONLY: Convert SELL signals to BUY signals
+            trade_action = getattr(signal, 'action', 'BUY')
+            if trade_action == 'SELL':
+                print(f"   🔄 {signal.symbol}: Converting SELL signal to BUY (spot trading - no short selling)")
+                trade_action = 'BUY'
+
+            try:
+                signal.action = trade_action
+            except Exception:
+                pass
+
             # Execute with legendary speed!
             result = await self.trader.execute_live_trade(
                 signal.symbol,
-                signal.action,
+                trade_action,
                 position_size,
-                f'LEGENDARY_{signal.strategy_name}'
+                strategy=f"LEGENDARY_{getattr(signal, 'strategy_name', 'MICRO')}",
+                stop_loss=getattr(signal, 'stop_loss', None),
+                take_profit=getattr(signal, 'take_profit', None)
             )
             
             if result['success']:
                 trades_executed += 1
                 self.trade_count += 1
                 self.active_signals[signal.symbol] = signal
+
+                # Persist TP/SL and action onto the live position for accurate management
+                if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
+                    if signal.symbol in self.trader.positions:
+                        try:
+                            self.trader.positions[signal.symbol]['take_profit'] = getattr(signal, 'take_profit', None)
+                            self.trader.positions[signal.symbol]['stop_loss'] = getattr(signal, 'stop_loss', None)
+                            self.trader.positions[signal.symbol]['action'] = trade_action
+                        except Exception:
+                            pass
                 
                 # Track entry time for grace period!
                 import time as _t
                 self.position_entry_time[signal.symbol] = _t.time()
                 
-                print(f"   ✅ {signal.symbol}: LEGENDARY ENTRY - ${position_size:.2f} @ ${signal.entry_price:.4f}")
+                print(f"   ✅ {signal.symbol}: LEGENDARY ENTRY - {trade_action} ${position_size:.2f} @ ${signal.entry_price:.4f}")
                 print(f"      🚀 Expected Return: {signal.expected_return:+.2f}%")
                 print(f"      💎 Legendary Confidence: {signal.confidence:.1%}")
                 print(f"      ⏰ Entry Time Tracked: Grace period {self.min_hold_time}s active")

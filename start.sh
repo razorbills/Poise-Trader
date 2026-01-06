@@ -6,4 +6,4 @@ echo "📦 Python version: $(python --version)"
 echo "💰 Starting trading bot with web service..."
 
 # Run with gunicorn (production server)
-gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 0 web_service_launcher:app
+python render_launcher.py
