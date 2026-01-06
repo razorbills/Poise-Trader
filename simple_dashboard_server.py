@@ -132,8 +132,49 @@ def get_metrics():
         if len(pnl_history) > max_history_points:
             pnl_history.pop(0)
         metrics['pnl_history'] = pnl_history
+
+        try:
+            recent = []
+            if hasattr(bot_instance, 'trade_history') and isinstance(getattr(bot_instance, 'trade_history', None), list):
+                recent = bot_instance.trade_history[-10:]
+            elif hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'trade_history'):
+                recent = bot_instance.trader.trade_history[-10:]
+            metrics['recent_trades'] = recent
+        except Exception:
+            metrics['recent_trades'] = []
     
     return jsonify(metrics)
+
+
+@app.route('/api/trades')
+def get_recent_trades():
+    """Get recent trades in a simple normalized format for the dashboard"""
+    global bot_instance
+
+    trades = []
+    try:
+        if bot_instance and hasattr(bot_instance, 'trade_history') and isinstance(getattr(bot_instance, 'trade_history', None), list):
+            trades = bot_instance.trade_history
+        elif bot_instance and hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'trade_history'):
+            trades = bot_instance.trader.trade_history
+    except Exception:
+        trades = []
+
+    normalized = []
+    for t in (trades or [])[-50:]:
+        try:
+            if not isinstance(t, dict):
+                continue
+            normalized.append({
+                'timestamp': t.get('timestamp') or t.get('time') or datetime.now().isoformat(),
+                'symbol': t.get('symbol', 'UNKNOWN'),
+                'side': (t.get('side') or t.get('action') or '').lower() or 'buy',
+                'pnl': float(t.get('pnl', t.get('profit_loss', 0.0)) or 0.0)
+            })
+        except Exception:
+            continue
+
+    return jsonify({'trades': normalized[-10:]})
 
 @app.route('/api/portfolio')
 def get_portfolio():

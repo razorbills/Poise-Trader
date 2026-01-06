@@ -3292,7 +3292,7 @@ class LegendaryCryptoTitanBot:
                 'DOT/USDT', 'ATOM/USDT', 'LTC/USDT',
                 'XAU/USDT', 'XAG/USDT', 'WTI/USDT'
             ]
-        self.confidence_threshold = 0.15  # ULTRA AGGRESSIVE: 15% threshold for more trades!
+        self.confidence_threshold = 0.30
         self.min_trade_size = 1.00  # Increased for visible P&L
         self.max_position_size = self.initial_capital * 0.3
         self.trade_count = 0
@@ -3319,13 +3319,16 @@ class LegendaryCryptoTitanBot:
         self.position_cycles = {}
         self.force_learning_mode = False  # DISABLED - let positions develop naturally
         self.max_hold_cycles = 60  # Hold longer - 60 cycles = ~10 minutes per position
-        self.force_trade_mode = True  # FORCE TRADES FOR LEARNING!
+        self.force_trade_mode = False
         self.loss_learning_mode = True
         self.dynamic_sizing = True
         self.micro_scalp_threshold = 0.01
-        self.take_profit = 0.5  # 0.5% take profit (Quick scalp profits!)
-        self.stop_loss = 0.3   # 0.3% stop loss (Tight risk control)
+        self.take_profit = 1.0
+        self.stop_loss = 0.5
         self.max_concurrent_positions = 3
+
+        self.min_seconds_between_entries = 180.0
+        self.last_entry_ts = 0.0
         
         # Initialize enhanced live graph visualization
         self.live_chart = None
@@ -3570,7 +3573,7 @@ class LegendaryCryptoTitanBot:
             time_since_last_trade = current_time - getattr(self, 'last_trade_time', 0)
             
             # FORCE TRADE if 5 minutes passed without trading
-            force_trade = time_since_last_trade > getattr(self, 'force_trade_after_seconds', 300)
+            force_trade = bool(getattr(self, 'force_trade_mode', False)) and time_since_last_trade > getattr(self, 'force_trade_after_seconds', 300)
             
             if force_trade and quality_score >= 40 and signal_confidence >= 0.35:
                 print(f"      ⚡ FORCED TRADE: 5+ min without action! (Q: {quality_score:.1f}, C: {signal_confidence:.1%})")
@@ -5204,7 +5207,7 @@ class LegendaryCryptoTitanBot:
         
         # PREVENT NEW TRADES IF ANY POSITIONS ARE OPEN (wait for TP/SL)
         active_positions = len([p for p in current_positions.values() if p.get('quantity', 0) != 0])
-        
+
         if active_positions > 0:
             print(f"   ⏳ Waiting for {active_positions} open positions to reach TP/SL before new trades")
             return
@@ -5217,6 +5220,17 @@ class LegendaryCryptoTitanBot:
         valid_signals = [s for s in signals if s is not None and hasattr(s, 'confidence')]
         sorted_signals = sorted(valid_signals, key=lambda x: x.confidence, reverse=True)
         
+        try:
+            import time as _t
+            now_ts = float(_t.time())
+            last_ts = float(getattr(self, 'last_entry_ts', 0.0) or 0.0)
+            min_gap = float(getattr(self, 'min_seconds_between_entries', 180.0) or 180.0)
+            if min_gap > 0 and now_ts - last_ts < min_gap:
+                print(f"   ⏳ Entry throttle: waiting {min_gap - (now_ts - last_ts):.0f}s before next trade")
+                return
+        except Exception:
+            pass
+
         for signal in sorted_signals[:1]:  # Take only the best signal
             if signal.symbol in current_positions and current_positions[signal.symbol]['quantity'] > 0:
                 print(f"   ⚠️ {signal.symbol}: Already have position")
@@ -5225,6 +5239,20 @@ class LegendaryCryptoTitanBot:
             # Calculate dynamic micro position size based on confidence, volatility and cash
             position_size = await self._calculate_dynamic_position_size(signal, available_cash)
             print(f"   📏 Position Size (USD): ${position_size:.2f} | Confidence: {signal.confidence:.2%}")
+
+            try:
+                ep = float(getattr(signal, 'entry_price', 0) or 0)
+                sl_pct = float(getattr(self, 'stop_loss', 0.5) or 0.5)
+                tp_pct = float(getattr(self, 'take_profit', 1.0) or 1.0)
+                if ep > 0 and sl_pct > 0 and tp_pct > 0:
+                    if str(getattr(signal, 'action', 'BUY')).upper() == 'BUY':
+                        signal.stop_loss = ep * (1 - sl_pct / 100.0)
+                        signal.take_profit = ep * (1 + tp_pct / 100.0)
+                    else:
+                        signal.stop_loss = ep * (1 + sl_pct / 100.0)
+                        signal.take_profit = ep * (1 - tp_pct / 100.0)
+            except Exception:
+                pass
             
             if position_size < self.min_trade_size:
                 print(f"   ⚠️ Insufficient funds for minimum trade (${self.min_trade_size})")
@@ -5313,6 +5341,12 @@ class LegendaryCryptoTitanBot:
             if result['success']:
                 self.trade_count += 1
                 self.active_signals[signal.symbol] = signal
+
+                try:
+                    import time as _t
+                    self.last_entry_ts = float(_t.time())
+                except Exception:
+                    pass
                 
                 # Persist TP/SL and action onto the live position for accurate management
                 if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
@@ -5761,6 +5795,24 @@ class LegendaryCryptoTitanBot:
             pnl = position['unrealized_pnl']
             print(f"   🎯 {symbol}: CLOSED - ${pnl:+.2f} ({reason})")
             print(f"   📊 Position closed successfully, triggering AI learning...")
+
+            try:
+                from datetime import datetime as _dt
+                if not hasattr(self, 'trade_history') or self.trade_history is None:
+                    self.trade_history = []
+                self.trade_history.append({
+                    'timestamp': _dt.now().isoformat(),
+                    'symbol': symbol,
+                    'side': str(close_side).lower(),
+                    'pnl': float(pnl or 0.0),
+                    'reason': str(reason),
+                    'entry_price': float(position.get('avg_price', 0) or 0),
+                    'exit_price': float(self.price_history[symbol][-1] if symbol in self.price_history and self.price_history[symbol] else 0)
+                })
+                if len(self.trade_history) > 200:
+                    self.trade_history = self.trade_history[-200:]
+            except Exception:
+                pass
             
             # Update live chart with trade closure
             if self.live_chart:
@@ -5854,16 +5906,18 @@ class LegendaryCryptoTitanBot:
                 if not (self.enhanced_ai_initialized and self.enhanced_ai_learning):
                     # Fallback to traditional AI brain
                     # RL learning update
-                    if symbol in self.ml_predictions and self.rl_optimizer:
-                        ml_pred = self.ml_predictions[symbol]
+                    ml_preds = getattr(self, 'ml_predictions', {}) or {}
+                    rl_opt = getattr(self, 'rl_optimizer', None)
+                    if rl_opt and symbol in ml_preds:
+                        ml_pred = ml_preds[symbol]
                         if isinstance(ml_pred, dict) and 'rl_action' in ml_pred:
-                            market_state = self.rl_optimizer.get_state({
+                            market_state = rl_opt.get_state({
                                 'rsi': 50,
                                 'trend': 'neutral',
                                 'volatility': 'medium'
                             })
-                            reward = self.rl_optimizer.calculate_reward({'pnl': pnl, 'risk': 1})
-                            self.rl_optimizer.update_q_value(
+                            reward = rl_opt.calculate_reward({'pnl': pnl, 'risk': 1})
+                            rl_opt.update_q_value(
                                 market_state,
                                 ml_pred['rl_action'],
                                 reward,
@@ -8734,16 +8788,18 @@ class LegendaryCryptoTitanBot:
         strategy_name = signal.strategy_name.replace('LEGENDARY_Enhanced_', '').replace('Enhanced_', '')
 
         # RL learning update
-        if symbol in self.ml_predictions and self.rl_optimizer:
-            ml_pred = self.ml_predictions[symbol]
+        ml_preds = getattr(self, 'ml_predictions', {}) or {}
+        rl_opt = getattr(self, 'rl_optimizer', None)
+        if rl_opt and symbol in ml_preds:
+            ml_pred = ml_preds[symbol]
             if isinstance(ml_pred, dict) and 'rl_action' in ml_pred:
-                market_state = self.rl_optimizer.get_state({
+                market_state = rl_opt.get_state({
                     'rsi': 50,
                     'trend': 'neutral',
                     'volatility': 'medium'
                 })
-                reward = self.rl_optimizer.calculate_reward({'pnl': pnl, 'risk': 1})
-                self.rl_optimizer.update_q_value(
+                reward = rl_opt.calculate_reward({'pnl': pnl, 'risk': 1})
+                rl_opt.update_q_value(
                     market_state,
                     ml_pred['rl_action'],
                     reward,
@@ -8974,32 +9030,24 @@ class LegendaryCryptoTitanBot:
             legendary_signals.append(legendary_signal)
             print(f"🎯 LEGENDARY SIGNAL: {signal.action} {signal.symbol} - {legendary_confidence:.1%} confidence!")
         
-        print(f"🔥 Generated {len(legendary_signals)} LEGENDARY signals!")
+        print(f" Generated {len(legendary_signals)} LEGENDARY signals!")
         return legendary_signals
     
     async def _execute_micro_trades(self, signals: List[AITradingSignal]):
-        """💎 Execute micro trades with precision! 💎"""
+        """Execute micro trades based on signals"""
         # AGGRESSIVE MODE: FORCE TRADE IMMEDIATELY
         if self.trading_mode == 'AGGRESSIVE':
-            print(f"\n⚡ AGGRESSIVE MODE: Processing {len(signals) if signals else 0} signals (or forcing trade)")
+            print(f"\n AGGRESSIVE MODE: Processing {len(signals) if signals else 0} signals (or forcing trade)")
             # Force at least one trade if none available
             if not signals or len(signals) == 0:
-                print("⚡ NO SIGNALS - FORCING AGGRESSIVE TRADE NOW!")
-                portfolio = await self.trader.get_portfolio_value()
-                available_cash = portfolio.get('cash', 5.0)
-                symbol = self.symbols[0] if self.symbols else 'BTC/USDT'
-                max_pos_size = getattr(self, 'max_position_size', available_cash * 0.3)
-                position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
-                print(f"   🎯 FORCED TRADE: {symbol} BUY ${position_size:.2f}")
-                result = await self.trader.execute_live_trade(symbol, 'BUY', position_size, strategy='AGGRESSIVE_FORCE')
-                if result.get('success'):
-                    self.last_trade_ts = time.time()
-                    self.position_entry_time[symbol] = time.time()  # Track entry time!
-                    print(f"   ✅ AGGRESSIVE FORCE TRADE EXECUTED!")
-                    print(f"      ⏰ Grace period {self.min_hold_time}s active")
-                else:
-                    print(f"   ❌ Force trade failed: {result.get('error')}")
-                return
+                if hasattr(self, 'force_trade_mode') and self.force_trade_mode:
+                    forced = await self._create_forced_learning_signal()
+                    if forced:
+                        signals = [forced]
+                        print(" No qualifying signals - placing forced learning trade for AI experience")
+                if not signals:
+                    print("🔍 No micro signals to trade")
+                    return
         
         if not signals:
             # Attempt a forced learning trade if enabled
@@ -9009,69 +9057,9 @@ class LegendaryCryptoTitanBot:
                     signals = [forced]
                     print("🎓 No qualifying signals - placing forced learning trade for AI experience")
                 else:
-                    # Try aggressive guarantee before returning
-                    try:
-                        import time as _t
-                        now_ts = float(_t.time())
-                        last_ts = float(getattr(self, 'last_trade_ts', 0.0) or 0.0)
-                        interval = float(getattr(self, 'aggressive_trade_interval', 60.0) or 60.0)
-                        if getattr(self, 'aggressive_trade_guarantee', False) and now_ts - last_ts >= interval:
-                            print("\n⚡ AGGRESSIVE GUARANTEE: Executing at least one trade this minute")
-                            portfolio = await self.trader.get_portfolio_value()
-                            available_cash = portfolio.get('cash', 0)
-                            symbol = self.symbols[0]
-                            if symbol not in self.price_history or not self.price_history[symbol]:
-                                if hasattr(self, 'data_feed') and self.data_feed:
-                                    px = await self.data_feed.get_live_price(symbol)
-                                    if px:
-                                        if symbol not in self.price_history or not isinstance(self.price_history[symbol], deque):
-                                            self.price_history[symbol] = deque(maxlen=100)
-                                        self.price_history[symbol].append(px)
-                            max_pos_size = getattr(self, 'max_position_size', available_cash * 0.3)
-                            position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
-                            result = await self.trader.execute_live_trade(symbol, 'BUY', position_size, strategy='AGGRESSIVE_GUARANTEE')
-                            if result.get('success', False):
-                                self.position_entry_time[symbol] = _t.time()  # Track entry time!
-                                print(f"   ✅ GUARANTEE {symbol}: BUY ${position_size:.2f}")
-                                print(f"      ⏰ Grace period {self.min_hold_time}s active")
-                                self.last_trade_ts = float(_t.time())
-                            else:
-                                print(f"   ❌ GUARANTEE trade failed: {result.get('error')}")
-                    except Exception as _ge:
-                        print(f"   ⚠️ Aggressive guarantee warning: {_ge}")
                     print("🔍 No micro signals to trade")
                     return
             else:
-                # Try aggressive guarantee before returning
-                try:
-                    import time as _t
-                    now_ts = float(_t.time())
-                    last_ts = float(getattr(self, 'last_trade_ts', 0.0) or 0.0)
-                    interval = float(getattr(self, 'aggressive_trade_interval', 60.0) or 60.0)
-                    if getattr(self, 'aggressive_trade_guarantee', False) and now_ts - last_ts >= interval:
-                        print("\n⚡ AGGRESSIVE GUARANTEE: Executing at least one trade this minute")
-                        portfolio = await self.trader.get_portfolio_value()
-                        available_cash = portfolio.get('cash', 0)
-                        symbol = self.symbols[0]
-                        if symbol not in self.price_history or not self.price_history[symbol]:
-                            if hasattr(self, 'data_feed') and self.data_feed:
-                                px = await self.data_feed.get_live_price(symbol)
-                                if px:
-                                    if symbol not in self.price_history or not isinstance(self.price_history[symbol], deque):
-                                        self.price_history[symbol] = deque(maxlen=100)
-                                    self.price_history[symbol].append(px)
-                        max_pos_size = getattr(self, 'max_position_size', available_cash * 0.3)
-                        position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
-                        result = await self.trader.execute_live_trade(symbol, 'BUY', position_size, strategy='AGGRESSIVE_GUARANTEE')
-                        if result.get('success', False):
-                            self.position_entry_time[symbol] = _t.time()  # Track entry time!
-                            print(f"   ✅ GUARANTEE {symbol}: BUY ${position_size:.2f}")
-                            print(f"      ⏰ Grace period {self.min_hold_time}s active")
-                            self.last_trade_ts = float(_t.time())
-                        else:
-                            print(f"   ❌ GUARANTEE trade failed: {result.get('error')}")
-                except Exception as _ge:
-                    print(f"   ⚠️ Aggressive guarantee warning: {_ge}")
                 print("🔍 No micro signals to trade")
                 return
         
@@ -9102,7 +9090,18 @@ class LegendaryCryptoTitanBot:
         micro_signals = sorted(valid_signals, key=lambda s: s.confidence, reverse=True)
         trades_executed = 0
         
-        for signal in micro_signals:
+        try:
+            import time as _t
+            now_ts = float(_t.time())
+            last_ts = float(getattr(self, 'last_entry_ts', 0.0) or 0.0)
+            min_gap = float(getattr(self, 'min_seconds_between_entries', 180.0) or 180.0)
+            if min_gap > 0 and now_ts - last_ts < min_gap:
+                print(f"   ⏳ Entry throttle: waiting {min_gap - (now_ts - last_ts):.0f}s before next trade")
+                return
+        except Exception:
+            pass
+
+        for signal in micro_signals[:1]:
             if active_positions + trades_executed >= self.max_concurrent_positions:
                 print("   ⚡ Position limit reached")
                 break
@@ -9143,6 +9142,20 @@ class LegendaryCryptoTitanBot:
                 pass
             
             # Execute micro trade with Ultra AI precision!
+            try:
+                ep = float(getattr(signal, 'entry_price', 0) or 0)
+                sl_pct = float(getattr(self, 'stop_loss', 0.5) or 0.5)
+                tp_pct = float(getattr(self, 'take_profit', 1.0) or 1.0)
+                if ep > 0 and sl_pct > 0 and tp_pct > 0:
+                    if str(getattr(signal, 'action', 'BUY')).upper() == 'BUY':
+                        signal.stop_loss = ep * (1 - sl_pct / 100.0)
+                        signal.take_profit = ep * (1 + tp_pct / 100.0)
+                    else:
+                        signal.stop_loss = ep * (1 + sl_pct / 100.0)
+                        signal.take_profit = ep * (1 - tp_pct / 100.0)
+            except Exception:
+                pass
+
             result = await self.trader.execute_live_trade(
                 signal.symbol,
                 trade_action,  # Use converted action
@@ -9178,73 +9191,15 @@ class LegendaryCryptoTitanBot:
                     self.last_trade_ts = float(_t.time())
                 except Exception:
                     self.last_trade_ts = 0.0
+
+                try:
+                    self.last_entry_ts = float(_t.time())
+                except Exception:
+                    pass
                 await self._learn_from_trade_execution(signal.symbol, signal, result)
             else:
                 print(f"   ❌ {signal.symbol}: Trade failed - {result.get('error', 'unknown error')}")
                 await self._learn_from_trade_execution(signal.symbol, signal, result)
-
-        # AGGRESSIVE MODE GUARANTEE: ensure at least one trade per minute
-        if trades_executed == 0 and getattr(self, 'aggressive_trade_guarantee', False):
-            try:
-                import time as _t
-                now_ts = float(_t.time())
-                last_ts = float(getattr(self, 'last_trade_ts', 0.0) or 0.0)
-                interval = float(getattr(self, 'aggressive_trade_interval', 60.0) or 60.0)
-                print(f"⏱️ Trade guarantee check: {now_ts - last_ts:.1f}s since last trade (interval: {interval}s)")
-                if now_ts - last_ts >= interval:
-                    print("\n⚡ AGGRESSIVE GUARANTEE: Executing at least one trade this minute")
-                    portfolio = await self.trader.get_portfolio_value()
-                    available_cash = portfolio.get('cash', 0)
-                    # Create or fallback to a simple forced signal
-                    forced = await self._create_forced_learning_signal()
-                    if forced is None:
-                        # Fallback: BUY first symbol with minimal size
-                        symbol = self.symbols[0]
-                        # Ensure we have a current price for stops if needed
-                        if symbol not in self.price_history or not self.price_history[symbol]:
-                            if hasattr(self, 'data_feed') and self.data_feed:
-                                px = await self.data_feed.get_live_price(symbol)
-                                if px:
-                                    if symbol not in self.price_history or not isinstance(self.price_history[symbol], deque):
-                                        self.price_history[symbol] = deque(maxlen=100)
-                                    self.price_history[symbol].append(px)
-                        forced_action = 'BUY'
-                        forced_symbol = symbol
-                        # Position sizing: small guaranteed trade
-                        max_pos_size = getattr(self, 'max_position_size', available_cash * 0.3)
-                        position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
-                        result = await self.trader.execute_live_trade(forced_symbol, forced_action, position_size, strategy='AGGRESSIVE_GUARANTEE')
-                        if result.get('success', False):
-                            print(f"   ✅ GUARANTEE {forced_symbol}: {forced_action} ${position_size:.2f}")
-                            self.last_trade_ts = float(_t.time())
-                        else:
-                            print(f"   ❌ GUARANTEE trade failed: {result.get('error')}")
-                    else:
-                        # Execute the forced signal directly, bypassing optimizer
-                        max_pos_size = getattr(self, 'max_position_size', available_cash * 0.3)
-                        position_size = max(self.min_trade_size, min(max_pos_size, available_cash * 0.2))
-                        forced_action = getattr(forced, 'action', 'BUY')
-                        if forced_action == 'SELL':
-                            forced_action = 'BUY'
-                        try:
-                            forced.action = forced_action
-                        except Exception:
-                            pass
-                        exec_result = await self.trader.execute_live_trade(
-                            forced.symbol,
-                            forced_action,
-                            position_size,
-                            strategy='AGGRESSIVE_GUARANTEE',
-                            stop_loss=getattr(forced, 'stop_loss', None),
-                            take_profit=getattr(forced, 'take_profit', None)
-                        )
-                        if exec_result.get('success', False):
-                            print(f"   ✅ GUARANTEE {forced.symbol}: {forced.action} ${position_size:.2f}")
-                            self.last_trade_ts = float(_t.time())
-                        else:
-                            print(f"   ❌ GUARANTEE trade failed: {exec_result.get('error')}")
-            except Exception as e:
-                print(f"   ⚠️ Aggressive guarantee warning: {e}")
 
     async def _execute_legendary_trades(self, signals: List[AITradingSignal]):
         """⚡ Execute trades with SBF's lightning speed! ⚡"""

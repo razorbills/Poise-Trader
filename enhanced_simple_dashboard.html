@@ -1161,79 +1161,71 @@
             }).join('');
         }
 
-        // Fetch all data
-        async function fetchData() {
-            try {
-                // Show heartbeat
-                const heartbeat = document.getElementById('heartbeat');
-                if (heartbeat) {
-                    heartbeat.textContent = '● Updating...';
-                    setTimeout(() => {
-                        heartbeat.textContent = '';
-                    }, 500);
-                }
-                
-                // Fetch status
-                const statusResponse = await fetch(`${API_URL}/api/status`);
-                if (statusResponse.ok) {
-                    const status = await statusResponse.json();
-                    console.log('Status received:', status);
-                    updateStatus(status);
-                } else {
-                    console.error('Status fetch failed:', statusResponse.status);
-                }
-                
-                // Fetch metrics
-                const metricsResponse = await fetch(`${API_URL}/api/metrics`);
-                if (metricsResponse.ok) {
-                    const metrics = await metricsResponse.json();
-                    updateMetrics(metrics);
-                }
-                
-                // Fetch portfolio
-                const portfolioResponse = await fetch(`${API_URL}/api/portfolio`);
-                if (portfolioResponse.ok) {
-                    const portfolio = await portfolioResponse.json();
-                    updatePortfolio(portfolio);
-                }
-            } catch (error) {
-                console.error('Error fetching data:', error);
-            }
-        }
-
         // Update status
         function updateStatus(status) {
             const indicator = document.getElementById('statusIndicator');
             const statusText = document.getElementById('statusText');
             const botStatus = document.getElementById('botStatus');
             
-            console.log('Updating status with:', status);
-            
             if (status && status.connected === true) {
                 indicator.className = 'status-indicator connected';
                 statusText.textContent = 'Connected';
                 botConnected = true;
                 botStatus.textContent = `Bot: ${status.running ? 'Running' : 'Stopped'} | Mode: ${status.mode || 'Unknown'}`;
-                console.log('Bot connected!');
             } else {
                 indicator.className = 'status-indicator waiting';
                 statusText.textContent = 'Waiting for Bot';
                 botConnected = false;
                 botStatus.textContent = 'Bot: Not Connected';
-                console.log('Bot not connected');
             }
             
-            isTrading = status.running || false;
-            if (status.mode) {
+            isTrading = (status && status.running) || false;
+            if (status && status.mode) {
                 currentMode = status.mode;
                 updateModeButtons();
             }
         }
 
+        // Fetch all data
+        async function fetchData() {
+            try {
+                const heartbeat = document.getElementById('heartbeat');
+                if (heartbeat) {
+                    heartbeat.textContent = new Date().toLocaleTimeString();
+                }
+
+                const statusResponse = await fetch(`${API_URL}/api/status`);
+                if (statusResponse.ok) {
+                    const status = await statusResponse.json();
+                    updateStatus(status);
+                }
+
+                const metricsResponse = await fetch(`${API_URL}/api/metrics`);
+                if (metricsResponse.ok) {
+                    const metrics = await metricsResponse.json();
+                    updateMetrics(metrics);
+                }
+
+                const portfolioResponse = await fetch(`${API_URL}/api/portfolio`);
+                if (portfolioResponse.ok) {
+                    const portfolio = await portfolioResponse.json();
+                    updatePortfolio(portfolio);
+                }
+
+                const tradesResponse = await fetch(`${API_URL}/api/trades`);
+                if (tradesResponse.ok) {
+                    const data = await tradesResponse.json();
+                    updateTrades(data.trades || []);
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
         // Update metrics
         function updateMetrics(metrics) {
-            // Update P&L
             const pnl = metrics.total_pnl || 0;
+
             const pnlEl = document.getElementById('totalPnl');
             pnlEl.textContent = `$${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
             pnlEl.className = pnl >= 0 ? 'metric-value positive' : 'metric-value negative';
