@@ -443,6 +443,17 @@ class AIBrain:
             
         except Exception as e:
             print(f"⚠️ Error updating position performance: {e}")
+
+    def update_position_tracking(self, symbol: str, position_data: Dict):
+        try:
+            if 'position_tracking' not in self.brain:
+                self.brain['position_tracking'] = {}
+
+            tracking = dict(position_data) if isinstance(position_data, dict) else {'data': position_data}
+            tracking['timestamp'] = datetime.now().isoformat()
+            self.brain['position_tracking'][symbol] = tracking
+        except Exception as e:
+            print(f"⚠️ Error updating position tracking: {e}")
     
     def learn_from_execution(self, execution_data: Dict):
         """Learn from trade execution quality"""

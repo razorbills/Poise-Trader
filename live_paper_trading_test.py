@@ -49,13 +49,53 @@ class LiveMexcDataFeed:
             "https://www.mexc.com",
             "https://contract.mexc.com"
         ]
+        self.exchange_symbols = None
+        self.unsupported_symbols = set()
+        try:
+            url = f"{self.base_url}/api/v3/exchangeInfo"
+            resp = requests.get(url, timeout=8, verify=False)
+            if resp.status_code == 200:
+                data = resp.json() or {}
+                symbols = set()
+                for s in (data.get('symbols') or []):
+                    sym = (s or {}).get('symbol')
+                    if sym:
+                        symbols.add(str(sym).upper())
+                if symbols:
+                    self.exchange_symbols = symbols
+        except Exception:
+            self.exchange_symbols = None
         print("📊 Enhanced MEXC Data Feed initialized - collecting comprehensive market data")
+
+    def _normalize_symbol(self, symbol: str) -> str:
+        try:
+            s = str(symbol).strip().upper()
+            s = s.replace('/', '').replace('-', '').replace('_', '').replace(' ', '')
+            return s
+        except Exception:
+            return str(symbol)
+
+    def is_symbol_supported(self, symbol: str) -> bool:
+        try:
+            mexc_symbol = self._normalize_symbol(symbol)
+            if not mexc_symbol:
+                return False
+            if mexc_symbol in self.unsupported_symbols:
+                return False
+            if self.exchange_symbols is None:
+                return True
+            return mexc_symbol in self.exchange_symbols
+        except Exception:
+            return True
         
     async def get_live_price(self, symbol: str) -> float:
         """Get current live price from MEXC using requests (works reliably)"""
         
         # Convert symbol format (BTC/USDT -> BTCUSDT)
-        mexc_symbol = symbol.replace('/', '')
+        mexc_symbol = self._normalize_symbol(symbol)
+        if not self.is_symbol_supported(symbol):
+            print(f"⚠️ Unsupported symbol on MEXC spot: {symbol}")
+            return None
         
         # Use requests library which works reliably
         try:
@@ -74,6 +114,8 @@ class LiveMexcDataFeed:
                 
                 return price
             else:
+                if response.status_code in (400, 404):
+                    self.unsupported_symbols.add(mexc_symbol)
                 print(f"⚠️ Failed to get {symbol} price: Status {response.status_code}")
                 return None
                 
@@ -97,7 +139,9 @@ class LiveMexcDataFeed:
     
     async def get_orderbook(self, symbol: str, limit: int = 20) -> Dict:
         """Get order book depth data - critical for AI learning!"""
-        mexc_symbol = symbol.replace('/', '')
+        mexc_symbol = self._normalize_symbol(symbol)
+        if not self.is_symbol_supported(symbol):
+            return None
         
         try:
             url = f"{self.base_url}/api/v3/depth?symbol={mexc_symbol}&limit={limit}"
@@ -133,7 +177,9 @@ class LiveMexcDataFeed:
     
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Get recent trades - shows market momentum and pressure"""
-        mexc_symbol = symbol.replace('/', '')
+        mexc_symbol = self._normalize_symbol(symbol)
+        if not self.is_symbol_supported(symbol):
+            return None
         
         try:
             url = f"{self.base_url}/api/v3/trades?symbol={mexc_symbol}&limit={limit}"
@@ -178,7 +224,9 @@ class LiveMexcDataFeed:
     
     async def get_24h_ticker(self, symbol: str) -> Dict:
         """Get 24h ticker statistics - volume, price change, high/low"""
-        mexc_symbol = symbol.replace('/', '')
+        mexc_symbol = self._normalize_symbol(symbol)
+        if not self.is_symbol_supported(symbol):
+            return None
         
         try:
             url = f"{self.base_url}/api/v3/ticker/24hr?symbol={mexc_symbol}"
@@ -221,7 +269,9 @@ class LiveMexcDataFeed:
     
     async def get_klines(self, symbol: str, interval: str = '1m', limit: int = 100) -> List[Dict]:
         """Get candlestick/kline data - OHLCV for pattern recognition"""
-        mexc_symbol = symbol.replace('/', '')
+        mexc_symbol = self._normalize_symbol(symbol)
+        if not self.is_symbol_supported(symbol):
+            return None
         
         try:
             url = f"{self.base_url}/api/v3/klines?symbol={mexc_symbol}&interval={interval}&limit={limit}"
@@ -259,6 +309,8 @@ class LiveMexcDataFeed:
                 self.klines_cache[f"{symbol}_{interval}"] = klines
                 return klines if klines else []
             
+            if response.status_code in (400, 404):
+                self.unsupported_symbols.add(mexc_symbol)
             return None
         except Exception as e:
             print(f"⚠️ Error getting klines for {symbol}: {str(e)[:50]}")

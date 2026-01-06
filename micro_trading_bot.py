@@ -3652,6 +3652,18 @@ class LegendaryCryptoTitanBot:
         # START IN PAUSED STATE - Wait for dashboard control
         self.trading_mode = 'PRECISION'  # Default to PRECISION mode
         self.bot_running = False  # DO NOT START AUTOMATICALLY!
+
+        try:
+            self.force_trade_mode = False
+        except Exception:
+            pass
+        self.take_profit = 3.5
+        self.stop_loss = 1.5
+        try:
+            self.min_confidence_for_trade = max(getattr(self, 'min_confidence_for_trade', 0.0), 0.45)
+            self.min_trade_quality_score = max(getattr(self, 'min_trade_quality_score', 0.0), 60.0)
+        except Exception:
+            pass
         
         dashboard_url = self.get_dashboard_url()
         print(f"\n⏸️ BOT INITIALIZED IN PAUSED STATE")
@@ -3719,6 +3731,16 @@ class LegendaryCryptoTitanBot:
                 print(f"\n⚠️  Filtered out {len(invalid)} invalid symbols: {', '.join(invalid)}")
                 self.active_symbols = valid_symbols
                 print(f"✅ Trading with {len(valid_symbols)} valid symbols")
+        elif hasattr(self.data_feed, 'is_symbol_supported'):
+            try:
+                valid_symbols = [s for s in self.active_symbols if self.data_feed.is_symbol_supported(s)]
+                if len(valid_symbols) < len(self.active_symbols):
+                    invalid = [s for s in self.active_symbols if not self.data_feed.is_symbol_supported(s)]
+                    print(f"\n⚠️  Filtered out {len(invalid)} unsupported symbols: {', '.join(invalid)}")
+                    self.active_symbols = valid_symbols
+                    print(f"✅ Trading with {len(valid_symbols)} supported symbols")
+            except Exception:
+                pass
         
         # Start background price fetcher (runs even when paused)
         asyncio.create_task(self._background_price_fetcher())
@@ -3788,6 +3810,14 @@ class LegendaryCryptoTitanBot:
                         price = await self.data_feed.get_live_price(symbol)
                         
                         if not price or price <= 0:
+                            try:
+                                if hasattr(self, 'data_feed') and self.data_feed and hasattr(self.data_feed, 'is_symbol_supported'):
+                                    if not self.data_feed.is_symbol_supported(symbol):
+                                        if symbol in self.active_symbols:
+                                            self.active_symbols = [s for s in self.active_symbols if s != symbol]
+                                            print(f"⚠️ Removed unsupported symbol from active set: {symbol}")
+                            except Exception:
+                                pass
                             print(f"⚠️ Failed to get price for {symbol}, skipping...")
                             continue
                             
@@ -5917,6 +5947,13 @@ class LegendaryCryptoTitanBot:
                     print(f"   📚 Loss analysis completed for forced closure")
             
             ai_brain.learn_from_trade(trade_data)
+
+            try:
+                if ai_brain and hasattr(ai_brain, 'brain') and isinstance(ai_brain.brain, dict):
+                    if ai_brain.brain.get('total_trades', 0) % 5 == 0:
+                        print(f"   🧠 AI BRAIN HEARTBEAT: total_trades={ai_brain.brain.get('total_trades', 0)} | win_rate={ai_brain.brain.get('win_rate', 0):.1%}")
+            except Exception:
+                pass
             
             # 🧠 CONTINUOUS LEARNING ENGINE: Feed every trade to self-improving AI
             if getattr(self, 'continuous_learning_enabled', False) and getattr(self, 'learning_engine', None):
@@ -6894,31 +6931,64 @@ class LegendaryCryptoTitanBot:
         avg_gap = np.mean(gaps)
         gap_consistency = 1 - (np.std(gaps) / (abs(avg_gap) + 0.001))
         
-        # Bid-ask spread simulation (would use real order book data)
-        spread_indicator = np.random.uniform(0.8, 1.2)  # Simulated spread tightness
-        
-        # Market depth analysis (simulated)
-        depth_imbalance = np.random.uniform(-0.2, 0.2)  # Would analyze real order book
+        spread_pct = None
+        depth_imbalance = 0.0
+        try:
+            if hasattr(self, 'data_feed') and self.data_feed and hasattr(self.data_feed, 'orderbook_cache'):
+                ob = self.data_feed.orderbook_cache.get(symbol)
+                if ob and isinstance(ob, dict):
+                    spread_pct = ob.get('spread_pct', None)
+                    depth_imbalance = float(ob.get('volume_imbalance', 0.0) or 0.0)
+        except Exception:
+            spread_pct = None
+            depth_imbalance = 0.0
+
+        if depth_imbalance > 0.2:
+            depth_imbalance = 0.2
+        elif depth_imbalance < -0.2:
+            depth_imbalance = -0.2
+
+        spread_indicator = 1.0
+        try:
+            if spread_pct is not None:
+                sp = float(spread_pct)
+                spread_indicator = max(0.8, min(1.2, 1.0 - sp * 2.0))
+        except Exception:
+            spread_indicator = 1.0
         
         microstructure_score = avg_gap * gap_consistency * spread_indicator + depth_imbalance
         direction = 1 if microstructure_score > 0 else -1 if microstructure_score < 0 else 0
-        confidence = min(0.95, 0.4 + gap_consistency * 0.3 + abs(depth_imbalance) * 2)
+        confidence = min(0.95, 0.35 + gap_consistency * 0.25 + abs(depth_imbalance) * 1.5 + (0.1 if spread_pct is not None else 0.0))
         strength = abs(microstructure_score) * 1000  # Scale appropriately
         
         return {'direction': direction, 'confidence': confidence, 'strength': strength}
     
     def _sentiment_fusion_prediction(self, symbol: str, prices: List[float], current_price: float) -> Dict:
         """Sentiment and news impact analysis"""
-        # Market sentiment indicators (simulated - would use real sentiment data)
-        fear_greed_index = np.random.uniform(0, 100)
-        social_sentiment = np.random.uniform(-1, 1)
-        news_impact = np.random.uniform(-0.5, 0.5)
-        
-        # Convert fear/greed to directional signal
-        fg_signal = (fear_greed_index - 50) / 50  # -1 to 1
-        
-        # Combine sentiment indicators
-        sentiment_score = fg_signal * 0.4 + social_sentiment * 0.4 + news_impact * 0.2
+        sentiment_score = 0.0
+        try:
+            ticker = None
+            if hasattr(self, 'data_feed') and self.data_feed and hasattr(self.data_feed, 'ticker_24h_cache'):
+                ticker = self.data_feed.ticker_24h_cache.get(symbol)
+            if ticker and isinstance(ticker, dict):
+                pct = float(ticker.get('price_change_pct', 0.0) or 0.0)
+                vol24 = float(ticker.get('volatility_24h', 0.0) or 0.0)
+                sentiment_score += max(-1.0, min(1.0, pct / 10.0))
+                if vol24 > 0:
+                    sentiment_score -= min(0.4, vol24 / 50.0)
+
+            if hasattr(self, 'data_feed') and self.data_feed and hasattr(self.data_feed, 'orderbook_cache'):
+                ob = self.data_feed.orderbook_cache.get(symbol)
+                if ob and isinstance(ob, dict):
+                    imb = float(ob.get('volume_imbalance', 0.0) or 0.0)
+                    sentiment_score += max(-0.3, min(0.3, imb * 0.6))
+        except Exception:
+            pass
+
+        if sentiment_score > 1.0:
+            sentiment_score = 1.0
+        elif sentiment_score < -1.0:
+            sentiment_score = -1.0
         
         direction = 1 if sentiment_score > 0.1 else -1 if sentiment_score < -0.1 else 0
         confidence = min(0.95, 0.3 + abs(sentiment_score) * 0.5)
