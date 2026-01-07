@@ -1115,8 +1115,10 @@
                 const pnlSign = pnl >= 0 ? '+' : '';
                 
                 // Calculate prices per unit
-                const entryPrice = pos.avg_price || (pos.cost_basis / pos.quantity) || 0;
-                const currentPrice = pos.current_price || (pos.current_value / pos.quantity) || 0;
+                const qty = pos.quantity || 0;
+                const entryPrice = pos.avg_price || pos.entry_price || 0;
+                const currentPrice = pos.current_price || (qty > 0 ? ((pos.current_value || 0) / qty) : 0) || 0;
+                const safeEntry = entryPrice > 0 ? entryPrice : currentPrice;
                 
                 return `
                     <tr data-symbol="${symbol}" 
@@ -1125,9 +1127,9 @@
                         style="cursor: pointer;">
                         <td><strong>${symbol}</strong></td>
                         <td>${(pos.quantity || 0).toFixed(6)}</td>
-                        <td>$${entryPrice.toFixed(2)}</td>
+                        <td>$${safeEntry.toFixed(2)}</td>
                         <td>$${currentPrice.toFixed(2)}</td>
-                        <td class="${pnlClass}">${pnlSign}$${Math.abs(pnl).toFixed(2)}</td>
+                        <td class="${pnlClass}">${pnlSign}$${Math.abs(pnl).toFixed(5)}</td>
                     </tr>
                 `;
             }).join('');
@@ -1380,18 +1382,22 @@
             
             // Calculate detailed values
             const quantity = positionData.quantity || 0;
-            const entryPrice = positionData.avg_price || (positionData.cost_basis / quantity) || 0;
+            const side = (positionData.action || 'BUY').toUpperCase();
+            const isShort = side === 'SELL';
+            const entryPrice = positionData.avg_price || positionData.entry_price || 0;
             const currentPrice = positionData.current_price || (positionData.current_value / quantity) || 0;
             const costBasis = positionData.cost_basis || (entryPrice * quantity);
             const currentValue = positionData.current_value || (currentPrice * quantity);
-            const unrealizedPnl = positionData.unrealized_pnl || (currentValue - costBasis);
+            const unrealizedPnl = (positionData.unrealized_pnl !== undefined && positionData.unrealized_pnl !== null)
+                ? positionData.unrealized_pnl
+                : ((isShort ? (entryPrice - currentPrice) : (currentPrice - entryPrice)) * quantity);
             const pnlPercent = costBasis > 0 ? (unrealizedPnl / costBasis) * 100 : 0;
             
             // Calculate REALISTIC TP/SL - 0.3% for crypto (not 2%!)
-            const tpPrice = positionData.take_profit || entryPrice * 1.003; // Use existing or default 0.3%
-            const slPrice = positionData.stop_loss || entryPrice * 0.997; // Use existing or default 0.3%
-            const tpValue = (tpPrice - entryPrice) * quantity;
-            const slValue = (slPrice - entryPrice) * quantity
+            const tpPrice = positionData.take_profit || (isShort ? entryPrice * 0.997 : entryPrice * 1.003);
+            const slPrice = positionData.stop_loss || (isShort ? entryPrice * 1.003 : entryPrice * 0.997);
+            const tpValue = (isShort ? (entryPrice - tpPrice) : (tpPrice - entryPrice)) * quantity;
+            const slValue = (isShort ? (slPrice - entryPrice) : (entryPrice - slPrice)) * quantity
             
             // Determine status
             const status = unrealizedPnl >= 0 ? 'PROFITABLE' : 'AT RISK';
@@ -1409,7 +1415,7 @@
                 </div>
                 
                 <div style="text-align: center; margin: 8px 0; padding: 4px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
-                    <span style="color: #4CAF50; font-weight: bold; font-size: 13px;">🟢 BUY POSITION</span>
+                    <span style="color: ${isShort ? '#f44336' : '#4CAF50'}; font-weight: bold; font-size: 13px;">${isShort ? '🔴 SHORT POSITION' : '🟢 LONG POSITION'}</span>
                 </div>
                 
                 <div class="tooltip-grid">

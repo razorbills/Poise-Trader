@@ -81,6 +81,19 @@ def get_status():
         status['mode'] = getattr(bot_instance, 'trading_mode', current_mode)
         status['capital'] = getattr(bot_instance, 'current_capital', 0)
         status['win_rate'] = getattr(bot_instance, 'win_rate', 0) * 100
+
+        try:
+            if hasattr(bot_instance, 'trader') and bot_instance.trader is not None:
+                status['paper_shorting'] = bool(getattr(bot_instance.trader, 'enable_shorting', False))
+                status['paper_leverage'] = float(getattr(bot_instance.trader, 'leverage', 1.0) or 1.0)
+                status['paper_fee_rate'] = float(getattr(bot_instance.trader, 'fee_rate', 0.0002) or 0.0002)
+
+                if hasattr(bot_instance.trader, 'data_feed') and bot_instance.trader.data_feed is not None:
+                    df = bot_instance.trader.data_feed
+                    if hasattr(df, 'get_health'):
+                        status['mexc'] = df.get_health()
+        except Exception as e:
+            status['mexc'] = {'connected': False, 'last_error': str(e)[:120]}
     
     return jsonify(status)
 
@@ -169,7 +182,10 @@ def get_recent_trades():
                 'timestamp': t.get('timestamp') or t.get('time') or datetime.now().isoformat(),
                 'symbol': t.get('symbol', 'UNKNOWN'),
                 'side': (t.get('side') or t.get('action') or '').lower() or 'buy',
-                'pnl': float(t.get('pnl', t.get('profit_loss', 0.0)) or 0.0)
+                'pnl': float(t.get('pnl', t.get('profit_loss', 0.0)) or 0.0),
+                'event': t.get('event') or None,
+                'notional_usd': float(t.get('notional_usd', 0.0) or 0.0),
+                'commission': float(t.get('commission', 0.0) or 0.0)
             })
         except Exception:
             continue
@@ -195,6 +211,31 @@ def get_portfolio():
         # Get current capital first
         portfolio['total_value'] = getattr(bot_instance, 'current_capital', 5.0)
         portfolio['cash'] = portfolio['total_value']  # Default values
+
+        # Prefer the trader's sync portfolio if available (supports BUY/SELL positions)
+        if hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'get_portfolio_value_sync'):
+            try:
+                trader_portfolio = bot_instance.trader.get_portfolio_value_sync()
+                portfolio['total_value'] = trader_portfolio.get('total_value', portfolio['total_value'])
+                portfolio['cash'] = trader_portfolio.get('cash', portfolio['cash'])
+
+                positions_out = {}
+                for symbol, pos_data in (trader_portfolio.get('positions') or {}).items():
+                    if not isinstance(pos_data, dict):
+                        continue
+                    merged = dict(pos_data)
+                    if 'entry_price' not in merged:
+                        merged['entry_price'] = merged.get('avg_price')
+                    positions_out[symbol] = merged
+
+                portfolio['positions'] = positions_out
+                if portfolio['positions']:
+                    portfolio['pnl'] = sum(float(p.get('unrealized_pnl', 0) or 0) for p in portfolio['positions'].values())
+                print(f"   Synced with trader: Total=${portfolio['total_value']:.2f}, Positions={len(portfolio['positions'])}")
+                print(f"   Returning {len(portfolio['positions'])} positions to dashboard")
+                return jsonify(portfolio)
+            except Exception as e:
+                print(f"   Could not sync with trader: {e}")
         
         # Get positions if available
         if hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'positions'):
@@ -223,9 +264,11 @@ def get_portfolio():
                     pos['current_price'] = current_price
                     
                     # Calculate P&L
-                    cost_basis = avg_price * quantity
+                    side = str(pos.get('action', 'BUY') or 'BUY').upper()
+                    margin = float(pos.get('total_cost', 0) or 0)
+                    cost_basis = margin if margin > 0 else (avg_price * quantity)
                     current_value = current_price * quantity
-                    unrealized_pnl = (current_price - avg_price) * quantity
+                    unrealized_pnl = (current_price - avg_price) * quantity if side == 'BUY' else (avg_price - current_price) * quantity
                     
                     portfolio['positions'][symbol] = {
                         'symbol': symbol,
@@ -236,6 +279,7 @@ def get_portfolio():
                         'avg_price': avg_price,
                         'entry_price': avg_price,  # For compatibility
                         'unrealized_pnl': unrealized_pnl,
+                        'action': side,
                         # IMPORTANT: Include custom TP/SL values if they exist
                         'take_profit': pos.get('take_profit'),
                         'stop_loss': pos.get('stop_loss')
@@ -253,21 +297,6 @@ def get_portfolio():
             portfolio['total_value'] = portfolio['cash'] + sum(pos['current_value'] for pos in portfolio['positions'].values())
             print(f"   Total P&L: ${portfolio['pnl']:.2f}, Total Value: ${portfolio['total_value']:.2f}")
         
-        # Try to get more accurate values from trader
-        if hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'get_portfolio_value_sync'):
-            try:
-                trader_portfolio = bot_instance.trader.get_portfolio_value_sync()
-                portfolio['total_value'] = trader_portfolio.get('total_value', portfolio['total_value'])
-                portfolio['cash'] = trader_portfolio.get('cash', portfolio['cash'])
-                if trader_portfolio.get('positions'):
-                    # Merge trader positions if we don't have them
-                    for symbol, pos_data in trader_portfolio['positions'].items():
-                        if symbol not in portfolio['positions']:
-                            portfolio['positions'][symbol] = pos_data
-                print(f"   Synced with trader: Total=${portfolio['total_value']:.2f}, Positions={len(portfolio['positions'])}")
-            except Exception as e:
-                print(f"   Could not sync with trader: {e}")
-    
     print(f"   Returning {len(portfolio['positions'])} positions to dashboard")
     return jsonify(portfolio)
 
@@ -552,22 +581,28 @@ def close_position():
                 
                 # Calculate position value at current price
                 current_price = position.get('current_price', position.get('avg_price', 0))
-                position_value = quantity * current_price
+                side = str(position.get('action', 'BUY') or 'BUY').upper()
+                avg_price = float(position.get('avg_price', current_price) or current_price)
+                margin = float(position.get('total_cost', 0) or 0)
+                notional = float(quantity) * float(current_price)
+                pnl = (current_price - avg_price) * quantity if side == 'BUY' else (avg_price - current_price) * quantity
+                fee_rate = float(getattr(bot_instance.trader, 'fee_rate', 0.0002) or 0.0002)
+                fee = notional * fee_rate
+                realized_value = margin + pnl - fee
                 
                 # Simple close - just remove from positions and update cash
                 # This is a simplified close for the dashboard
                 if hasattr(bot_instance.trader, 'cash_balance'):
-                    # Add position value back to cash (simplified)
-                    bot_instance.trader.cash_balance += position_value * 0.999  # Account for fees
+                    bot_instance.trader.cash_balance += realized_value
                     
                     # Remove position
                     del bot_instance.trader.positions[symbol]
                     
-                    print(f"✅ Closed {symbol} position - Value: ${position_value:.2f}")
+                    print(f"✅ Closed {symbol} position - Value: ${realized_value:.2f}")
                     return jsonify({
                         'success': True,
                         'message': f'Closed {symbol} position',
-                        'value': position_value
+                        'value': realized_value
                     })
                 else:
                     return jsonify({'success': False, 'message': 'Cannot close position'}), 500

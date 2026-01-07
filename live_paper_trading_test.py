@@ -16,6 +16,7 @@ from pathlib import Path
 import requests
 import urllib3
 import os
+import time
 
 # Disable SSL warnings for requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -28,8 +29,8 @@ import os
 load_dotenv()
 
 # MEXC API Configuration
-MEXC_API_KEY = "mx0vglVSHm8sh7Nnvd"
-MEXC_SECRET_KEY = "cb416a71d0ba45298eb1383dc7896a18"
+MEXC_API_KEY = os.getenv('MEXC_API_KEY', '')
+MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY', '')
 PAPER_TRADING_MODE = True  # Set to False for real trading
 
 class LiveMexcDataFeed:
@@ -51,6 +52,14 @@ class LiveMexcDataFeed:
         ]
         self.exchange_symbols = None
         self.unsupported_symbols = set()
+
+        self.last_ok_time = None
+        self.last_error_time = None
+        self.last_error = None
+        self.last_latency_ms = None
+        self.consecutive_failures = 0
+        self.total_requests = 0
+        self.total_failures = 0
         try:
             url = f"{self.base_url}/api/v3/exchangeInfo"
             resp = requests.get(url, timeout=8, verify=False)
@@ -66,6 +75,32 @@ class LiveMexcDataFeed:
         except Exception:
             self.exchange_symbols = None
         print("📊 Enhanced MEXC Data Feed initialized - collecting comprehensive market data")
+
+    def get_health(self) -> Dict[str, Any]:
+        try:
+            now = datetime.now()
+            age_ok_s = (now - self.last_ok_time).total_seconds() if self.last_ok_time else None
+            age_err_s = (now - self.last_error_time).total_seconds() if self.last_error_time else None
+            connected = bool(self.last_ok_time and age_ok_s is not None and age_ok_s <= 30)
+            return {
+                'connected': connected,
+                'last_ok_time': self.last_ok_time.isoformat() if self.last_ok_time else None,
+                'last_ok_age_sec': age_ok_s,
+                'last_error_time': self.last_error_time.isoformat() if self.last_error_time else None,
+                'last_error_age_sec': age_err_s,
+                'last_error': self.last_error,
+                'last_latency_ms': self.last_latency_ms,
+                'consecutive_failures': self.consecutive_failures,
+                'total_requests': self.total_requests,
+                'total_failures': self.total_failures,
+                'unsupported_symbols_count': len(getattr(self, 'unsupported_symbols', set()) or set()),
+                'exchange_symbols_loaded': self.exchange_symbols is not None
+            }
+        except Exception:
+            return {
+                'connected': False,
+                'last_error': 'health_check_failed'
+            }
 
     def _normalize_symbol(self, symbol: str) -> str:
         try:
@@ -98,6 +133,8 @@ class LiveMexcDataFeed:
             return None
         
         # Use requests library which works reliably
+        start = time.time()
+        self.total_requests += 1
         try:
             url = f"{self.base_url}/api/v3/ticker/price?symbol={mexc_symbol}"
             response = requests.get(url, timeout=5, verify=False)
@@ -105,6 +142,11 @@ class LiveMexcDataFeed:
             if response.status_code == 200:
                 data = response.json()
                 price = float(data['price'])
+
+                self.last_ok_time = datetime.now()
+                self.last_latency_ms = int((time.time() - start) * 1000)
+                self.last_error = None
+                self.consecutive_failures = 0
                 
                 # Cache the price
                 self.prices_cache[symbol] = {
@@ -116,25 +158,111 @@ class LiveMexcDataFeed:
             else:
                 if response.status_code in (400, 404):
                     self.unsupported_symbols.add(mexc_symbol)
+
+                self.total_failures += 1
+                self.consecutive_failures += 1
+                self.last_error_time = datetime.now()
+                self.last_latency_ms = int((time.time() - start) * 1000)
+                self.last_error = f"HTTP_{response.status_code}"
+
                 print(f"⚠️ Failed to get {symbol} price: Status {response.status_code}")
+
+                cached = self.prices_cache.get(symbol)
+                if cached and isinstance(cached, dict):
+                    try:
+                        age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                        if age <= 30 and cached.get('price'):
+                            return float(cached.get('price'))
+                    except Exception:
+                        pass
                 return None
                 
         except requests.exceptions.RequestException as e:
+            self.total_failures += 1
+            self.consecutive_failures += 1
+            self.last_error_time = datetime.now()
+            self.last_latency_ms = int((time.time() - start) * 1000)
+            self.last_error = str(e)[:120]
             print(f"❌ Error getting {symbol} price: {str(e)[:50]}")
+
+            cached = self.prices_cache.get(symbol)
+            if cached and isinstance(cached, dict):
+                try:
+                    age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                    if age <= 30 and cached.get('price'):
+                        return float(cached.get('price'))
+                except Exception:
+                    pass
             return None
         except Exception as e:
+            self.total_failures += 1
+            self.consecutive_failures += 1
+            self.last_error_time = datetime.now()
+            self.last_latency_ms = int((time.time() - start) * 1000)
+            self.last_error = str(e)[:120]
             print(f"❌ Unexpected error getting {symbol} price: {str(e)[:50]}")
+
+            cached = self.prices_cache.get(symbol)
+            if cached and isinstance(cached, dict):
+                try:
+                    age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                    if age <= 30 and cached.get('price'):
+                        return float(cached.get('price'))
+                except Exception:
+                    pass
             return None
     
     async def get_multiple_prices(self, symbols: List[str]) -> Dict[str, float]:
         """Get multiple live prices at once"""
         prices = {}
-        
+
+        if not symbols:
+            return prices
+
+        # Try a single bulk endpoint first for speed (if supported), then fall back.
+        if len(symbols) >= 8:
+            start = time.time()
+            self.total_requests += 1
+            try:
+                url = f"{self.base_url}/api/v3/ticker/price"
+                response = requests.get(url, timeout=8, verify=False)
+                if response.status_code == 200:
+                    data = response.json()
+                    if isinstance(data, list):
+                        lookup = {}
+                        for item in data:
+                            try:
+                                sym = str((item or {}).get('symbol') or '').upper()
+                                px = float((item or {}).get('price') or 0)
+                                if sym and px > 0:
+                                    lookup[sym] = px
+                            except Exception:
+                                continue
+
+                        for symbol in symbols:
+                            mexc_symbol = self._normalize_symbol(symbol)
+                            px = lookup.get(mexc_symbol)
+                            if px:
+                                prices[symbol] = px
+                                self.prices_cache[symbol] = {'price': px, 'timestamp': datetime.now()}
+
+                        self.last_ok_time = datetime.now()
+                        self.last_latency_ms = int((time.time() - start) * 1000)
+                        self.last_error = None
+                        self.consecutive_failures = 0
+                        return prices
+            except Exception as e:
+                self.total_failures += 1
+                self.consecutive_failures += 1
+                self.last_error_time = datetime.now()
+                self.last_latency_ms = int((time.time() - start) * 1000)
+                self.last_error = str(e)[:120]
+
         for symbol in symbols:
             price = await self.get_live_price(symbol)
             if price:
                 prices[symbol] = price
-                
+
         return prices
     
     async def get_orderbook(self, symbol: str, limit: int = 20) -> Dict:
@@ -413,6 +541,24 @@ class LivePaperTradingManager:
             print(f"🆕 NEW trading session with ${initial_capital:,.2f}")
         
         self.data_feed = LiveMexcDataFeed()
+
+        try:
+            shorting_env = str(os.getenv('ENABLE_PAPER_SHORTING', '1') or '1').strip().lower()
+            self.enable_shorting = shorting_env not in ['0', 'false', 'no', 'off']
+        except Exception:
+            self.enable_shorting = True
+
+        try:
+            self.leverage = float(os.getenv('PAPER_LEVERAGE', '10') or 10)
+            if self.leverage < 1:
+                self.leverage = 1.0
+        except Exception:
+            self.leverage = 10.0
+
+        try:
+            self.fee_rate = float(os.getenv('PAPER_FEE_RATE', '0.0002') or 0.0002)
+        except Exception:
+            self.fee_rate = 0.0002
         
         print(f"🔥 LIVE Paper Trading Manager active")
         print(f"   💰 Current Balance: ${self.cash_balance:.2f}")
@@ -442,76 +588,221 @@ class LivePaperTradingManager:
         # are systematically above the mark price.
         slippage_pct = random.uniform(-0.0002, 0.0002)
         execution_price = current_price * (1 + slippage_pct)
-        
-        # Calculate quantity
-        if action.upper() == "BUY":
-            if amount_usd > self.cash_balance:
-                return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
-            
-            commission = amount_usd * 0.0002  # 0.02% commission
-            net_amount = amount_usd - commission
-            quantity = net_amount / execution_price
-            
-            # Update positions
-            if symbol not in self.positions:
-                self.positions[symbol] = {
-                    "quantity": 0, 
-                    "avg_price": 0, 
-                    "total_cost": 0,
-                    "take_profit": None,
-                    "stop_loss": None,
-                    "action": "BUY"
-                }
-            
-            old_quantity = self.positions[symbol]["quantity"]
-            old_cost = self.positions[symbol]["total_cost"]
-            
-            new_quantity = old_quantity + quantity
-            new_cost = old_cost + net_amount
-            
-            existing_tp = self.positions[symbol].get('take_profit')
-            existing_sl = self.positions[symbol].get('stop_loss')
 
-            self.positions[symbol] = {
-                "quantity": new_quantity,
-                "avg_price": new_cost / new_quantity if new_quantity > 0 else 0,
-                "total_cost": new_cost,
-                "take_profit": take_profit if take_profit is not None else existing_tp,  # Preserve if not provided
-                "stop_loss": stop_loss if stop_loss is not None else existing_sl,
-                "action": "BUY"
-            }
-            
-            self.cash_balance -= amount_usd
-            
-        else:  # SELL
-            if symbol not in self.positions or self.positions[symbol]["quantity"] <= 0:
-                return {"success": False, "error": f"No {symbol} position to sell"}
-            
-            # Calculate quantity to sell
-            max_sell_value = self.positions[symbol]["quantity"] * execution_price
-            if amount_usd > max_sell_value:
-                amount_usd = max_sell_value
-            
-            quantity = amount_usd / execution_price
-            commission = amount_usd * 0.0002
-            net_proceeds = amount_usd - commission
-            
-            # Update position
-            self.positions[symbol]["quantity"] -= quantity
-            cost_basis = (amount_usd / execution_price) * self.positions[symbol]["avg_price"]
-            self.positions[symbol]["total_cost"] -= cost_basis
-            
-            if self.positions[symbol]["quantity"] <= 0.0001:  # Close position
+        action_u = str(action).upper()
+        if action_u not in ['BUY', 'SELL']:
+            return {"success": False, "error": f"Invalid action: {action}"}
+
+        existing = self.positions.get(symbol) if isinstance(getattr(self, 'positions', None), dict) else None
+        existing_qty = float(existing.get('quantity', 0) or 0) if isinstance(existing, dict) else 0.0
+        existing_side = str(existing.get('action', 'BUY') or 'BUY').upper() if isinstance(existing, dict) else ''
+
+        trade_event = None
+        realized_pnl = None
+        notional_usd = None
+        
+        if action_u == 'BUY':
+            if existing_qty > 0 and existing_side == 'SELL':
+                max_notional = existing_qty * execution_price
+                close_notional = float(amount_usd or 0)
+                if close_notional <= 0:
+                    close_notional = max_notional
+                close_notional = min(close_notional, max_notional)
+
+                trade_event = 'COVER_SHORT'
+                notional_usd = close_notional
+
+                quantity = close_notional / execution_price
+                commission = close_notional * self.fee_rate
+
+                entry_px = float(existing.get('avg_price', 0) or 0)
+                pnl = (entry_px - execution_price) * quantity
+
+                old_margin = float(existing.get('total_cost', 0) or 0)
+                margin_released = old_margin * (quantity / existing_qty) if existing_qty > 0 else 0.0
+
+                self.cash_balance += margin_released + pnl - commission
+                realized_pnl = pnl - commission
+                new_qty = existing_qty - quantity
+                new_margin = max(0.0, old_margin - margin_released)
+
+                existing_tp = existing.get('take_profit')
+                existing_sl = existing.get('stop_loss')
+
+                if new_qty <= 0.0000001:
+                    self.positions[symbol] = {
+                        "quantity": 0,
+                        "avg_price": 0,
+                        "total_cost": 0,
+                        "take_profit": None,
+                        "stop_loss": None,
+                        "action": "BUY"
+                    }
+                else:
+                    self.positions[symbol] = {
+                        "quantity": new_qty,
+                        "avg_price": entry_px,
+                        "total_cost": new_margin,
+                        "take_profit": take_profit if take_profit is not None else existing_tp,
+                        "stop_loss": stop_loss if stop_loss is not None else existing_sl,
+                        "action": "SELL"
+                    }
+            else:
+                margin = float(amount_usd or 0)
+                if margin <= 0:
+                    return {"success": False, "error": "Amount must be > 0"}
+
+                notional = margin * (self.leverage if self.enable_shorting else 1.0)
+                commission = notional * self.fee_rate
+                required = margin + commission
+                if required > self.cash_balance:
+                    return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
+
+                quantity = notional / execution_price
+
+                trade_event = 'OPEN_LONG' if not (existing_qty > 0 and existing_side == 'BUY') else 'ADD_LONG'
+                notional_usd = notional
+
+                if symbol not in self.positions:
+                    self.positions[symbol] = {
+                        "quantity": 0,
+                        "avg_price": 0,
+                        "total_cost": 0,
+                        "take_profit": None,
+                        "stop_loss": None,
+                        "action": "BUY"
+                    }
+
+                if existing_qty > 0 and existing_side == 'BUY':
+                    old_quantity = existing_qty
+                    old_margin = float(existing.get('total_cost', 0) or 0)
+                    old_avg = float(existing.get('avg_price', 0) or 0)
+                    new_quantity = old_quantity + quantity
+                    new_avg = (old_avg * old_quantity + execution_price * quantity) / new_quantity if new_quantity > 0 else 0
+                    new_margin = old_margin + margin
+                    existing_tp = existing.get('take_profit')
+                    existing_sl = existing.get('stop_loss')
+                else:
+                    new_quantity = quantity
+                    new_avg = execution_price
+                    new_margin = margin
+                    existing_tp = existing.get('take_profit') if isinstance(existing, dict) else None
+                    existing_sl = existing.get('stop_loss') if isinstance(existing, dict) else None
+
                 self.positions[symbol] = {
-                    "quantity": 0,
-                    "avg_price": 0,
-                    "total_cost": 0,
-                    "take_profit": None,
-                    "stop_loss": None,
+                    "quantity": new_quantity,
+                    "avg_price": new_avg,
+                    "total_cost": new_margin,
+                    "take_profit": take_profit if take_profit is not None else existing_tp,
+                    "stop_loss": stop_loss if stop_loss is not None else existing_sl,
                     "action": "BUY"
                 }
-            
-            self.cash_balance += net_proceeds
+
+                self.cash_balance -= required
+                realized_pnl = -commission
+
+        else:  # SELL
+            if existing_qty > 0 and existing_side == 'BUY':
+                max_notional = existing_qty * execution_price
+                close_notional = float(amount_usd or 0)
+                if close_notional <= 0:
+                    close_notional = max_notional
+                close_notional = min(close_notional, max_notional)
+
+                trade_event = 'CLOSE_LONG'
+                notional_usd = close_notional
+
+                quantity = close_notional / execution_price
+                commission = close_notional * self.fee_rate
+
+                entry_px = float(existing.get('avg_price', 0) or 0)
+                pnl = (execution_price - entry_px) * quantity
+
+                old_margin = float(existing.get('total_cost', 0) or 0)
+                margin_released = old_margin * (quantity / existing_qty) if existing_qty > 0 else 0.0
+
+                self.cash_balance += margin_released + pnl - commission
+                realized_pnl = pnl - commission
+                new_qty = existing_qty - quantity
+                new_margin = max(0.0, old_margin - margin_released)
+
+                existing_tp = existing.get('take_profit')
+                existing_sl = existing.get('stop_loss')
+
+                if new_qty <= 0.0000001:
+                    self.positions[symbol] = {
+                        "quantity": 0,
+                        "avg_price": 0,
+                        "total_cost": 0,
+                        "take_profit": None,
+                        "stop_loss": None,
+                        "action": "BUY"
+                    }
+                else:
+                    self.positions[symbol] = {
+                        "quantity": new_qty,
+                        "avg_price": entry_px,
+                        "total_cost": new_margin,
+                        "take_profit": take_profit if take_profit is not None else existing_tp,
+                        "stop_loss": stop_loss if stop_loss is not None else existing_sl,
+                        "action": "BUY"
+                    }
+            else:
+                if not self.enable_shorting:
+                    return {"success": False, "error": "Shorting disabled"}
+
+                margin = float(amount_usd or 0)
+                if margin <= 0:
+                    return {"success": False, "error": "Amount must be > 0"}
+
+                notional = margin * self.leverage
+                commission = notional * self.fee_rate
+                required = margin + commission
+                if required > self.cash_balance:
+                    return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
+
+                quantity = notional / execution_price
+
+                trade_event = 'OPEN_SHORT' if not (existing_qty > 0 and existing_side == 'SELL') else 'ADD_SHORT'
+                notional_usd = notional
+
+                if symbol not in self.positions:
+                    self.positions[symbol] = {
+                        "quantity": 0,
+                        "avg_price": 0,
+                        "total_cost": 0,
+                        "take_profit": None,
+                        "stop_loss": None,
+                        "action": "BUY"
+                    }
+
+                if existing_qty > 0 and existing_side == 'SELL':
+                    old_quantity = existing_qty
+                    old_margin = float(existing.get('total_cost', 0) or 0)
+                    old_avg = float(existing.get('avg_price', 0) or 0)
+                    new_quantity = old_quantity + quantity
+                    new_avg = (old_avg * old_quantity + execution_price * quantity) / new_quantity if new_quantity > 0 else 0
+                    new_margin = old_margin + margin
+                    existing_tp = existing.get('take_profit')
+                    existing_sl = existing.get('stop_loss')
+                else:
+                    new_quantity = quantity
+                    new_avg = execution_price
+                    new_margin = margin
+                    existing_tp = existing.get('take_profit') if isinstance(existing, dict) else None
+                    existing_sl = existing.get('stop_loss') if isinstance(existing, dict) else None
+
+                self.positions[symbol] = {
+                    "quantity": new_quantity,
+                    "avg_price": new_avg,
+                    "total_cost": new_margin,
+                    "take_profit": take_profit if take_profit is not None else existing_tp,
+                    "stop_loss": stop_loss if stop_loss is not None else existing_sl,
+                    "action": "SELL"
+                }
+
+                self.cash_balance -= required
+                realized_pnl = -commission
         
         # Record trade
         trade_record = {
@@ -519,11 +810,14 @@ class LivePaperTradingManager:
             "symbol": symbol,
             "action": action.upper(),
             "amount_usd": amount_usd,
+            "notional_usd": notional_usd,
             "quantity": quantity,
             "live_price": current_price,
             "execution_price": execution_price,
             "slippage_pct": slippage_pct * 100,
             "commission": commission,
+            "pnl": float(realized_pnl or 0.0),
+            "event": trade_event,
             "strategy": strategy,
             "success": True
         }
@@ -557,34 +851,45 @@ class LivePaperTradingManager:
             live_prices = fetched or {}
         
         for symbol, position in self.positions.items():
-            if position["quantity"] > 0:
+            if position.get("quantity", 0) > 0:
                 if symbol in live_prices:
                     current_price = live_prices[symbol]
                 elif position.get("current_price") and position.get("current_price") > 0:
                     current_price = position["current_price"]
                 else:
                     current_price = position.get("avg_price", 0)
-                
-                current_value = position["quantity"] * current_price
-                portfolio_value += current_value
-                
+
+                side = str(position.get('action', 'BUY') or 'BUY').upper()
+                qty = float(position.get('quantity', 0) or 0)
+                avg_px = float(position.get('avg_price', current_price) or current_price)
+                margin = float(position.get('total_cost', 0) or 0)
+
+                notional_value = qty * current_price
+                unrealized_pnl = (current_price - avg_px) * qty if side == 'BUY' else (avg_px - current_price) * qty
+                equity_value = margin + unrealized_pnl
+
+                portfolio_value += equity_value
+
                 position["current_price"] = current_price
-                position["current_value"] = current_value
-                position["cost_basis"] = position.get("total_cost", 0)
-                position["unrealized_pnl"] = current_value - position.get("total_cost", 0)
-                position["avg_price"] = position.get("avg_price", current_price)
+                position["current_value"] = notional_value
+                position["cost_basis"] = margin
+                position["unrealized_pnl"] = unrealized_pnl
+                position["avg_price"] = avg_px
+                position["equity_value"] = equity_value
                 if "take_profit" not in position:
                     position["take_profit"] = None
                 if "stop_loss" not in position:
                     position["stop_loss"] = None
                 
                 position_values[symbol] = {
-                    "quantity": position["quantity"],
+                    "quantity": qty,
                     "current_price": current_price,
-                    "current_value": current_value,
-                    "cost_basis": position.get("total_cost", 0),
-                    "unrealized_pnl": current_value - position.get("total_cost", 0),
-                    "avg_price": position.get("avg_price", current_price),
+                    "current_value": notional_value,
+                    "cost_basis": margin,
+                    "unrealized_pnl": unrealized_pnl,
+                    "avg_price": avg_px,
+                    "equity_value": equity_value,
+                    "action": side,
                     "take_profit": position.get("take_profit"),
                     "stop_loss": position.get("stop_loss")
                 }
@@ -603,18 +908,31 @@ class LivePaperTradingManager:
         position_values = {}
         
         for symbol, position in self.positions.items():
-            if position["quantity"] > 0:
-                # Use average price (cost basis) for sync calculation
-                current_price = position["avg_price"]
-                current_value = position["quantity"] * current_price
-                portfolio_value += current_value
+            if position.get("quantity", 0) > 0:
+                current_price = position.get('current_price', position.get("avg_price", 0))
+                side = str(position.get('action', 'BUY') or 'BUY').upper()
+                qty = float(position.get('quantity', 0) or 0)
+                avg_px = float(position.get('avg_price', current_price) or current_price)
+                margin = float(position.get('total_cost', 0) or 0)
+
+                notional_value = qty * current_price
+                unrealized_pnl = (current_price - avg_px) * qty if side == 'BUY' else (avg_px - current_price) * qty
+                equity_value = margin + unrealized_pnl
+
+                portfolio_value += equity_value
+                pnl_percentage = (unrealized_pnl / margin) * 100 if margin > 0 else 0
                 position_values[symbol] = {
-                    "quantity": position["quantity"],
+                    "quantity": qty,
                     "current_price": current_price,
-                    "current_value": current_value,
-                    "cost_basis": position["total_cost"],
-                    "unrealized_pnl": current_value - position["total_cost"],
-                    "pnl_percentage": ((current_value - position["total_cost"]) / position["total_cost"]) * 100 if position["total_cost"] > 0 else 0
+                    "current_value": notional_value,
+                    "cost_basis": margin,
+                    "unrealized_pnl": unrealized_pnl,
+                    "pnl_percentage": pnl_percentage,
+                    "avg_price": avg_px,
+                    "equity_value": equity_value,
+                    "action": side,
+                    "take_profit": position.get('take_profit'),
+                    "stop_loss": position.get('stop_loss')
                 }
         
         return {

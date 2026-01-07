@@ -3902,7 +3902,11 @@ class LegendaryCryptoTitanBot:
                     print(f"   ✅ Generated {len(signals)} signals")
                     sell_count = sum(1 for sig in signals if sig.action == 'SELL')
                     if sell_count > 0:
-                        print(f"   ℹ️ {sell_count} SELL signals will be converted to BUY (spot trading only)")
+                        shorting_enabled = bool(getattr(getattr(self, 'trader', None), 'enable_shorting', False))
+                        if shorting_enabled:
+                            print(f"   ℹ️ {sell_count} SELL signals detected (paper shorting enabled)")
+                        else:
+                            print(f"   ℹ️ {sell_count} SELL signals will be converted to BUY (spot trading only)")
                     for sig in signals[:3]:
                         action_display = f"{sig.action} → BUY" if sig.action == 'SELL' else sig.action
                         print(f"      • {action_display} {sig.symbol} (Confidence: {sig.confidence:.0%})")
@@ -9132,7 +9136,7 @@ class LegendaryCryptoTitanBot:
             # In spot trading, you can only BUY to open positions (no short selling)
             # SELL is only for closing positions
             trade_action = signal.action
-            if trade_action == 'SELL':
+            if trade_action == 'SELL' and not bool(getattr(getattr(self, 'trader', None), 'enable_shorting', False)):
                 print(f"   🔄 {signal.symbol}: Converting SELL signal to BUY (spot trading - no short selling)")
                 trade_action = 'BUY'
             
@@ -9256,7 +9260,7 @@ class LegendaryCryptoTitanBot:
             
             # 🚨 SPOT TRADING ONLY: Convert SELL signals to BUY signals
             trade_action = getattr(signal, 'action', 'BUY')
-            if trade_action == 'SELL':
+            if trade_action == 'SELL' and not bool(getattr(getattr(self, 'trader', None), 'enable_shorting', False)):
                 print(f"   🔄 {signal.symbol}: Converting SELL signal to BUY (spot trading - no short selling)")
                 trade_action = 'BUY'
 
