@@ -437,19 +437,18 @@ class LivePaperTradingManager:
         
         print(f"📈 LIVE {symbol} Price: ${current_price:,.2f}")
         
-        # Add realistic slippage (0.1-0.5%)
-        slippage_pct = random.uniform(0.001, 0.005)
-        if action.upper() == "BUY":
-            execution_price = current_price * (1 + slippage_pct)
-        else:
-            execution_price = current_price * (1 - slippage_pct)
+        # Add minimal, zero-mean slippage for paper trading (±0.02%)
+        # This avoids the UI always showing immediate losses simply because BUY fills
+        # are systematically above the mark price.
+        slippage_pct = random.uniform(-0.0002, 0.0002)
+        execution_price = current_price * (1 + slippage_pct)
         
         # Calculate quantity
         if action.upper() == "BUY":
             if amount_usd > self.cash_balance:
                 return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
             
-            commission = amount_usd * 0.001  # 0.1% commission
+            commission = amount_usd * 0.0002  # 0.02% commission
             net_amount = amount_usd - commission
             quantity = net_amount / execution_price
             
@@ -460,7 +459,8 @@ class LivePaperTradingManager:
                     "avg_price": 0, 
                     "total_cost": 0,
                     "take_profit": None,
-                    "stop_loss": None
+                    "stop_loss": None,
+                    "action": "BUY"
                 }
             
             old_quantity = self.positions[symbol]["quantity"]
@@ -469,12 +469,16 @@ class LivePaperTradingManager:
             new_quantity = old_quantity + quantity
             new_cost = old_cost + net_amount
             
+            existing_tp = self.positions[symbol].get('take_profit')
+            existing_sl = self.positions[symbol].get('stop_loss')
+
             self.positions[symbol] = {
                 "quantity": new_quantity,
                 "avg_price": new_cost / new_quantity if new_quantity > 0 else 0,
                 "total_cost": new_cost,
-                "take_profit": take_profit,  # Store TP/SL for position management
-                "stop_loss": stop_loss
+                "take_profit": take_profit if take_profit is not None else existing_tp,  # Preserve if not provided
+                "stop_loss": stop_loss if stop_loss is not None else existing_sl,
+                "action": "BUY"
             }
             
             self.cash_balance -= amount_usd
@@ -489,7 +493,7 @@ class LivePaperTradingManager:
                 amount_usd = max_sell_value
             
             quantity = amount_usd / execution_price
-            commission = amount_usd * 0.001
+            commission = amount_usd * 0.0002
             net_proceeds = amount_usd - commission
             
             # Update position
@@ -498,7 +502,14 @@ class LivePaperTradingManager:
             self.positions[symbol]["total_cost"] -= cost_basis
             
             if self.positions[symbol]["quantity"] <= 0.0001:  # Close position
-                self.positions[symbol] = {"quantity": 0, "avg_price": 0, "total_cost": 0}
+                self.positions[symbol] = {
+                    "quantity": 0,
+                    "avg_price": 0,
+                    "total_cost": 0,
+                    "take_profit": None,
+                    "stop_loss": None,
+                    "action": "BUY"
+                }
             
             self.cash_balance += net_proceeds
         

@@ -5469,15 +5469,15 @@ class LegendaryCryptoTitanBot:
         
         # Get signal info to determine if BUY or SELL
         signal = self.active_signals.get(symbol)
-        # CRITICAL FIX: Default to BUY if signal not found (spot trading only supports long positions)
-        # In spot trading, having quantity > 0 means it's a BUY position
-        if signal:
-            is_sell_order = signal.action == 'SELL'
+        # Spot trading: open positions are long. Prefer persisted position action over signal (signal can be immutable/stale).
+        pos_action = str(position.get('action', '') or '').upper()
+        if pos_action in ['BUY', 'SELL']:
+            is_sell_order = pos_action == 'SELL'
+        elif signal:
+            is_sell_order = getattr(signal, 'action', 'BUY') == 'SELL'
         else:
-            # Fallback: Check if position data has action field, otherwise default to BUY (spot = long only)
-            is_sell_order = position.get('action', 'BUY').upper() == 'SELL'
-            if not is_sell_order:
-                print(f"      ⚠️ No signal found for {symbol}, assuming BUY position (spot trading)")
+            is_sell_order = False
+            print(f"      ⚠️ No signal/action found for {symbol}, assuming BUY position (spot trading)")
         
         # Calculate P&L percentage correctly for BUY vs SELL
         # NOTE: We already have current_price set above from real MEXC data - don't recalculate it!
@@ -9135,11 +9135,6 @@ class LegendaryCryptoTitanBot:
             if trade_action == 'SELL':
                 print(f"   🔄 {signal.symbol}: Converting SELL signal to BUY (spot trading - no short selling)")
                 trade_action = 'BUY'
-
-            try:
-                signal.action = trade_action
-            except Exception:
-                pass
             
             # Execute micro trade with Ultra AI precision!
             try:
@@ -9147,7 +9142,7 @@ class LegendaryCryptoTitanBot:
                 sl_pct = float(getattr(self, 'stop_loss', 0.5) or 0.5)
                 tp_pct = float(getattr(self, 'take_profit', 1.0) or 1.0)
                 if ep > 0 and sl_pct > 0 and tp_pct > 0:
-                    if str(getattr(signal, 'action', 'BUY')).upper() == 'BUY':
+                    if str(trade_action).upper() == 'BUY':
                         signal.stop_loss = ep * (1 - sl_pct / 100.0)
                         signal.take_profit = ep * (1 + tp_pct / 100.0)
                     else:
@@ -9175,7 +9170,7 @@ class LegendaryCryptoTitanBot:
                         try:
                             self.trader.positions[signal.symbol]['take_profit'] = getattr(signal, 'take_profit', None)
                             self.trader.positions[signal.symbol]['stop_loss'] = getattr(signal, 'stop_loss', None)
-                            self.trader.positions[signal.symbol]['action'] = trade_action
+                            self.trader.positions[signal.symbol]['action'] = str(trade_action).upper()
                         except Exception:
                             pass
                 
