@@ -19,6 +19,7 @@ GOAL: Turn 5,000 sats into MILLIONS through compound growth
 """
 
 from decimal import Decimal
+import os
 import math
 
 class CompoundBeastEngine:
@@ -449,8 +450,8 @@ class CompoundBeastStrategy:
 
 # 🎯 5% DAILY COMPOUND MEXC CONFIG
 MEXC_COMPOUND_BEAST_CONFIG = {
-    'api_key': 'mx0vglVSHm8sh7Nnvd',
-    'api_secret': 'cb416a71d0ba45298eb1383dc7896a18',
+    'api_key': os.getenv('MEXC_API_KEY', ''),
+    'api_secret': os.getenv('MEXC_API_SECRET', ''),
     'exchange': 'mexc',
     'initial_capital_sats': 5000,
     

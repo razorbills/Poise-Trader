@@ -19,9 +19,16 @@ bot_status = {
     'status': 'starting',
     'start_time': datetime.now().isoformat(),
     'trades': 0,
-    'capital': 5.0,
+    'capital': None,
     'last_update': None
 }
+
+try:
+    DEFAULT_STARTING_CAPITAL = float(os.environ.get('INITIAL_CAPITAL', '5.0') or 5.0)
+except Exception:
+    DEFAULT_STARTING_CAPITAL = 5.0
+
+bot_status['capital'] = DEFAULT_STARTING_CAPITAL
 
 @app.route('/')
 def home():
@@ -51,7 +58,7 @@ def run_bot():
             bot_status['status'] = 'initializing'
             
             # Initialize bot
-            bot = MicroTradingBot(initial_capital=5.0)
+            bot = MicroTradingBot(initial_capital=DEFAULT_STARTING_CAPITAL)
             bot.set_trading_mode('PRECISION')
             
             bot_status['status'] = 'running'

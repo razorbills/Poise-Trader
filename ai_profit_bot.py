@@ -967,8 +967,11 @@ class AIProfitMaximizationBot:
         quantity_to_sell = position['quantity'] * 0.7  # Sell 70% of position
         current_price = position['current_price']
         sell_value = quantity_to_sell * current_price
-        
-        result = await self.trader.execute_live_trade(symbol, 'SELL', sell_value, f'profit_take_{reason}')
+
+        pos_side = str(position.get('action', 'BUY') or 'BUY').upper()
+        close_side = 'SELL' if pos_side == 'BUY' else 'BUY'
+
+        result = await self.trader.execute_live_trade(symbol, close_side, sell_value, f'profit_take_{reason}')
         
         if result['success']:
             pnl = position['unrealized_pnl'] * 0.7  # Approximate profit taken
@@ -1016,8 +1019,12 @@ class AIProfitMaximizationBot:
         
         current_price = position['current_price']
         sell_value = position['current_value']
-        
-        result = await self.trader.execute_live_trade(symbol, 'SELL', sell_value, f'stop_loss_{reason}')
+
+        pos_side = str(position.get('action', 'BUY') or 'BUY').upper()
+        close_side = 'SELL' if pos_side == 'BUY' else 'BUY'
+
+        # Full close in live mode: amount 0 means "close max" for reduceOnly execution
+        result = await self.trader.execute_live_trade(symbol, close_side, 0, f'stop_loss_{reason}')
         
         if result['success']:
             loss = position['unrealized_pnl']

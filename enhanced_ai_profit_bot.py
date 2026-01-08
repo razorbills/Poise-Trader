@@ -451,8 +451,11 @@ class EnhancedAIProfitBot:
     
     async def _close_enhanced_position(self, symbol: str, position: Dict, reason: str):
         """Close position with enhanced logging"""
+        pos_side = str(position.get('action', 'BUY') or 'BUY').upper()
+        close_side = 'SELL' if pos_side == 'BUY' else 'BUY'
+
         result = await self.trader.execute_live_trade(
-            symbol, 'SELL', position['current_value'], f'CLOSE_{reason}'
+            symbol, close_side, 0, f'CLOSE_{reason}'
         )
         
         if result['success']:

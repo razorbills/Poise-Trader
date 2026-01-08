@@ -23,6 +23,11 @@ pnl_history = []
 max_history_points = 50
 start_time = time.time()
 
+try:
+    DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
+except Exception:
+    DEFAULT_STARTING_CAPITAL = 5.0
+
 @app.route('/')
 def index():
     """Serve the enhanced dashboard"""
@@ -92,6 +97,34 @@ def get_status():
                     df = bot_instance.trader.data_feed
                     if hasattr(df, 'get_health'):
                         status['mexc'] = df.get_health()
+
+                try:
+                    real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+                    real_enabled = real_env in ['1', 'true', 'yes', 'on']
+                except Exception:
+                    real_enabled = False
+
+                try:
+                    api_key = os.getenv('MEXC_API_KEY', '')
+                    api_secret = os.getenv('MEXC_API_SECRET', '') or os.getenv('MEXC_SECRET_KEY', '')
+                    keys_present = bool(api_key and api_secret)
+                except Exception:
+                    keys_present = False
+
+                try:
+                    market_type = str(getattr(bot_instance.trader, 'market_type', '') or os.getenv('PAPER_MARKET_TYPE', '') or '').strip().lower()
+                except Exception:
+                    market_type = ''
+
+                status['real_trading'] = {
+                    'enabled': bool(real_enabled),
+                    'keys_present': bool(keys_present),
+                    'market_type': market_type or None,
+                    'leverage': float(getattr(bot_instance.trader, 'leverage', 1.0) or 1.0),
+                    'ready': bool(getattr(bot_instance.trader, '_real_trading_ready', lambda: False)()),
+                    'last_error': getattr(bot_instance.trader, 'last_real_order_error', None),
+                    'last_order': getattr(bot_instance.trader, 'last_real_order', None)
+                }
         except Exception as e:
             status['mexc'] = {'connected': False, 'last_error': str(e)[:120]}
     
@@ -522,14 +555,15 @@ def reset_trading():
     global bot_instance
     
     try:
+        start_capital = DEFAULT_STARTING_CAPITAL
         # Create fresh trading state
         fresh_state = {
-            "cash_balance": 5.0,
+            "cash_balance": start_capital,
             "positions": {},
             "trade_history": [],
             "total_trades": 0,
             "winning_trades": 0,
-            "initial_capital": 5.0,
+            "initial_capital": start_capital,
             "last_save_time": datetime.now().isoformat()
         }
         
@@ -540,15 +574,26 @@ def reset_trading():
         
         # Reset bot if connected
         if bot_instance and hasattr(bot_instance, 'trader'):
-            bot_instance.trader.cash_balance = 5.0
+            try:
+                bot_instance.trader.cash_balance = start_capital
+            except Exception:
+                pass
             bot_instance.trader.positions = {}
             bot_instance.trader.trade_history = []
+            try:
+                bot_instance.trader.initial_capital = start_capital
+            except Exception:
+                pass
             bot_instance.total_completed_trades = 0
             bot_instance.winning_trades = 0
-            bot_instance.current_capital = 5.0
+            bot_instance.current_capital = start_capital
+            try:
+                bot_instance.initial_capital = start_capital
+            except Exception:
+                pass
             
-        print(f"✅ Trading reset to fresh $5.00")
-        return jsonify({'success': True, 'message': 'Reset to $5.00 starting capital'})
+        print(f"✅ Trading reset to fresh ${start_capital:.2f}")
+        return jsonify({'success': True, 'message': f'Reset to ${start_capital:.2f} starting capital'})
         
     except Exception as e:
         print(f"❌ Error resetting: {e}")
@@ -589,23 +634,44 @@ def close_position():
                 fee_rate = float(getattr(bot_instance.trader, 'fee_rate', 0.0002) or 0.0002)
                 fee = notional * fee_rate
                 realized_value = margin + pnl - fee
-                
-                # Simple close - just remove from positions and update cash
-                # This is a simplified close for the dashboard
+
+                # Prefer bot close path so it records trades and triggers learning
+                if hasattr(bot_instance, '_close_micro_position'):
+                    import asyncio
+                    pos_for_close = dict(position)
+                    pos_for_close['current_value'] = notional
+                    pos_for_close['unrealized_pnl'] = pnl
+                    pos_for_close['cost_basis'] = margin
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(bot_instance._close_micro_position(symbol, pos_for_close, 'MANUAL_DASHBOARD_CLOSE'))
+                    finally:
+                        try:
+                            loop.close()
+                        except Exception:
+                            pass
+
+                    try:
+                        updated = bot_instance.trader.positions.get(symbol)
+                        still_open = bool(updated and float(updated.get('quantity', 0) or 0) > 0)
+                    except Exception:
+                        still_open = False
+
+                    if still_open:
+                        return jsonify({'success': False, 'message': f'Close submitted but {symbol} still open'}), 500
+
+                    print(f"✅ Closed {symbol} position (bot close) - Value: ${realized_value:.4f}")
+                    return jsonify({'success': True, 'message': f'Closed {symbol} position', 'value': realized_value})
+
+                # Fallback: simplified close if bot method not available
                 if hasattr(bot_instance.trader, 'cash_balance'):
                     bot_instance.trader.cash_balance += realized_value
-                    
-                    # Remove position
                     del bot_instance.trader.positions[symbol]
-                    
-                    print(f"✅ Closed {symbol} position - Value: ${realized_value:.2f}")
-                    return jsonify({
-                        'success': True,
-                        'message': f'Closed {symbol} position',
-                        'value': realized_value
-                    })
-                else:
-                    return jsonify({'success': False, 'message': 'Cannot close position'}), 500
+                    print(f"✅ Closed {symbol} position - Value: ${realized_value:.4f}")
+                    return jsonify({'success': True, 'message': f'Closed {symbol} position', 'value': realized_value})
+
+                return jsonify({'success': False, 'message': 'Cannot close position'}), 500
                         
                 return jsonify({'success': False, 'message': 'Position not found'}), 404
         

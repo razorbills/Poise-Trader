@@ -16,6 +16,7 @@ Just start it and let it compound your 5k sats to millions!
 import asyncio
 import time
 import json
+import os
 from datetime import datetime, timedelta
 from decimal import Decimal
 import random
@@ -348,7 +349,7 @@ class AutonomousBot:
         self.ai_brain = AIBrainEngine()
         self.trade_executor = AutoTradeExecutor(
             initial_capital_sats, 
-            {'api_key': 'mx0vglVSHm8sh7Nnvd', 'api_secret': 'cb416a71d0ba45298eb1383dc7896a18'}
+            {'api_key': os.getenv('MEXC_API_KEY', ''), 'api_secret': os.getenv('MEXC_API_SECRET', '')}
         )
         
         # Bot Configuration

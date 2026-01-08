@@ -18,6 +18,7 @@ TARGET: 2% daily profit (very achievable in crypto!)
 
 from decimal import Decimal
 from datetime import datetime, timedelta
+import os
 import math
 
 class DailySatsHunter:
@@ -377,8 +378,8 @@ class DailySatsStrategy:
 
 # 🎯 DAILY SATS MEXC CONFIGURATION
 MEXC_DAILY_SATS_CONFIG = {
-    'api_key': 'mx0vglVSHm8sh7Nnvd',
-    'api_secret': 'cb416a71d0ba45298eb1383dc7896a18',
+    'api_key': os.getenv('MEXC_API_KEY', ''),
+    'api_secret': os.getenv('MEXC_API_SECRET', ''),
     'exchange': 'mexc',
     'initial_capital_sats': 5000,
     

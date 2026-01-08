@@ -67,6 +67,45 @@ def get_status():
         active_positions = 0
         if 'positions' in portfolio:
             active_positions = len([p for p in portfolio.get('positions', {}).values() if p.get('quantity', 0) > 0])
+
+        try:
+            real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+            real_enabled = real_env in ['1', 'true', 'yes', 'on']
+        except Exception:
+            real_enabled = False
+
+        try:
+            api_key = os.getenv('MEXC_API_KEY', '')
+            api_secret = os.getenv('MEXC_API_SECRET', '') or os.getenv('MEXC_SECRET_KEY', '')
+            keys_present = bool(api_key and api_secret)
+        except Exception:
+            keys_present = False
+
+        try:
+            market_type = str(getattr(bot_instance.trader, 'market_type', '') or os.getenv('PAPER_MARKET_TYPE', '') or '').strip().lower()
+        except Exception:
+            market_type = ''
+
+        real_trading_block = None
+        try:
+            real_trading_block = {
+                'enabled': bool(real_enabled),
+                'keys_present': bool(keys_present),
+                'market_type': market_type or None,
+                'leverage': float(getattr(bot_instance.trader, 'leverage', 1.0) or 1.0),
+                'ready': bool(getattr(bot_instance.trader, '_real_trading_ready', lambda: False)()),
+                'last_error': getattr(bot_instance.trader, 'last_real_order_error', None),
+                'last_order': getattr(bot_instance.trader, 'last_real_order', None)
+            }
+        except Exception:
+            real_trading_block = {
+                'enabled': bool(real_enabled),
+                'keys_present': bool(keys_present),
+                'market_type': market_type or None,
+                'ready': False,
+                'last_error': None,
+                'last_order': None
+            }
         
         return jsonify({
             'status': status,  # 'running' or 'waiting'
@@ -76,7 +115,8 @@ def get_status():
             'win_rate': win_stats.get('current_win_rate', bot_instance.win_rate) * 100,
             'current_streak': win_stats.get('current_streak', 0),
             'trading_mode': bot_instance.trading_mode,
-            'bot_running': bot_instance.bot_running  # Explicit flag
+            'bot_running': bot_instance.bot_running,  # Explicit flag
+            'real_trading': real_trading_block
         })
     except Exception as e:
         import traceback
@@ -258,10 +298,15 @@ def reset_trading():
     import json
     
     try:
+        try:
+            start_capital = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
+        except Exception:
+            start_capital = 5.0
+
         # Create fresh state file
         fresh_state = {
-            "cash_balance": 5.0,
-            "initial_capital": 5.0,
+            "cash_balance": start_capital,
+            "initial_capital": start_capital,
             "positions": {},
             "trade_history": [],
             "total_trades": 0,
@@ -276,10 +321,10 @@ def reset_trading():
         global bot_instance
         if bot_instance and hasattr(bot_instance, 'trader'):
             from live_paper_trading_test import LivePaperTradingManager
-            bot_instance.trader = LivePaperTradingManager(5.0)
-            print("♻️ Trading state reset - starting fresh with $5.00")
+            bot_instance.trader = LivePaperTradingManager(start_capital)
+            print(f"♻️ Trading state reset - starting fresh with ${start_capital:.2f}")
         
-        return jsonify({'success': True, 'message': 'Trading state reset to $5.00'})
+        return jsonify({'success': True, 'message': f'Trading state reset to ${start_capital:.2f}'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 

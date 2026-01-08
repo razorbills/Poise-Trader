@@ -1965,15 +1965,21 @@ class LegendaryCryptoTitanBot:
         else:
             return f"http://localhost:{port}"
     
-    def __init__(self, initial_capital=5.0):
+    def __init__(self, initial_capital=None):
         print("\n" + "="*80)
         print("🏆 INITIALIZING WORLD-CLASS MICRO TRADING BOT 🏆")
         print("💎 Better than ANY orchestrator - ALL features in ONE bot!")
         print("🎯 Target: 95% Win Rate from $5 Capital")
         print("="*80)
-        
-        self.initial_capital = initial_capital
-        self.current_capital = initial_capital
+
+        if initial_capital is None:
+            try:
+                initial_capital = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
+            except Exception:
+                initial_capital = 5.0
+
+        self.initial_capital = float(initial_capital)
+        self.current_capital = float(initial_capital)
         self.min_trade_size = 1.00  # $1.00 minimum trade for visible P&L
         self.bot_running = False  # Bot control flag
         
@@ -3727,18 +3733,25 @@ class LegendaryCryptoTitanBot:
         
         # Validate and filter symbols (remove any invalid symbols)
         valid_symbols = []
-        if hasattr(self.data_feed, 'base_prices'):
-            valid_symbols = [s for s in self.active_symbols if s in self.data_feed.base_prices]
+        active_feed = self.data_feed
+        try:
+            if hasattr(self, 'trader') and self.trader and hasattr(self.trader, 'data_feed') and self.trader.data_feed:
+                active_feed = self.trader.data_feed
+        except Exception:
+            active_feed = self.data_feed
+
+        if hasattr(active_feed, 'base_prices'):
+            valid_symbols = [s for s in self.active_symbols if s in active_feed.base_prices]
             if len(valid_symbols) < len(self.active_symbols):
-                invalid = [s for s in self.active_symbols if s not in self.data_feed.base_prices]
+                invalid = [s for s in self.active_symbols if s not in active_feed.base_prices]
                 print(f"\n⚠️  Filtered out {len(invalid)} invalid symbols: {', '.join(invalid)}")
                 self.active_symbols = valid_symbols
                 print(f"✅ Trading with {len(valid_symbols)} valid symbols")
-        elif hasattr(self.data_feed, 'is_symbol_supported'):
+        elif hasattr(active_feed, 'is_symbol_supported'):
             try:
-                valid_symbols = [s for s in self.active_symbols if self.data_feed.is_symbol_supported(s)]
+                valid_symbols = [s for s in self.active_symbols if active_feed.is_symbol_supported(s)]
                 if len(valid_symbols) < len(self.active_symbols):
-                    invalid = [s for s in self.active_symbols if not self.data_feed.is_symbol_supported(s)]
+                    invalid = [s for s in self.active_symbols if not active_feed.is_symbol_supported(s)]
                     print(f"\n⚠️  Filtered out {len(invalid)} unsupported symbols: {', '.join(invalid)}")
                     self.active_symbols = valid_symbols
                     print(f"✅ Trading with {len(valid_symbols)} supported symbols")
@@ -3809,13 +3822,20 @@ class LegendaryCryptoTitanBot:
                         if not hasattr(self, 'data_feed') or not self.data_feed:
                             print(f"❌ ERROR: No data feed available! Cannot get real price for {symbol}")
                             continue
-                        
-                        price = await self.data_feed.get_live_price(symbol)
+
+                        active_feed = self.data_feed
+                        try:
+                            if hasattr(self, 'trader') and self.trader and hasattr(self.trader, 'data_feed') and self.trader.data_feed:
+                                active_feed = self.trader.data_feed
+                        except Exception:
+                            active_feed = self.data_feed
+
+                        price = await active_feed.get_live_price(symbol)
                         
                         if not price or price <= 0:
                             try:
-                                if hasattr(self, 'data_feed') and self.data_feed and hasattr(self.data_feed, 'is_symbol_supported'):
-                                    if not self.data_feed.is_symbol_supported(symbol):
+                                if active_feed and hasattr(active_feed, 'is_symbol_supported'):
+                                    if not active_feed.is_symbol_supported(symbol):
                                         if symbol in self.active_symbols:
                                             self.active_symbols = [s for s in self.active_symbols if s != symbol]
                                             print(f"⚠️ Removed unsupported symbol from active set: {symbol}")
@@ -5773,7 +5793,7 @@ class LegendaryCryptoTitanBot:
     
     async def _close_micro_position(self, symbol: str, position: Dict, reason: str, close_amount: float = None):
         """Close a micro position (full or partial) with enhanced learning"""
-        amount_to_close = close_amount if close_amount else position['current_value']
+        amount_to_close = close_amount if close_amount is not None else 0
         is_partial = close_amount is not None
         
         # Determine correct closing side: SELL to close BUY (long), BUY to close SELL (short)
@@ -7371,8 +7391,15 @@ class LegendaryCryptoTitanBot:
                             self.price_history[symbol] = deque(maxlen=100)
                         
                         try:
-                            if hasattr(self, 'data_feed') and self.data_feed:
-                                price = await self.data_feed.get_live_price(symbol)
+                            active_feed = self.data_feed
+                            try:
+                                if hasattr(self, 'trader') and self.trader and hasattr(self.trader, 'data_feed') and self.trader.data_feed:
+                                    active_feed = self.trader.data_feed
+                            except Exception:
+                                active_feed = self.data_feed
+
+                            if active_feed:
+                                price = await active_feed.get_live_price(symbol)
                                 
                                 if price and price > 0:
                                     self.price_history[symbol].append(price)
@@ -7400,10 +7427,17 @@ class LegendaryCryptoTitanBot:
                     primary_symbol = self.active_symbols[0] if self.active_symbols else 'BTC/USDT'
                     
                     try:
-                        if hasattr(self, 'data_feed') and self.data_feed:
+                        active_feed = self.data_feed
+                        try:
+                            if hasattr(self, 'trader') and self.trader and hasattr(self.trader, 'data_feed') and self.trader.data_feed:
+                                active_feed = self.trader.data_feed
+                        except Exception:
+                            active_feed = self.data_feed
+
+                        if active_feed:
                             # Get comprehensive data (orderbook, trades, ticker, klines)
-                            if hasattr(self.data_feed, 'get_comprehensive_market_data'):
-                                comprehensive_data = await self.data_feed.get_comprehensive_market_data(primary_symbol)
+                            if hasattr(active_feed, 'get_comprehensive_market_data'):
+                                comprehensive_data = await active_feed.get_comprehensive_market_data(primary_symbol)
                                 
                                 if comprehensive_data:
                                     # Store for AI learning
@@ -7433,7 +7467,7 @@ class LegendaryCryptoTitanBot:
                             else:
                                 # Fallback: fetch individual data types
                                 print("   ℹ️ Fetching basic market data...")
-                                orderbook = await self.data_feed.get_orderbook(primary_symbol) if hasattr(self.data_feed, 'get_orderbook') else None
+                                orderbook = await active_feed.get_orderbook(primary_symbol) if hasattr(active_feed, 'get_orderbook') else None
                                 if orderbook and isinstance(orderbook, dict):
                                     print(f"      ✅ Orderbook: {len(orderbook.get('bids', []))} bids, {len(orderbook.get('asks', []))} asks")
                     except Exception as e:
@@ -9410,8 +9444,20 @@ class LegendaryCryptoTitanBot:
     
     async def _close_legendary_position(self, symbol: str, position: Dict, reason: str):
         """🎯 Close legendary position with enhanced learning"""
+        is_sell_order = False
+        try:
+            signal = self.active_signals.get(symbol)
+        except Exception:
+            signal = None
+        if signal:
+            is_sell_order = signal.action == 'SELL'
+        else:
+            is_sell_order = str(position.get('action', 'BUY') or 'BUY').upper() == 'SELL'
+
+        close_side = 'BUY' if is_sell_order else 'SELL'
+
         result = await self.trader.execute_live_trade(
-            symbol, 'SELL', position['current_value'], f'LEGENDARY_CLOSE_{reason}'
+            symbol, close_side, 0, f'LEGENDARY_CLOSE_{reason}'
         )
         
         if result['success']:
@@ -11629,7 +11675,7 @@ if __name__ == "__main__":
     
     # CREATE BOT INSTANCE FIRST - BEFORE main()
     print("\n Creating bot instance...")
-    legendary_bot = LegendaryCryptoTitanBot(5.0)
+    legendary_bot = LegendaryCryptoTitanBot()
     
     # CONNECT BOT TO ENHANCED DASHBOARD
     try:

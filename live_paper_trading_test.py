@@ -18,6 +18,11 @@ import urllib3
 import os
 import time
 
+try:
+    import ccxt.async_support as ccxt  # type: ignore
+except Exception:
+    ccxt = None
+
 # Disable SSL warnings for requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -30,7 +35,7 @@ load_dotenv()
 
 # MEXC API Configuration
 MEXC_API_KEY = os.getenv('MEXC_API_KEY', '')
-MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY', '')
+MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY', '') or os.getenv('MEXC_API_SECRET', '')
 PAPER_TRADING_MODE = True  # Set to False for real trading
 
 class LiveMexcDataFeed:
@@ -521,6 +526,207 @@ class LiveMexcDataFeed:
         
         return max(min(momentum, 5), -5) / 5  # Normalize to [-1, 1]
 
+
+class MexcFuturesDataFeed:
+    def __init__(self):
+        self.base_url = "https://contract.mexc.com"
+        self.prices_cache = {}
+        self.contract_cache = {}
+        self.contract_last_loaded = None
+        self.unsupported_symbols = set()
+
+        self.last_ok_time = None
+        self.last_error_time = None
+        self.last_error = None
+        self.last_latency_ms = None
+        self.consecutive_failures = 0
+        self.total_requests = 0
+        self.total_failures = 0
+
+        try:
+            self._load_contracts_if_needed(force=True)
+        except Exception:
+            pass
+
+    def get_health(self) -> Dict[str, Any]:
+        try:
+            now = datetime.now()
+            age_ok_s = (now - self.last_ok_time).total_seconds() if self.last_ok_time else None
+            age_err_s = (now - self.last_error_time).total_seconds() if self.last_error_time else None
+            connected = bool(self.last_ok_time and age_ok_s is not None and age_ok_s <= 30)
+            return {
+                'connected': connected,
+                'last_ok_time': self.last_ok_time.isoformat() if self.last_ok_time else None,
+                'last_ok_age_sec': age_ok_s,
+                'last_error_time': self.last_error_time.isoformat() if self.last_error_time else None,
+                'last_error_age_sec': age_err_s,
+                'last_error': self.last_error,
+                'last_latency_ms': self.last_latency_ms,
+                'consecutive_failures': self.consecutive_failures,
+                'total_requests': self.total_requests,
+                'total_failures': self.total_failures,
+                'unsupported_symbols_count': len(getattr(self, 'unsupported_symbols', set()) or set()),
+                'contracts_loaded': bool(self.contract_cache)
+            }
+        except Exception:
+            return {
+                'connected': False,
+                'last_error': 'health_check_failed'
+            }
+
+    def _normalize_contract_symbol(self, symbol: str) -> str:
+        try:
+            s = str(symbol).strip().upper()
+            if '/' in s:
+                base, quote = s.split('/')[:2]
+                return f"{base}_{quote}"
+            if '-' in s:
+                base, quote = s.split('-')[:2]
+                return f"{base}_{quote}"
+            if '_' in s:
+                return s
+            return s
+        except Exception:
+            return str(symbol)
+
+    def _load_contracts_if_needed(self, force: bool = False):
+        try:
+            now = datetime.now()
+            if not force and self.contract_last_loaded and (now - self.contract_last_loaded).total_seconds() < 300:
+                return
+
+            start = time.time()
+            self.total_requests += 1
+            url = f"{self.base_url}/api/v1/contract/detail"
+            resp = requests.get(url, timeout=8, verify=False)
+            if resp.status_code != 200:
+                self.total_failures += 1
+                self.consecutive_failures += 1
+                self.last_error_time = datetime.now()
+                self.last_latency_ms = int((time.time() - start) * 1000)
+                self.last_error = f"HTTP_{resp.status_code}"
+                return
+
+            payload = resp.json() or {}
+            data = payload.get('data') or []
+            if not isinstance(data, list):
+                return
+
+            lookup = {}
+            for item in data:
+                try:
+                    sym = str((item or {}).get('symbol') or '').upper()
+                    if sym:
+                        lookup[sym] = item
+                except Exception:
+                    continue
+
+            if lookup:
+                self.contract_cache = lookup
+                self.contract_last_loaded = datetime.now()
+                self.last_ok_time = datetime.now()
+                self.last_latency_ms = int((time.time() - start) * 1000)
+                self.last_error = None
+                self.consecutive_failures = 0
+        except Exception as e:
+            self.total_failures += 1
+            self.consecutive_failures += 1
+            self.last_error_time = datetime.now()
+            self.last_error = str(e)[:120]
+
+    def is_symbol_supported(self, symbol: str) -> bool:
+        try:
+            self._load_contracts_if_needed(force=False)
+            sym = self._normalize_contract_symbol(symbol)
+            if not sym:
+                return False
+            if sym in self.unsupported_symbols:
+                return False
+            if not self.contract_cache:
+                return True
+            return sym in self.contract_cache
+        except Exception:
+            return True
+
+    def get_contract_meta(self, symbol: str) -> Dict[str, Any]:
+        self._load_contracts_if_needed(force=False)
+        sym = self._normalize_contract_symbol(symbol)
+        return dict(self.contract_cache.get(sym) or {})
+
+    async def get_live_price(self, symbol: str) -> float:
+        mexc_symbol = self._normalize_contract_symbol(symbol)
+        if not self.is_symbol_supported(symbol):
+            return None
+        if mexc_symbol in self.unsupported_symbols:
+            return None
+
+        start = time.time()
+        self.total_requests += 1
+        try:
+            url = f"{self.base_url}/api/v1/contract/ticker?symbol={mexc_symbol}"
+            response = requests.get(url, timeout=6, verify=False)
+
+            if response.status_code == 200:
+                payload = response.json() or {}
+                data = payload.get('data') or {}
+                px = float(data.get('lastPrice') or 0)
+                if px <= 0:
+                    px = float(data.get('fairPrice') or 0)
+                if px > 0:
+                    self.last_ok_time = datetime.now()
+                    self.last_latency_ms = int((time.time() - start) * 1000)
+                    self.last_error = None
+                    self.consecutive_failures = 0
+
+                    self.prices_cache[symbol] = {
+                        'price': px,
+                        'timestamp': datetime.now()
+                    }
+                    return px
+
+            if response.status_code in (400, 404):
+                self.unsupported_symbols.add(mexc_symbol)
+
+            self.total_failures += 1
+            self.consecutive_failures += 1
+            self.last_error_time = datetime.now()
+            self.last_latency_ms = int((time.time() - start) * 1000)
+            self.last_error = f"HTTP_{response.status_code}"
+
+            cached = self.prices_cache.get(symbol)
+            if cached and isinstance(cached, dict):
+                try:
+                    age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                    if age <= 30 and cached.get('price'):
+                        return float(cached.get('price'))
+                except Exception:
+                    pass
+            return None
+        except Exception as e:
+            self.total_failures += 1
+            self.consecutive_failures += 1
+            self.last_error_time = datetime.now()
+            self.last_latency_ms = int((time.time() - start) * 1000)
+            self.last_error = str(e)[:120]
+
+            cached = self.prices_cache.get(symbol)
+            if cached and isinstance(cached, dict):
+                try:
+                    age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                    if age <= 30 and cached.get('price'):
+                        return float(cached.get('price'))
+                except Exception:
+                    pass
+            return None
+
+    async def get_multiple_prices(self, symbols: List[str]) -> Dict[str, float]:
+        prices = {}
+        for symbol in symbols or []:
+            px = await self.get_live_price(symbol)
+            if px:
+                prices[symbol] = px
+        return prices
+
 class LivePaperTradingManager:
     """Paper trading manager using LIVE market prices"""
     
@@ -540,7 +746,18 @@ class LivePaperTradingManager:
             self.winning_trades = 0
             print(f"🆕 NEW trading session with ${initial_capital:,.2f}")
         
-        self.data_feed = LiveMexcDataFeed()
+        try:
+            self.market_type = str(os.getenv('PAPER_MARKET_TYPE', 'futures') or 'futures').strip().lower()
+        except Exception:
+            self.market_type = 'futures'
+
+        if self.market_type not in ['spot', 'futures']:
+            self.market_type = 'futures'
+
+        if self.market_type == 'futures':
+            self.data_feed = MexcFuturesDataFeed()
+        else:
+            self.data_feed = LiveMexcDataFeed()
 
         try:
             shorting_env = str(os.getenv('ENABLE_PAPER_SHORTING', '1') or '1').strip().lower()
@@ -559,6 +776,16 @@ class LivePaperTradingManager:
             self.fee_rate = float(os.getenv('PAPER_FEE_RATE', '0.0002') or 0.0002)
         except Exception:
             self.fee_rate = 0.0002
+
+        try:
+            real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+            self.real_trading_enabled = real_env in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.real_trading_enabled = False
+
+        self._ccxt_exchange = None
+        self.last_real_order_error = None
+        self.last_real_order = None
         
         print(f"🔥 LIVE Paper Trading Manager active")
         print(f"   💰 Current Balance: ${self.cash_balance:.2f}")
@@ -567,6 +794,311 @@ class LivePaperTradingManager:
         
         # Save state immediately
         self._save_state()
+
+    def _real_trading_ready(self) -> bool:
+        if not self.real_trading_enabled:
+            return False
+        if self.market_type != 'futures':
+            return False
+        if ccxt is None:
+            return False
+        api_key = os.getenv('MEXC_API_KEY', '')
+        api_secret = os.getenv('MEXC_API_SECRET', '') or os.getenv('MEXC_SECRET_KEY', '')
+        if not api_key or not api_secret:
+            return False
+        return True
+
+    async def _get_ccxt_exchange(self):
+        if self._ccxt_exchange is not None:
+            return self._ccxt_exchange
+
+        api_key = os.getenv('MEXC_API_KEY', '')
+        api_secret = os.getenv('MEXC_API_SECRET', '') or os.getenv('MEXC_SECRET_KEY', '')
+
+        exchange = ccxt.mexc({
+            'apiKey': api_key,
+            'secret': api_secret,
+            'enableRateLimit': True,
+            'timeout': 30000,
+            'options': {
+                'defaultType': 'swap'
+            }
+        })
+
+        await exchange.load_markets()
+        self._ccxt_exchange = exchange
+        return exchange
+
+    def _to_ccxt_swap_symbol(self, symbol: str) -> str:
+        try:
+            s = str(symbol or '').strip()
+            if ':' in s:
+                return s
+            if '/' not in s:
+                return s
+            base, quote = s.split('/', 1)
+            base = base.strip().upper()
+            quote = quote.strip().upper()
+            if quote == 'USDT':
+                return f"{base}/{quote}:{quote}"
+            return s
+        except Exception:
+            return symbol
+
+    async def _sync_from_exchange(self, symbol: str = None):
+        exchange = await self._get_ccxt_exchange()
+
+        try:
+            balance = await exchange.fetch_balance()
+            usdt = balance.get('USDT') or {}
+            free = usdt.get('free')
+            if free is None:
+                free = balance.get('free', {}).get('USDT') if isinstance(balance.get('free'), dict) else None
+            if free is not None:
+                self.cash_balance = float(free)
+        except Exception:
+            pass
+
+        if not symbol:
+            return
+
+        ccxt_symbol = self._to_ccxt_swap_symbol(symbol)
+        try:
+            positions = await exchange.fetch_positions([ccxt_symbol])
+        except Exception:
+            positions = []
+
+        chosen = None
+        for p in positions or []:
+            if str(p.get('symbol') or '').upper() == str(ccxt_symbol).upper():
+                chosen = p
+                break
+        if not chosen and positions:
+            chosen = positions[0]
+
+        if not chosen:
+            self.positions[symbol] = {
+                'quantity': 0,
+                'avg_price': 0,
+                'total_cost': 0,
+                'take_profit': None,
+                'stop_loss': None,
+                'action': 'BUY'
+            }
+            return
+
+        contracts = float(chosen.get('contracts') or 0)
+        side = str(chosen.get('side') or '').lower()
+        entry_px = float(chosen.get('entryPrice') or 0)
+
+        market = None
+        try:
+            market = exchange.markets.get(ccxt_symbol)
+        except Exception:
+            market = None
+
+        contract_size = None
+        try:
+            contract_size = float((market or {}).get('contractSize') or 0) or None
+        except Exception:
+            contract_size = None
+
+        base_qty = contracts
+        if contract_size:
+            base_qty = contracts * contract_size
+
+        margin = None
+        for k in ['initialMargin', 'margin', 'collateral', 'notional']:
+            try:
+                v = chosen.get(k)
+                if v is not None:
+                    margin = float(v)
+                    break
+            except Exception:
+                pass
+        if margin is None:
+            margin = 0.0
+
+        if contracts <= 0:
+            self.positions[symbol] = {
+                'quantity': 0,
+                'avg_price': 0,
+                'total_cost': 0,
+                'take_profit': None,
+                'stop_loss': None,
+                'action': 'BUY'
+            }
+            return
+
+        self.positions[symbol] = {
+            'quantity': float(base_qty),
+            'avg_price': float(entry_px),
+            'total_cost': float(margin),
+            'take_profit': self.positions.get(symbol, {}).get('take_profit') if isinstance(self.positions.get(symbol), dict) else None,
+            'stop_loss': self.positions.get(symbol, {}).get('stop_loss') if isinstance(self.positions.get(symbol), dict) else None,
+            'action': 'SELL' if side == 'short' else 'BUY'
+        }
+
+    async def _execute_real_trade(self, symbol: str, action: str, amount_usd: float, strategy: str = "live") -> Dict[str, Any]:
+        self.last_real_order_error = None
+
+        exchange = await self._get_ccxt_exchange()
+        ccxt_symbol = self._to_ccxt_swap_symbol(symbol)
+
+        try:
+            leverage_int = int(float(self.leverage))
+        except Exception:
+            leverage_int = 1
+        if leverage_int < 1:
+            leverage_int = 1
+
+        params = {}
+        try:
+            margin_mode = str(os.getenv('MEXC_MARGIN_MODE', 'isolated') or 'isolated').strip().lower()
+            if margin_mode:
+                params['marginMode'] = margin_mode
+        except Exception:
+            pass
+
+        try:
+            await exchange.set_leverage(leverage_int, ccxt_symbol, params)
+        except Exception:
+            pass
+
+        ticker = await exchange.fetch_ticker(ccxt_symbol)
+        last_price = float(ticker.get('last') or ticker.get('close') or 0)
+        if last_price <= 0:
+            raise RuntimeError('Unable to fetch last price for live order sizing')
+
+        market = exchange.markets.get(ccxt_symbol) or {}
+        try:
+            contract_size = float(market.get('contractSize') or 0) or None
+        except Exception:
+            contract_size = None
+
+        order_side = 'buy' if str(action).upper() == 'BUY' else 'sell'
+        order_type = 'market'
+
+        existing_contracts = 0.0
+        existing_side = None
+        try:
+            positions = await exchange.fetch_positions([ccxt_symbol])
+            for p in positions or []:
+                if str(p.get('symbol') or '').upper() == str(ccxt_symbol).upper():
+                    existing_contracts = float(p.get('contracts') or 0)
+                    existing_side = str(p.get('side') or '').lower() or None
+                    break
+        except Exception:
+            pass
+
+        is_reduce = False
+        if existing_contracts > 0 and existing_side in ['long', 'short']:
+            if existing_side == 'long' and order_side == 'sell':
+                is_reduce = True
+            elif existing_side == 'short' and order_side == 'buy':
+                is_reduce = True
+
+        order_params = {}
+        try:
+            order_params.update(params)
+        except Exception:
+            pass
+
+        if is_reduce:
+            order_params['reduceOnly'] = True
+
+        # Sizing rules match the paper engine:
+        # - OPEN/ADD: amount_usd is margin -> notional = margin * leverage
+        # - CLOSE/REDUCE: amount_usd is notional to close (no leverage multiplier)
+        amount_usd_f = float(amount_usd or 0)
+        if amount_usd_f <= 0:
+            amount_usd_f = 0.0
+
+        if is_reduce:
+            # Close up to the existing position
+            position_base_qty = existing_contracts
+            if contract_size:
+                position_base_qty = existing_contracts * contract_size
+
+            position_notional = position_base_qty * last_price
+            close_notional = amount_usd_f if amount_usd_f > 0 else position_notional
+            close_notional = min(close_notional, position_notional)
+            if close_notional <= 0:
+                return {'success': False, 'error': 'No position to reduce'}
+
+            close_base_qty = close_notional / last_price
+            contracts = close_base_qty
+            if contract_size:
+                contracts = close_base_qty / contract_size
+
+            # Clamp to existing
+            contracts = min(float(contracts or 0), float(existing_contracts or 0))
+        else:
+            notional = amount_usd_f * float(self.leverage or 1)
+            if notional <= 0:
+                return {'success': False, 'error': 'Amount must be > 0'}
+            base_qty = notional / last_price
+            contracts = base_qty
+            if contract_size:
+                contracts = base_qty / contract_size
+
+        try:
+            contracts = float(exchange.amount_to_precision(ccxt_symbol, contracts))
+        except Exception:
+            pass
+
+        if contracts <= 0:
+            return {'success': False, 'error': 'Order size too small after precision/limits'}
+
+        try:
+            order = await exchange.create_order(ccxt_symbol, order_type, order_side, contracts, None, order_params)
+        except Exception as e:
+            self.last_real_order_error = str(e)
+            return {'success': False, 'error': str(e)}
+
+        self.last_real_order = {
+            'id': order.get('id'),
+            'symbol': symbol,
+            'ccxt_symbol': ccxt_symbol,
+            'side': order_side,
+            'type': order_type,
+            'contracts': contracts,
+            'strategy': strategy,
+            'timestamp': datetime.now().isoformat(),
+        }
+
+        try:
+            await self._sync_from_exchange(symbol)
+        except Exception:
+            pass
+
+        try:
+            self.total_trades = int(getattr(self, 'total_trades', 0) or 0) + 1
+        except Exception:
+            pass
+
+        try:
+            trade_record = {
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'action': str(action).upper(),
+                'amount_usd': float(amount_usd or 0),
+                'mode': 'REAL_TRADING',
+                'order_id': order.get('id'),
+                'strategy': strategy,
+                'reduce_only': bool(is_reduce),
+            }
+            if isinstance(getattr(self, 'trade_history', None), list):
+                self.trade_history.append(trade_record)
+        except Exception:
+            pass
+
+        try:
+            self._save_state()
+        except Exception:
+            pass
+
+        return {'success': True, 'mode': 'REAL_TRADING', 'order': order}
     
     async def execute_live_trade(self, symbol: str, action: str, amount_usd: float, strategy: str = "test", stop_loss: float = None, take_profit: float = None, *args, **kwargs):
         """Execute trade using live market prices.
@@ -574,6 +1106,13 @@ class LivePaperTradingManager:
         """
         
         print(f"\n🎯 EXECUTING LIVE TRADE: {action} ${amount_usd} of {symbol}")
+
+        if self._real_trading_ready():
+            try:
+                return await self._execute_real_trade(symbol, action, amount_usd, strategy=strategy)
+            except Exception as e:
+                self.last_real_order_error = str(e)
+                return {"success": False, "error": f"REAL_TRADING failed: {e}"}
         
         # Get current live price
         current_price = await self.data_feed.get_live_price(symbol)
@@ -588,6 +1127,26 @@ class LivePaperTradingManager:
         # are systematically above the mark price.
         slippage_pct = random.uniform(-0.0002, 0.0002)
         execution_price = current_price * (1 + slippage_pct)
+
+        contract_meta = None
+        contract_size = None
+        min_vol = 1
+        vol_unit = 1
+        effective_fee_rate = self.fee_rate
+        try:
+            if self.market_type == 'futures' and hasattr(self.data_feed, 'get_contract_meta'):
+                contract_meta = self.data_feed.get_contract_meta(symbol) or None
+                if contract_meta:
+                    contract_size = float(contract_meta.get('contractSize') or 0) or None
+                    min_vol = int(float(contract_meta.get('minVol') or 1) or 1)
+                    vol_unit = int(float(contract_meta.get('volUnit') or 1) or 1)
+                    effective_fee_rate = float(contract_meta.get('takerFeeRate') or self.fee_rate or 0)
+        except Exception:
+            contract_meta = None
+            contract_size = None
+            min_vol = 1
+            vol_unit = 1
+            effective_fee_rate = self.fee_rate
 
         action_u = str(action).upper()
         if action_u not in ['BUY', 'SELL']:
@@ -613,7 +1172,21 @@ class LivePaperTradingManager:
                 notional_usd = close_notional
 
                 quantity = close_notional / execution_price
-                commission = close_notional * self.fee_rate
+                if contract_size:
+                    try:
+                        max_contracts = int(existing_qty / contract_size) if contract_size > 0 else 0
+                        desired_contracts = int(quantity / contract_size) if contract_size > 0 else 0
+                        if vol_unit > 1 and desired_contracts > 0:
+                            desired_contracts = desired_contracts - (desired_contracts % vol_unit)
+                        if desired_contracts <= 0 and max_contracts > 0:
+                            desired_contracts = max_contracts
+                        desired_contracts = min(desired_contracts, max_contracts)
+                        if desired_contracts > 0:
+                            quantity = desired_contracts * contract_size
+                            close_notional = quantity * execution_price
+                    except Exception:
+                        pass
+                commission = close_notional * effective_fee_rate
 
                 entry_px = float(existing.get('avg_price', 0) or 0)
                 pnl = (entry_px - execution_price) * quantity
@@ -653,12 +1226,25 @@ class LivePaperTradingManager:
                     return {"success": False, "error": "Amount must be > 0"}
 
                 notional = margin * (self.leverage if self.enable_shorting else 1.0)
-                commission = notional * self.fee_rate
+                quantity = notional / execution_price
+                if contract_size:
+                    try:
+                        desired_contracts = int(quantity / contract_size) if contract_size > 0 else 0
+                        if vol_unit > 1 and desired_contracts > 0:
+                            desired_contracts = desired_contracts - (desired_contracts % vol_unit)
+                        if desired_contracts < min_vol:
+                            desired_contracts = min_vol
+                        quantity = desired_contracts * contract_size
+                        notional = quantity * execution_price
+                        margin = notional / (self.leverage if self.enable_shorting else 1.0)
+                    except Exception:
+                        pass
+
+                commission = notional * effective_fee_rate
                 required = margin + commission
                 if required > self.cash_balance:
                     return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
 
-                quantity = notional / execution_price
 
                 trade_event = 'OPEN_LONG' if not (existing_qty > 0 and existing_side == 'BUY') else 'ADD_LONG'
                 notional_usd = notional
@@ -713,7 +1299,22 @@ class LivePaperTradingManager:
                 notional_usd = close_notional
 
                 quantity = close_notional / execution_price
-                commission = close_notional * self.fee_rate
+                if contract_size:
+                    try:
+                        max_contracts = int(existing_qty / contract_size) if contract_size > 0 else 0
+                        desired_contracts = int(quantity / contract_size) if contract_size > 0 else 0
+                        if vol_unit > 1 and desired_contracts > 0:
+                            desired_contracts = desired_contracts - (desired_contracts % vol_unit)
+                        if desired_contracts <= 0 and max_contracts > 0:
+                            desired_contracts = max_contracts
+                        desired_contracts = min(desired_contracts, max_contracts)
+                        if desired_contracts > 0:
+                            quantity = desired_contracts * contract_size
+                            close_notional = quantity * execution_price
+                            notional_usd = close_notional
+                    except Exception:
+                        pass
+                commission = close_notional * effective_fee_rate
 
                 entry_px = float(existing.get('avg_price', 0) or 0)
                 pnl = (execution_price - entry_px) * quantity
@@ -756,12 +1357,25 @@ class LivePaperTradingManager:
                     return {"success": False, "error": "Amount must be > 0"}
 
                 notional = margin * self.leverage
-                commission = notional * self.fee_rate
+                quantity = notional / execution_price
+                if contract_size:
+                    try:
+                        desired_contracts = int(quantity / contract_size) if contract_size > 0 else 0
+                        if vol_unit > 1 and desired_contracts > 0:
+                            desired_contracts = desired_contracts - (desired_contracts % vol_unit)
+                        if desired_contracts < min_vol:
+                            desired_contracts = min_vol
+                        quantity = desired_contracts * contract_size
+                        notional = quantity * execution_price
+                        margin = notional / self.leverage
+                    except Exception:
+                        pass
+
+                commission = notional * effective_fee_rate
                 required = margin + commission
                 if required > self.cash_balance:
                     return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
 
-                quantity = notional / execution_price
 
                 trade_event = 'OPEN_SHORT' if not (existing_qty > 0 and existing_side == 'SELL') else 'ADD_SHORT'
                 notional_usd = notional

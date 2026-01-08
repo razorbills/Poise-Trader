@@ -15,6 +15,7 @@ For your 0.00005 BTC - Professional approach to grow safely
 """
 
 from decimal import Decimal
+import os
 import math
 from datetime import datetime, timedelta
 
@@ -486,8 +487,8 @@ class InstitutionalPortfolioManager:
 
 # 🎯 PROFESSIONAL MEXC CONFIGURATION
 MEXC_PROFESSIONAL_CONFIG = {
-    'api_key': 'mx0vglVSHm8sh7Nnvd',
-    'api_secret': 'cb416a71d0ba45298eb1383dc7896a18',
+    'api_key': os.getenv('MEXC_API_KEY', ''),
+    'api_secret': os.getenv('MEXC_API_SECRET', ''),
     'exchange': 'mexc',
     'initial_capital': Decimal('0.00005'),  # Your 5k sats
     
