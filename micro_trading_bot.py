@@ -2230,6 +2230,47 @@ class LegendaryCryptoTitanBot:
         self.last_trade_ts = 0.0
         self.aggressive_trade_guarantee = False
         self.aggressive_trade_interval = 60.0
+
+        try:
+            self.max_feed_stale_seconds = float(os.getenv('MAX_FEED_STALE_SECONDS', '45') or 45)
+        except Exception:
+            self.max_feed_stale_seconds = 45.0
+
+        try:
+            self.max_feed_consecutive_failures = int(float(os.getenv('MAX_FEED_CONSECUTIVE_FAILURES', '5') or 5))
+        except Exception:
+            self.max_feed_consecutive_failures = 5
+
+        try:
+            self.safety_pause_seconds = float(os.getenv('SAFETY_PAUSE_SECONDS', '30') or 30)
+        except Exception:
+            self.safety_pause_seconds = 30.0
+
+        self.safety_pause_until_ts = 0.0
+        self.safety_pause_reason = None
+        self.last_feed_health = None
+
+        try:
+            self.strategy_cooldown_enabled = str(os.getenv('STRATEGY_COOLDOWN_ENABLED', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.strategy_cooldown_enabled = True
+
+        try:
+            self.strategy_cooldown_min_trades = int(float(os.getenv('STRATEGY_COOLDOWN_MIN_TRADES', '10') or 10))
+        except Exception:
+            self.strategy_cooldown_min_trades = 10
+
+        try:
+            self.strategy_cooldown_win_rate_threshold = float(os.getenv('STRATEGY_COOLDOWN_WIN_RATE', '0.40') or 0.40)
+        except Exception:
+            self.strategy_cooldown_win_rate_threshold = 0.40
+
+        try:
+            self.strategy_cooldown_seconds = float(os.getenv('STRATEGY_COOLDOWN_SECONDS', '900') or 900)
+        except Exception:
+            self.strategy_cooldown_seconds = 900.0
+
+        self.strategy_cooldowns = {}
         
         # ⚡ GPU Acceleration status (from ml_components module-level flags)
         self.tf_gpu_available = bool(TF_GPU_AVAILABLE)
@@ -3823,6 +3864,22 @@ class LegendaryCryptoTitanBot:
             pass
 
         try:
+            if self.strategy_cooldown_enabled:
+                wins = int((stats or {}).get('wins', 0) or 0)
+                losses = int((stats or {}).get('losses', 0) or 0)
+                total = wins + losses
+                if total >= int(self.strategy_cooldown_min_trades) and total > 0:
+                    wr = wins / total
+                    if wr < float(self.strategy_cooldown_win_rate_threshold):
+                        try:
+                            until_ts = float(time.time()) + float(self.strategy_cooldown_seconds)
+                            self.strategy_cooldowns[str(strategy)] = until_ts
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        try:
             if win_rate_optimizer is not None and bool(getattr(self, 'win_rate_optimizer_enabled', False)):
                 try:
                     trade_id = f"{symbol}-{int(time.time() * 1000)}"
@@ -3989,6 +4046,14 @@ class LegendaryCryptoTitanBot:
                 
                 # Bot is running, reset the waiting flag
                 waiting_printed = False
+
+                try:
+                    now_ts = float(time.time())
+                    if self.safety_pause_until_ts and now_ts < float(self.safety_pause_until_ts or 0.0):
+                        await asyncio.sleep(1)
+                        continue
+                except Exception:
+                    pass
                 
                 print(f"\n📊 CYCLE {cycle}/{cycles}")
                 print("-" * 40)
@@ -4000,6 +4065,8 @@ class LegendaryCryptoTitanBot:
                 print(f"📡 Collecting market data for {len(self.active_symbols)} active markets...")
                 # Use active symbols from market filter (dashboard controlled)
                 symbols_to_track = self.active_symbols[:8]  # Track up to 8 active symbols for efficiency
+
+                live_prices_snapshot = {}
                 
                 for symbol in symbols_to_track:
                     if symbol not in self.price_history:
@@ -4042,11 +4109,51 @@ class LegendaryCryptoTitanBot:
                     if len(self.price_history[symbol]) < 2:
                         self.price_history[symbol].append(price)
                     print(f"   ✓ {symbol}: ${price:,.2f}")
+
+                    try:
+                        live_prices_snapshot[symbol] = float(price)
+                    except Exception:
+                        pass
                     
                     # Update position with EXACT current price if we have an open position
                     if hasattr(self.trader, 'positions') and symbol in self.trader.positions:
                         if self.trader.positions[symbol].get('quantity', 0) > 0:
                             self.trader.positions[symbol]['current_price'] = price  # (REAL MEXC PRICE)
+
+                try:
+                    active_feed = self.data_feed
+                    if hasattr(self, 'trader') and self.trader and hasattr(self.trader, 'data_feed') and self.trader.data_feed:
+                        active_feed = self.trader.data_feed
+                    if active_feed and hasattr(active_feed, 'get_health'):
+                        health = active_feed.get_health() or {}
+                        self.last_feed_health = health
+                        connected = bool(health.get('connected', False))
+                        age_ok = health.get('last_ok_age_sec', None)
+                        failures = int(health.get('consecutive_failures', 0) or 0)
+                        stale = False
+                        try:
+                            if age_ok is not None and float(age_ok) > float(self.max_feed_stale_seconds):
+                                stale = True
+                        except Exception:
+                            stale = False
+                        if (not connected and stale) or (failures >= int(self.max_feed_consecutive_failures)):
+                            self.safety_pause_reason = f"FEED_UNHEALTHY connected={connected} stale={stale} failures={failures}"
+                            try:
+                                self.safety_pause_until_ts = float(time.time()) + float(self.safety_pause_seconds)
+                            except Exception:
+                                self.safety_pause_until_ts = 0.0
+                            self.bot_running = False
+                            print(f"\n🛑 SAFETY PAUSE: {self.safety_pause_reason}")
+                            print("   Bot paused. Wait for feed recovery then press Start Trading again.")
+                            continue
+                except Exception:
+                    pass
+
+                try:
+                    if live_prices_snapshot:
+                        await self._update_market_regime(live_prices_snapshot)
+                except Exception:
+                    pass
                 
                 # STEP 2: Manage existing positions (close if TP/SL hit)
                 print("\n🔄 Managing positions...")
@@ -4107,6 +4214,17 @@ class LegendaryCryptoTitanBot:
                         print(f"   🎯 Created forced {action} signal for {best_symbol}")
                 
                 if signals:
+                    try:
+                        regime = str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN')
+                        vol_regime = str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL')
+                        filtered = list(signals)
+                        if regime in ['SIDEWAYS', 'CONSOLIDATION']:
+                            filtered = [s for s in filtered if getattr(s, 'confidence', 0) >= 0.80]
+                        elif regime in ['VOLATILE_SIDEWAYS'] or vol_regime == 'HIGH':
+                            filtered = [s for s in filtered if getattr(s, 'confidence', 0) >= 0.75]
+                        signals = filtered
+                    except Exception:
+                        pass
                     print(f"   ✅ Generated {len(signals)} signals")
                     sell_count = sum(1 for sig in signals if sig.action == 'SELL')
                     if sell_count > 0:
@@ -9193,13 +9311,32 @@ class LegendaryCryptoTitanBot:
     async def _learn_from_trade_execution(self, symbol: str, signal: AITradingSignal, execution_result: Dict):
         """🎯 Learn from trade execution itself (entry quality)"""
         print(f"\n📈 LEARNING FROM {symbol} EXECUTION...")
-        
+
+        trade = {}
+        try:
+            if isinstance(execution_result, dict) and isinstance(execution_result.get('trade'), dict):
+                trade = execution_result.get('trade')
+        except Exception:
+            trade = {}
+
+        try:
+            expected_price = float(getattr(signal, 'entry_price', 0) or 0)
+        except Exception:
+            expected_price = 0.0
+        try:
+            actual_price = float(trade.get('execution_price') or 0)
+        except Exception:
+            actual_price = 0.0
+
         execution_data = {
             'symbol': symbol,
             'action': signal.action,
             'confidence': signal.confidence,
             'execution_success': execution_result.get('success', False),
             'entry_price': signal.entry_price,
+            'expected_price': expected_price,
+            'actual_price': actual_price,
+            'execution_time': float(trade.get('latency_ms', 0) or 0),
             'expected_return': signal.expected_return,
             'execution_type': 'ENTRY',
             'strategy_scores': {
@@ -9211,7 +9348,10 @@ class LegendaryCryptoTitanBot:
                 'volatility': signal.volatility_score,
                 'trend_strength': 0.3,
                 'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways'
-            }
+            },
+            'spread_bps': trade.get('spread_bps'),
+            'fill_ratio': trade.get('fill_ratio'),
+            'fee_rate': trade.get('fee_rate'),
         }
         
         # Learn from entry execution quality
@@ -9384,6 +9524,25 @@ class LegendaryCryptoTitanBot:
             
             # Execute micro trade with Ultra AI precision!
             try:
+                try:
+                    if self.strategy_cooldown_enabled and isinstance(getattr(self, 'strategy_cooldowns', None), dict):
+                        now_ts = float(time.time())
+                        expired = [k for k, v in self.strategy_cooldowns.items() if float(v or 0.0) <= now_ts]
+                        for k in expired:
+                            try:
+                                self.strategy_cooldowns.pop(k, None)
+                            except Exception:
+                                pass
+
+                        strat_key = str(getattr(signal, 'strategy_name', '') or '')
+                        if strat_key and strat_key != 'FORCED_LEARNING':
+                            until_ts = float(self.strategy_cooldowns.get(strat_key, 0.0) or 0.0)
+                            if until_ts > now_ts:
+                                print(f"   ⏸️ {signal.symbol}: Strategy cooldown active ({strat_key})")
+                                continue
+                except Exception:
+                    pass
+
                 ep = float(getattr(signal, 'entry_price', 0) or 0)
                 sl_pct = float(getattr(self, 'stop_loss', 0.5) or 0.5)
                 tp_pct = float(getattr(self, 'take_profit', 1.0) or 1.0)
@@ -9512,6 +9671,25 @@ class LegendaryCryptoTitanBot:
                 pass
 
             # Execute with legendary speed!
+            try:
+                if self.strategy_cooldown_enabled and isinstance(getattr(self, 'strategy_cooldowns', None), dict):
+                    now_ts = float(time.time())
+                    expired = [k for k, v in self.strategy_cooldowns.items() if float(v or 0.0) <= now_ts]
+                    for k in expired:
+                        try:
+                            self.strategy_cooldowns.pop(k, None)
+                        except Exception:
+                            pass
+
+                    strat_key = str(getattr(signal, 'strategy_name', '') or '')
+                    if strat_key and strat_key != 'FORCED_LEARNING':
+                        until_ts = float(self.strategy_cooldowns.get(strat_key, 0.0) or 0.0)
+                        if until_ts > now_ts:
+                            print(f"   ⏸️ {signal.symbol}: Strategy cooldown active ({strat_key})")
+                            continue
+            except Exception:
+                pass
+
             result = await self.trader.execute_live_trade(
                 signal.symbol,
                 trade_action,

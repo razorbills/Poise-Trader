@@ -4,12 +4,14 @@
 Minimal backend for the simple control panel
 """
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, Response
 from flask_socketio import SocketIO
 import os
 import threading
 import time
 from datetime import datetime
+import csv
+import io
 
 # Flask app setup
 app = Flask(__name__)
@@ -88,10 +90,44 @@ def get_status():
         status['win_rate'] = getattr(bot_instance, 'win_rate', 0) * 100
 
         try:
+            status['market_regime'] = getattr(bot_instance, 'current_market_regime', None)
+            status['volatility_regime'] = getattr(bot_instance, 'volatility_regime', None)
+        except Exception:
+            pass
+
+        try:
+            status['safety'] = {
+                'pause_until_ts': getattr(bot_instance, 'safety_pause_until_ts', 0.0),
+                'pause_reason': getattr(bot_instance, 'safety_pause_reason', None),
+                'last_feed_health': getattr(bot_instance, 'last_feed_health', None),
+            }
+        except Exception:
+            pass
+
+        try:
+            cds = getattr(bot_instance, 'strategy_cooldowns', None)
+            if isinstance(cds, dict):
+                status['strategy_cooldowns'] = cds
+        except Exception:
+            pass
+
+        try:
             if hasattr(bot_instance, 'trader') and bot_instance.trader is not None:
                 status['paper_shorting'] = bool(getattr(bot_instance.trader, 'enable_shorting', False))
                 status['paper_leverage'] = float(getattr(bot_instance.trader, 'leverage', 1.0) or 1.0)
                 status['paper_fee_rate'] = float(getattr(bot_instance.trader, 'fee_rate', 0.0002) or 0.0002)
+
+                try:
+                    status['paper_execution'] = {
+                        'model': getattr(bot_instance.trader, 'paper_execution_model', None),
+                        'spread_bps': getattr(bot_instance.trader, 'paper_spread_bps', None),
+                        'slippage_bps': getattr(bot_instance.trader, 'paper_slippage_bps', None),
+                        'latency_ms_min': getattr(bot_instance.trader, 'paper_latency_ms_min', None),
+                        'latency_ms_max': getattr(bot_instance.trader, 'paper_latency_ms_max', None),
+                        'partial_fill_prob': getattr(bot_instance.trader, 'paper_partial_fill_prob', None),
+                    }
+                except Exception:
+                    pass
 
                 if hasattr(bot_instance.trader, 'data_feed') and bot_instance.trader.data_feed is not None:
                     df = bot_instance.trader.data_feed
@@ -154,6 +190,12 @@ def get_metrics():
         metrics['total_pnl'] = pnl
         metrics['win_rate'] = getattr(bot_instance, 'win_rate', 0.0)
         metrics['daily_volume'] = getattr(bot_instance, 'total_volume_traded', 0.0)
+
+        try:
+            metrics['market_regime'] = getattr(bot_instance, 'current_market_regime', None)
+            metrics['volatility_regime'] = getattr(bot_instance, 'volatility_regime', None)
+        except Exception:
+            pass
         
         # Get actual trade count from bot
         if hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'trade_history'):
@@ -247,6 +289,74 @@ def get_recent_trades():
         trades_out = list(reversed(normalized))[:limit]
 
     return jsonify({'trades': trades_out, 'total': len(trades or []), 'returned': len(trades_out)})
+
+@app.route('/api/export_trades')
+def export_trades():
+    global bot_instance
+
+    fmt = str(request.args.get('format', 'json') or 'json').strip().lower()
+
+    trades = []
+    try:
+        bot_trades = []
+        trader_trades = []
+        if bot_instance and hasattr(bot_instance, 'trade_history') and isinstance(getattr(bot_instance, 'trade_history', None), list):
+            bot_trades = bot_instance.trade_history
+        if bot_instance and hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'trade_history') and isinstance(getattr(bot_instance.trader, 'trade_history', None), list):
+            trader_trades = bot_instance.trader.trade_history
+        trades = trader_trades if len(trader_trades) >= len(bot_trades) else bot_trades
+    except Exception:
+        trades = []
+
+    try:
+        limit = int(str(request.args.get('limit', '0') or '0').strip() or 0)
+    except Exception:
+        limit = 0
+    limit = max(0, min(limit, 5000))
+
+    try:
+        order = str(request.args.get('order', 'desc') or 'desc').strip().lower()
+    except Exception:
+        order = 'desc'
+
+    out = list(trades or [])
+    if order == 'desc':
+        out = list(reversed(out))
+    if limit and limit > 0:
+        out = out[:limit]
+
+    if fmt in ['csv']:
+        rows = [t for t in out if isinstance(t, dict)]
+        fieldnames = []
+        try:
+            keys = set()
+            for r in rows:
+                keys.update((r or {}).keys())
+            fieldnames = sorted(list(keys))
+        except Exception:
+            fieldnames = []
+
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
+        try:
+            writer.writeheader()
+        except Exception:
+            pass
+        for r in rows:
+            try:
+                writer.writerow(r)
+            except Exception:
+                continue
+
+        data = buf.getvalue()
+        buf.close()
+        return Response(
+            data,
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=trades.csv'}
+        )
+
+    return jsonify({'trades': out, 'total': len(trades or []), 'returned': len(out)})
 
 @app.route('/api/portfolio')
 def get_portfolio():

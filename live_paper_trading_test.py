@@ -788,6 +788,55 @@ class LivePaperTradingManager:
             self.fee_rate = 0.0002
 
         try:
+            self.paper_execution_model = str(os.getenv('PAPER_EXECUTION_MODEL', 'ideal') or 'ideal').strip().lower()
+        except Exception:
+            self.paper_execution_model = 'ideal'
+        if self.paper_execution_model not in ['ideal', 'realistic']:
+            self.paper_execution_model = 'ideal'
+
+        try:
+            self.paper_spread_bps = float(os.getenv('PAPER_SPREAD_BPS', '1.5') or 1.5)
+        except Exception:
+            self.paper_spread_bps = 1.5
+
+        try:
+            self.paper_slippage_bps = float(os.getenv('PAPER_SLIPPAGE_BPS', '2.0') or 2.0)
+        except Exception:
+            self.paper_slippage_bps = 2.0
+
+        try:
+            self.paper_latency_ms_min = int(float(os.getenv('PAPER_LATENCY_MS_MIN', '0') or 0))
+        except Exception:
+            self.paper_latency_ms_min = 0
+
+        try:
+            self.paper_latency_ms_max = int(float(os.getenv('PAPER_LATENCY_MS_MAX', '0') or 0))
+        except Exception:
+            self.paper_latency_ms_max = 0
+
+        if self.paper_latency_ms_max < self.paper_latency_ms_min:
+            self.paper_latency_ms_max = self.paper_latency_ms_min
+
+        try:
+            self.paper_partial_fill_prob = float(os.getenv('PAPER_PARTIAL_FILL_PROB', '0') or 0)
+        except Exception:
+            self.paper_partial_fill_prob = 0.0
+        self.paper_partial_fill_prob = max(0.0, min(1.0, self.paper_partial_fill_prob))
+
+        try:
+            self.paper_partial_fill_min_pct = float(os.getenv('PAPER_PARTIAL_FILL_MIN_PCT', '0.6') or 0.6)
+        except Exception:
+            self.paper_partial_fill_min_pct = 0.6
+
+        try:
+            self.paper_partial_fill_max_pct = float(os.getenv('PAPER_PARTIAL_FILL_MAX_PCT', '0.95') or 0.95)
+        except Exception:
+            self.paper_partial_fill_max_pct = 0.95
+
+        if self.paper_partial_fill_max_pct < self.paper_partial_fill_min_pct:
+            self.paper_partial_fill_max_pct = self.paper_partial_fill_min_pct
+
+        try:
             real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
             self.real_trading_enabled = real_env in ['1', 'true', 'yes', 'on']
         except Exception:
@@ -1136,14 +1185,52 @@ class LivePaperTradingManager:
             return {"success": False, "error": "Could not get live price"}
         
         print(f"📈 LIVE {symbol} Price: ${current_price:,.2f}")
-        
-        # Add minimal, zero-mean slippage for paper trading (±0.02%)
-        # This avoids the UI always showing immediate losses simply because BUY fills
-        # are systematically above the mark price.
+
+        latency_ms = 0
+        try:
+            if self.paper_execution_model == 'realistic' and self.paper_latency_ms_max > 0:
+                latency_ms = random.randint(int(self.paper_latency_ms_min), int(self.paper_latency_ms_max))
+        except Exception:
+            latency_ms = 0
+        if latency_ms and latency_ms > 0:
+            await asyncio.sleep(float(latency_ms) / 1000.0)
+
+        fill_ratio = 1.0
+        try:
+            if self.paper_execution_model == 'realistic' and self.paper_partial_fill_prob > 0:
+                if random.random() < float(self.paper_partial_fill_prob):
+                    fill_ratio = random.uniform(float(self.paper_partial_fill_min_pct), float(self.paper_partial_fill_max_pct))
+        except Exception:
+            fill_ratio = 1.0
+        fill_ratio = max(0.05, min(1.0, float(fill_ratio)))
+
+        spread_pct = 0.0
         slippage_pct = 0.0
-        if ALLOW_SIMULATED_FEATURES:
-            slippage_pct = random.uniform(-0.0002, 0.0002)
-        execution_price = current_price * (1 + slippage_pct)
+
+        if self.paper_execution_model == 'realistic':
+            spread_pct = max(0.0, float(self.paper_spread_bps) / 10000.0)
+            slip_bound = max(0.0, float(self.paper_slippage_bps) / 10000.0)
+            try:
+                slippage_pct = abs(random.gauss(0.0, slip_bound / 2.0))
+            except Exception:
+                slippage_pct = random.uniform(0.0, slip_bound)
+            slippage_pct = min(slippage_pct, slip_bound * 3.0)
+        else:
+            if ALLOW_SIMULATED_FEATURES:
+                slippage_pct = random.uniform(-0.0002, 0.0002)
+
+        action_u = str(action).upper()
+        if action_u not in ['BUY', 'SELL']:
+            return {"success": False, "error": f"Invalid action: {action}"}
+
+        half_spread = spread_pct / 2.0
+        if self.paper_execution_model == 'realistic':
+            if action_u == 'BUY':
+                execution_price = current_price * (1.0 + half_spread + slippage_pct)
+            else:
+                execution_price = current_price * (1.0 - half_spread - slippage_pct)
+        else:
+            execution_price = current_price * (1.0 + slippage_pct)
 
         contract_meta = None
         contract_size = None
@@ -1165,10 +1252,6 @@ class LivePaperTradingManager:
             vol_unit = 1
             effective_fee_rate = self.fee_rate
 
-        action_u = str(action).upper()
-        if action_u not in ['BUY', 'SELL']:
-            return {"success": False, "error": f"Invalid action: {action}"}
-
         existing = self.positions.get(symbol) if isinstance(getattr(self, 'positions', None), dict) else None
         existing_qty = float(existing.get('quantity', 0) or 0) if isinstance(existing, dict) else 0.0
         existing_side = str(existing.get('action', 'BUY') or 'BUY').upper() if isinstance(existing, dict) else ''
@@ -1184,6 +1267,9 @@ class LivePaperTradingManager:
                 if close_notional <= 0:
                     close_notional = max_notional
                 close_notional = min(close_notional, max_notional)
+
+                if self.paper_execution_model == 'realistic' and fill_ratio < 1.0:
+                    close_notional = close_notional * fill_ratio
 
                 trade_event = 'COVER_SHORT'
                 notional_usd = close_notional
@@ -1241,6 +1327,9 @@ class LivePaperTradingManager:
                 margin = float(amount_usd or 0)
                 if margin <= 0:
                     return {"success": False, "error": "Amount must be > 0"}
+
+                if self.paper_execution_model == 'realistic' and fill_ratio < 1.0:
+                    margin = margin * fill_ratio
 
                 notional = margin * (self.leverage if self.enable_shorting else 1.0)
                 quantity = notional / execution_price
@@ -1312,6 +1401,9 @@ class LivePaperTradingManager:
                     close_notional = max_notional
                 close_notional = min(close_notional, max_notional)
 
+                if self.paper_execution_model == 'realistic' and fill_ratio < 1.0:
+                    close_notional = close_notional * fill_ratio
+
                 trade_event = 'CLOSE_LONG'
                 notional_usd = close_notional
 
@@ -1372,6 +1464,9 @@ class LivePaperTradingManager:
                 margin = float(amount_usd or 0)
                 if margin <= 0:
                     return {"success": False, "error": "Amount must be > 0"}
+
+                if self.paper_execution_model == 'realistic' and fill_ratio < 1.0:
+                    margin = margin * fill_ratio
 
                 notional = margin * self.leverage
                 quantity = notional / execution_price
@@ -1446,6 +1541,10 @@ class LivePaperTradingManager:
             "live_price": current_price,
             "execution_price": execution_price,
             "slippage_pct": slippage_pct * 100,
+            "spread_bps": spread_pct * 10000,
+            "latency_ms": latency_ms,
+            "fill_ratio": fill_ratio,
+            "fee_rate": effective_fee_rate,
             "commission": commission,
             "pnl": float(realized_pnl or 0.0),
             "event": trade_event,

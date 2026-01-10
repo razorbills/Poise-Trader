@@ -14,6 +14,56 @@ import time
 # Force REST API for cloud
 os.environ['USE_WEBSOCKETS'] = 'false'
 
+def _apply_poise_preset():
+    try:
+        preset = str(os.getenv('POISE_PRESET', '') or '').strip().lower()
+    except Exception:
+        preset = ''
+
+    if not preset:
+        return
+
+    presets = {
+        'render_realistic': {
+            'PAPER_EXECUTION_MODEL': 'realistic',
+            'PAPER_SPREAD_BPS': '1.5',
+            'PAPER_SLIPPAGE_BPS': '2.0',
+            'PAPER_LATENCY_MS_MIN': '100',
+            'PAPER_LATENCY_MS_MAX': '600',
+            'PAPER_PARTIAL_FILL_PROB': '0.10',
+            'PAPER_PARTIAL_FILL_MIN_PCT': '0.6',
+            'PAPER_PARTIAL_FILL_MAX_PCT': '0.95',
+            'AI_LEARNING_MIN_SECONDS_BETWEEN_UPDATES': '2',
+            'AI_LEARNING_MIN_TRADES_BETWEEN_SAVES': '3',
+            'MAX_FEED_STALE_SECONDS': '60',
+            'MAX_FEED_CONSECUTIVE_FAILURES': '8',
+            'SAFETY_PAUSE_SECONDS': '30',
+            'STRATEGY_COOLDOWN_ENABLED': '1',
+            'STRATEGY_COOLDOWN_MIN_TRADES': '10',
+            'STRATEGY_COOLDOWN_WIN_RATE': '0.40',
+            'STRATEGY_COOLDOWN_SECONDS': '900',
+        },
+        'render_minimal': {
+            'AI_LEARNING_MIN_SECONDS_BETWEEN_UPDATES': '2',
+            'AI_LEARNING_MIN_TRADES_BETWEEN_SAVES': '5',
+            'MAX_FEED_STALE_SECONDS': '60',
+            'MAX_FEED_CONSECUTIVE_FAILURES': '8',
+            'SAFETY_PAUSE_SECONDS': '30',
+        },
+    }
+
+    cfg = presets.get(preset)
+    if not cfg:
+        return
+
+    for k, v in cfg.items():
+        try:
+            os.environ.setdefault(str(k), str(v))
+        except Exception:
+            pass
+
+_apply_poise_preset()
+
 print("="*70)
 print("🚀 POISE TRADER - RENDER.COM DEPLOYMENT")
 print("="*70)

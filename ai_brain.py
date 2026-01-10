@@ -7,6 +7,7 @@ Saves and loads AI trading knowledge across sessions
 import json
 import os
 import numpy as np
+import time
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
 from collections import defaultdict, deque
@@ -19,6 +20,19 @@ class AIBrain:
     def __init__(self, brain_file: str = "ai_brain.json"):
         self.brain_file = brain_file
         self.backup_file = "ai_brain_backup.json"
+
+        try:
+            self.learning_min_seconds_between_updates = float(os.getenv('AI_LEARNING_MIN_SECONDS_BETWEEN_UPDATES', '0') or 0)
+        except Exception:
+            self.learning_min_seconds_between_updates = 0.0
+
+        try:
+            self.learning_min_trades_between_saves = int(float(os.getenv('AI_LEARNING_MIN_TRADES_BETWEEN_SAVES', '1') or 1))
+        except Exception:
+            self.learning_min_trades_between_saves = 1
+
+        self._last_learning_update_ts = 0.0
+        self._trades_since_save = 0
         
         # ML components
         self.neural_predictor = neural_predictor
@@ -180,6 +194,15 @@ class AIBrain:
     def learn_from_trade(self, trade_data: Dict):
         """🔥 Enhanced learning from trade with comprehensive market data"""
         try:
+            try:
+                now_ts = time.time()
+                if self.learning_min_seconds_between_updates and self.learning_min_seconds_between_updates > 0:
+                    if self._last_learning_update_ts and (now_ts - float(self._last_learning_update_ts)) < float(self.learning_min_seconds_between_updates):
+                        return
+                self._last_learning_update_ts = now_ts
+            except Exception:
+                pass
+
             # Extract trade information
             symbol = trade_data.get('symbol', 'UNKNOWN')
             action = trade_data.get('action', 'UNKNOWN')
@@ -391,7 +414,23 @@ class AIBrain:
                     print(f"      • {rec}")
         
             # Save immediately after every trade to ensure persistence
-            self.save_brain()
+            try:
+                self._trades_since_save = int(getattr(self, '_trades_since_save', 0) or 0) + 1
+            except Exception:
+                self._trades_since_save = 1
+
+            should_save = True
+            try:
+                should_save = self._trades_since_save >= int(self.learning_min_trades_between_saves)
+            except Exception:
+                should_save = True
+
+            if should_save:
+                try:
+                    self.save_brain()
+                    self._trades_since_save = 0
+                except Exception:
+                    pass
             
             print(f"🧠 LEARNED FROM TRADE: {symbol} {action} → ${profit_loss:+.2f}")
         
