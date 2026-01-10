@@ -41,6 +41,14 @@ import time
 import sys
 import inspect
 
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
 # Utility: safely await only when needed
 async def _maybe_await(value):
     try:
@@ -161,7 +169,7 @@ from ai_trading_engine import (
     AIStrategyEngine,
     AITradingSignal
 )
-from live_paper_trading_test import LiveMexcDataFeed, LivePaperTradingManager
+from live_paper_trading_test import LiveMexcDataFeed, LivePaperTradingManager, MexcFuturesDataFeed
 from ai_brain import ai_brain
 from real_data_apis import real_data_apis
 
@@ -378,6 +386,7 @@ class MockTrader:
     Mimics the interface of LivePaperTradingManager so the bot logic works uniformly.
     """
     def __init__(self, initial_capital: float = 1000.0, data_feed=None):
+        raise RuntimeError("MockTrader is disabled - bot requires real execution / real paper engine")
         self.initial_capital = initial_capital
         self.cash_balance = initial_capital
         self.positions = {}
@@ -742,6 +751,14 @@ class PortfolioOptimizer:
             cov_matrix = np.cov(returns.T)
             
             num_assets = len(mean_returns)
+
+            if not ALLOW_SIMULATED_FEATURES:
+                return {
+                    'returns': np.array([]),
+                    'volatility': np.array([]),
+                    'sharpe': np.array([]),
+                    'optimal_weights': self._find_optimal_portfolio(mean_returns, cov_matrix)
+                }
             
             # Generate random portfolio weights
             results = np.zeros((3, num_portfolios))
@@ -787,9 +804,7 @@ class PortfolioOptimizer:
                             bounds=bounds,
                             constraints=constraints)
             
-            return result.x if result.success else np.array([1/num_assets]*num_assets)
-        except:
-            return np.array([1/len(mean_returns)]*len(mean_returns))
+            return result.x if result.success else np.array([1/len(mean_returns)]*len(mean_returns))
 
 # 📊 ALTERNATIVE DATA INTEGRATION
 class AlternativeDataAggregator:
@@ -1057,6 +1072,8 @@ class AdvancedStrategyEngine:
                     print(f"⚠️ Real-time funding rate data failed, using fallback: {e}")
             
             # Fallback to mock data if real-time unavailable
+            if not ALLOW_SIMULATED_FEATURES:
+                return signals
             import random
             for symbol in symbols:
                 funding_rate = random.uniform(-0.01, 0.01)  # -1% to 1%
@@ -1621,7 +1638,7 @@ class MessageQueue:
         return None
 
 # 🎯 ADVANCED FEATURES SUITE
-class AdvancedFeaturesManager:
+class AdvancedFeaturesSystem:
     """Options market making, regime-switching models, and news analysis"""
     
     def __init__(self):
@@ -1689,6 +1706,8 @@ class AdvancedFeaturesManager:
                     print(f"⚠️ Real-time news analysis failed, using fallback: {e}")
             
             # Fallback to mock data if real-time unavailable
+            if not ALLOW_SIMULATED_FEATURES:
+                return []
             import random
             
             impact_analysis = []
@@ -1908,6 +1927,8 @@ class NewsAnalysisEngine:
                     print(f"⚠️ Real-time news analysis failed, using fallback: {e}")
             
             # Fallback to mock data if real-time unavailable
+            if not ALLOW_SIMULATED_FEATURES:
+                return []
             import random
             
             impact_analysis = []
@@ -2151,8 +2172,21 @@ class LegendaryCryptoTitanBot:
         
         # Initialize data feed FIRST - REAL DATA ONLY!
         try:
-            self.data_feed = LiveMexcDataFeed()
-            print("📡 ✅ Connected to REAL-TIME MEXC market data!")
+            market_type = 'futures'
+            try:
+                market_type = str(os.getenv('PAPER_MARKET_TYPE', 'futures') or 'futures').strip().lower()
+            except Exception:
+                market_type = 'futures'
+
+            if market_type not in ['spot', 'futures']:
+                market_type = 'futures'
+
+            if market_type == 'futures':
+                self.data_feed = MexcFuturesDataFeed()
+                print("📡 ✅ Connected to REAL-TIME MEXC FUTURES market data!")
+            else:
+                self.data_feed = LiveMexcDataFeed()
+                print("📡 ✅ Connected to REAL-TIME MEXC SPOT market data!")
         except Exception as e:
             print(f"❌ CRITICAL ERROR: Cannot connect to MEXC data feed!")
             print(f"   Error: {e}")
@@ -2510,7 +2544,7 @@ class LegendaryCryptoTitanBot:
         
         # 🚀 ULTRA-ADVANCED AI SYSTEM V2.0 (ALL 10 AI MODULES!)
         try:
-            if ULTRA_AI_AVAILABLE:
+            if ULTRA_AI_AVAILABLE and ALLOW_SIMULATED_FEATURES:
                 print("   🚀 Initializing ULTRA-ADVANCED AI SYSTEM V2.0...")
                 self.ultra_ai = UltraAdvancedAIMaster(enable_all=True)
                 self.ultra_ai_enabled = True
@@ -3142,7 +3176,7 @@ class LegendaryCryptoTitanBot:
                 # Keep None values already initialized
         
         # META-INTELLIGENCE SYSTEMS - THE ULTIMATE UPGRADE
-        if META_INTELLIGENCE_AVAILABLE:
+        if META_INTELLIGENCE_AVAILABLE and ALLOW_SIMULATED_FEATURES:
             self.meta_brain = MetaLearningBrain()
             self.cross_market_arbitrage = CrossMarketArbitrage()
             self.geopolitical_intel = GeopoliticalIntelligence()
@@ -3167,7 +3201,7 @@ class LegendaryCryptoTitanBot:
             self.current_defense_mode = None
         
         # 🏆 PROFESSIONAL TRADING INTEGRATION - HEDGE FUND LEVEL FEATURES
-        if PROFESSIONAL_MODE_AVAILABLE:
+        if PROFESSIONAL_MODE_AVAILABLE and ALLOW_SIMULATED_FEATURES:
             print("\n🎯 ACTIVATING PROFESSIONAL HEDGE FUND TRADING MODE...")
             try:
                 # Initialize complete professional trading system
@@ -3197,10 +3231,11 @@ class LegendaryCryptoTitanBot:
                 self.professional_mode = False
         else:
             self.professional_mode = False
+            self.professional_integration = None
             print("   ℹ️ Running in standard mode (professional features not loaded)")
         
         # 🎯 ENHANCED AI SYSTEMS - 90% WIN RATE TARGET 🎯
-        if ENHANCED_AI_AVAILABLE:
+        if ENHANCED_AI_AVAILABLE and ALLOW_SIMULATED_FEATURES:
             print("🚀 Initializing Enhanced AI Systems for 90% Win Rate...")
             try:
                 # Initialize Enhanced AI Learning System
@@ -3230,10 +3265,15 @@ class LegendaryCryptoTitanBot:
                 print("   ✅ Advanced Position Management loaded")
                 
                 # Initialize Cross-Market Intelligence
-                self.cross_market_intelligence = CrossMarketIntelligenceSystem()
-                self.cross_market_integrator = CrossMarketIntelligenceIntegrator()
-                self.market_leadership_detector = MarketLeadershipDetector()
-                print("   ✅ Cross-Market Intelligence System loaded")
+                if ALLOW_SIMULATED_FEATURES:
+                    self.cross_market_intelligence = CrossMarketIntelligenceSystem()
+                    self.cross_market_integrator = CrossMarketIntelligenceIntegrator()
+                    self.market_leadership_detector = MarketLeadershipDetector()
+                    print("   ✅ Cross-Market Intelligence System loaded")
+                else:
+                    self.cross_market_intelligence = None
+                    self.cross_market_integrator = None
+                    self.market_leadership_detector = None
                 
                 # Initialize Enhanced Position & Signal Analysis
                 if ENHANCED_ANALYSIS_AVAILABLE:
@@ -3259,6 +3299,8 @@ class LegendaryCryptoTitanBot:
                 self.strategy_optimizer = None
                 self.position_manager = None
                 self.cross_market_intelligence = None
+                self.cross_market_integrator = None
+                self.market_leadership_detector = None
         else:
             print("📝 Enhanced AI systems not available - using legacy components")
             self.enhanced_ai_initialized = False
@@ -3269,6 +3311,8 @@ class LegendaryCryptoTitanBot:
             self.strategy_optimizer = None
             self.position_manager = None
             self.cross_market_intelligence = None
+            self.cross_market_integrator = None
+            self.market_leadership_detector = None
             self.position_analyzer = None
             # signal_filter already initialized above
             
@@ -3308,7 +3352,7 @@ class LegendaryCryptoTitanBot:
         self.active_signals = {}  # Track active trading signals
         
         # Initialize Elite Trade Execution Engine
-        if ELITE_EXECUTION_AVAILABLE:
+        if ELITE_EXECUTION_AVAILABLE and ALLOW_SIMULATED_FEATURES:
             self.elite_engine = EliteTradeExecutionEngine(
                 capital=self.initial_capital,
                 max_position_size=self.initial_capital * 0.3,
@@ -3740,7 +3784,7 @@ class LegendaryCryptoTitanBot:
         except Exception:
             active_feed = self.data_feed
 
-        if hasattr(active_feed, 'base_prices'):
+        if hasattr(active_feed, 'base_prices') and ALLOW_SIMULATED_FEATURES:
             valid_symbols = [s for s in self.active_symbols if s in active_feed.base_prices]
             if len(valid_symbols) < len(self.active_symbols):
                 invalid = [s for s in self.active_symbols if s not in active_feed.base_prices]
@@ -4229,24 +4273,41 @@ class LegendaryCryptoTitanBot:
                 price_change_24h = ((prices[-1] - prices[0]) / prices[0]) if len(prices) > 1 and prices[0] > 0 else 0
                 volatility = np.std(prices) / np.mean(prices) if len(prices) > 1 else 0.02
                 
+                volume_vs_average = 1.0
+                fear_greed_index = 50.0
+                put_call_ratio = 1.0
+                social_sentiment = 0.0
+                if ALLOW_SIMULATED_FEATURES:
+                    volume_vs_average = np.random.uniform(0.5, 2.0)  # Simulated
+                    fear_greed_index = np.random.uniform(20, 80)
+                    put_call_ratio = np.random.uniform(0.7, 1.3)
+                    social_sentiment = np.random.uniform(-1, 1)
+                
                 market_data[symbol] = {
                     'price': current_price,
                     'price_change_24h': price_change_24h,
                     'price_change_7d': price_change_24h,  # Simplified
                     'volatility': volatility,
-                    'volume_vs_average': np.random.uniform(0.5, 2.0),  # Simulated
+                    'volume_vs_average': volume_vs_average,
                     'order_book': {},  # Would get from exchange in production
                     'trades': [],  # Would get from exchange in production
-                    'fear_greed_index': np.random.uniform(20, 80),
-                    'put_call_ratio': np.random.uniform(0.7, 1.3),
-                    'social_sentiment': np.random.uniform(-1, 1)
+                    'fear_greed_index': fear_greed_index,
+                    'put_call_ratio': put_call_ratio,
+                    'social_sentiment': social_sentiment
                 }
         
         # Add market-wide data
+        market_fear_greed_index = 50.0
+        market_put_call_ratio = 1.0
+        market_social_sentiment = 0.0
+        if ALLOW_SIMULATED_FEATURES:
+            market_fear_greed_index = np.random.uniform(20, 80)
+            market_put_call_ratio = np.random.uniform(0.7, 1.3)
+            market_social_sentiment = np.random.uniform(-1, 1)
         market_data['market'] = {
-            'fear_greed_index': np.random.uniform(20, 80),
-            'put_call_ratio': np.random.uniform(0.7, 1.3),
-            'social_sentiment': np.random.uniform(-1, 1)
+            'fear_greed_index': market_fear_greed_index,
+            'put_call_ratio': market_put_call_ratio,
+            'social_sentiment': market_social_sentiment
         }
         
         return market_data
@@ -5283,7 +5344,7 @@ class LegendaryCryptoTitanBot:
                 continue
             
             # Execute the micro trade with Elite Execution Engine if available
-            if getattr(self, 'elite_engine', None) and ELITE_EXECUTION_AVAILABLE:
+            if getattr(self, 'elite_engine', None) and ELITE_EXECUTION_AVAILABLE and ALLOW_SIMULATED_FEATURES:
                 # Create ExecutionOrder for elite engine
                 from datetime import timedelta
                 import uuid
@@ -6902,7 +6963,9 @@ class LegendaryCryptoTitanBot:
                 hh_hl = -1
         
         # Volume-price relationship (simulated)
-        price_volume_correlation = np.random.uniform(-0.3, 0.3)  # Would use real volume data
+        price_volume_correlation = 0.0
+        if ALLOW_SIMULATED_FEATURES:
+            price_volume_correlation = np.random.uniform(-0.3, 0.3)  # Would use real volume data
         
         combined_signal = hh_hl * 0.7 + price_volume_correlation * 0.3
         direction = 1 if combined_signal > 0.1 else -1 if combined_signal < -0.1 else 0
@@ -8002,15 +8065,17 @@ class LegendaryCryptoTitanBot:
             
             # Front Running Detection
             if hasattr(self, 'front_runner') and self.front_runner:
-                # Detect potential front-running opportunities
-                front_run_signals = await _maybe_await(self.front_runner.detect_front_running_opportunities(
-                    market_data={symbol: {
-                        'prices': list(self.price_history.get(symbol, [])),
-                        'volatility': self._calculate_volatility(symbol),
-                        'volume_profile': 'normal'  # Would use real volume data
-                    } for symbol in self.active_symbols}
-                ))
-                whale_analysis['front_running'] = front_run_signals
+                if not ALLOW_SIMULATED_FEATURES:
+                    whale_analysis['front_running'] = []
+                else:
+                    front_run_signals = await _maybe_await(self.front_runner.detect_front_running_opportunities(
+                        market_data={symbol: {
+                            'prices': list(self.price_history.get(symbol, [])),
+                            'volatility': self._calculate_volatility(symbol),
+                            'volume_profile': 'normal'  # Would use real volume data
+                        } for symbol in self.active_symbols}
+                    ))
+                    whale_analysis['front_running'] = front_run_signals
             
             # Copycat Trader Analysis
             if hasattr(self, 'copycat_trader') and self.copycat_trader:
@@ -8102,20 +8167,19 @@ class LegendaryCryptoTitanBot:
                 manipulation_analysis['pump_dump'] = pump_dump_signals
                 
                 # Detect spoofing and layering
-                spoofing_payload = {symbol: {
-                        'prices': list(self.price_history.get(symbol, [])),
-                        'order_book': 'simulated'  # Would use real order book
-                    } for symbol in self.active_symbols}
                 spoofing_signals = []
-                try:
-                    # Prefer positional payload to avoid kwarg mismatches
-                    spoofing_signals = await _maybe_await(self.manipulation_detector.detect_spoofing(spoofing_payload))
-                except TypeError:
+                if ALLOW_SIMULATED_FEATURES:
+                    spoofing_payload = {symbol: {
+                            'prices': list(self.price_history.get(symbol, [])),
+                            'order_book': 'simulated'  # Would use real order book
+                        } for symbol in self.active_symbols}
                     try:
-                        # Fallback to named argument used by some implementations
-                        spoofing_signals = await _maybe_await(self.manipulation_detector.detect_spoofing(price_data=spoofing_payload))
-                    except Exception:
-                        spoofing_signals = []
+                        spoofing_signals = await _maybe_await(self.manipulation_detector.detect_spoofing(spoofing_payload))
+                    except TypeError:
+                        try:
+                            spoofing_signals = await _maybe_await(self.manipulation_detector.detect_spoofing(price_data=spoofing_payload))
+                        except Exception:
+                            spoofing_signals = []
                 manipulation_analysis['spoofing'] = spoofing_signals
                 
                 # Overall manipulation risk score
@@ -8124,19 +8188,19 @@ class LegendaryCryptoTitanBot:
             
             # Psychological Opponent Modeling
             if hasattr(self, 'psychological_modeler') and self.psychological_modeler:
-                # Model market psychology
-                market_psychology = await _maybe_await(self.psychological_modeler.analyze_market_psychology(
-                    price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols},
-                    sentiment_indicators={
-                        'fear_greed': 50,  # Would use real fear/greed index
-                        'social_sentiment': 0.5,
-                        'volatility_sentiment': self._calculate_volatility(self.active_symbols[0] if self.active_symbols else 'BTC/USDT')
-                    }
-                ))
+                market_psychology = {}
+                crowd_behavior = []
+                if ALLOW_SIMULATED_FEATURES:
+                    market_psychology = await _maybe_await(self.psychological_modeler.analyze_market_psychology(
+                        price_data={symbol: list(self.price_history.get(symbol, [])) for symbol in self.active_symbols},
+                        sentiment_indicators={
+                            'fear_greed': 50,  # Would use real fear/greed index
+                            'social_sentiment': 0.5,
+                            'volatility_sentiment': self._calculate_volatility(self.active_symbols[0] if self.active_symbols else 'BTC/USDT')
+                        }
+                    ))
+                    crowd_behavior = await _maybe_await(self.psychological_modeler.detect_crowd_behavior())
                 manipulation_analysis['market_psychology'] = market_psychology
-                
-                # Detect crowd behavior patterns
-                crowd_behavior = await _maybe_await(self.psychological_modeler.detect_crowd_behavior())
                 manipulation_analysis['crowd_behavior'] = crowd_behavior
             
             print(f"   🕵️ Manipulation Detection: {len(manipulation_analysis)} analysis components")
@@ -9603,10 +9667,17 @@ class CandlestickPatternDetector:
             volatility = 0.005  # 0.5% simulated volatility
             
             # Create realistic OHLC
-            high = price * (1 + np.random.uniform(0, volatility))
-            low = price * (1 - np.random.uniform(0, volatility))
-            open_price = price * (1 + np.random.uniform(-volatility/2, volatility/2))
+            high = price
+            low = price
+            open_price = price
             close_price = price
+            volume = 0.0
+            if ALLOW_SIMULATED_FEATURES:
+                high = price * (1 + np.random.uniform(0, volatility))
+                low = price * (1 - np.random.uniform(0, volatility))
+                open_price = price * (1 + np.random.uniform(-volatility/2, volatility/2))
+                close_price = price
+                volume = np.random.uniform(1000, 10000)  # Simulated volume
             
             ohlc_data.append({
                 'timestamp': datetime.now(),
@@ -9614,7 +9685,7 @@ class CandlestickPatternDetector:
                 'high': high,
                 'low': low,
                 'close': close_price,
-                'volume': np.random.uniform(1000, 10000)  # Simulated volume
+                'volume': volume
             })
         
         return ohlc_data
@@ -10402,8 +10473,10 @@ class EnhancedTradingChart:
         
         # Create a simple correlation heatmap (simulated data)
         symbols = ['BTC', 'ETH', 'BNB']
-        correlation_matrix = np.random.uniform(0.3, 0.9, (3, 3))
-        np.fill_diagonal(correlation_matrix, 1.0)
+        correlation_matrix = np.eye(3)
+        if ALLOW_SIMULATED_FEATURES:
+            correlation_matrix = np.random.uniform(0.3, 0.9, (3, 3))
+            np.fill_diagonal(correlation_matrix, 1.0)
         
         # Create heatmap
         im = self.correlation_ax.imshow(correlation_matrix, cmap='RdYlGn', aspect='auto', vmin=0, vmax=1)

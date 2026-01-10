@@ -14,6 +14,15 @@ from dataclasses import dataclass
 from enum import Enum
 import aiohttp
 import logging
+import os
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +140,9 @@ class GeopoliticalIntelligence:
         
     async def scrape_all_sources(self) -> List[GeopoliticalEvent]:
         """Scrape all news sources simultaneously"""
+        if not ALLOW_SIMULATED_FEATURES:
+            self.events_cache = []
+            return []
         events = []
         
         # Run all scrapers in parallel
@@ -158,6 +170,8 @@ class GeopoliticalIntelligence:
     
     async def _scrape_fed_news(self) -> List[GeopoliticalEvent]:
         """Scrape Federal Reserve news and speeches"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         events = []
         
         # Simulated Fed news (replace with real scraping)
@@ -196,6 +210,8 @@ class GeopoliticalIntelligence:
     
     async def _scrape_financial_news(self) -> List[GeopoliticalEvent]:
         """Scrape Reuters/Bloomberg financial news"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         events = []
         
         financial_news = [
@@ -235,6 +251,8 @@ class GeopoliticalIntelligence:
     
     async def _scrape_elon_tweets(self) -> List[GeopoliticalEvent]:
         """Scrape Elon Musk tweets for crypto impact"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         events = []
         
         # Simulated Elon tweets
@@ -289,6 +307,8 @@ class GeopoliticalIntelligence:
     
     async def _scrape_crypto_reddit(self) -> List[GeopoliticalEvent]:
         """Scrape crypto Reddit for sentiment"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         events = []
         
         # Simulated Reddit posts
@@ -331,6 +351,8 @@ class GeopoliticalIntelligence:
     
     async def _scrape_oil_news(self) -> List[GeopoliticalEvent]:
         """Scrape oil supply and geopolitical news"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         events = []
         
         oil_news = [
@@ -379,6 +401,9 @@ class GeopoliticalIntelligence:
     
     async def fetch_economic_calendar(self) -> List[EconomicEvent]:
         """Fetch upcoming economic events"""
+        if not ALLOW_SIMULATED_FEATURES:
+            self.economic_calendar = []
+            return []
         events = []
         
         # Simulated economic calendar
@@ -577,6 +602,8 @@ class GeopoliticalIntelligence:
     async def scan_regulatory_threats(self) -> List[Dict[str, Any]]:
         """Scan for regulatory threats and compliance issues"""
         try:
+            if not ALLOW_SIMULATED_FEATURES:
+                return []
             regulatory_threats = []
             
             # Check recent events for regulatory keywords
@@ -602,21 +629,6 @@ class GeopoliticalIntelligence:
                     }
                     regulatory_threats.append(threat)
             
-            # Add simulated regulatory threats if no events found
-            if not regulatory_threats:
-                regulatory_threats = [
-                    {
-                        'title': 'SEC Crypto Regulation Framework Review',
-                        'description': 'The SEC is reviewing comprehensive crypto regulation framework',
-                        'threat_level': 'medium',
-                        'affected_assets': ['BTC', 'ETH', 'CRYPTO'],
-                        'keywords': ['sec', 'regulation'],
-                        'confidence': 0.7,
-                        'timestamp': datetime.now(),
-                        'source': 'regulatory_monitor'
-                    }
-                ]
-            
             # Sort by threat level and confidence
             regulatory_threats.sort(key=lambda x: (x['threat_level'] == 'high', x['confidence']), reverse=True)
             
@@ -629,6 +641,23 @@ class GeopoliticalIntelligence:
     async def assess_global_risk(self, market_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """Assess global geopolitical and economic risk levels"""
         try:
+            if not ALLOW_SIMULATED_FEATURES:
+                return {
+                    'overall_risk_score': 0.0,
+                    'risk_level': 'LOW',
+                    'risk_factors': {
+                        'geopolitical_risk': 0.0,
+                        'economic_risk': 0.0,
+                        'regulatory_risk': 0.0,
+                        'market_stress_risk': 0.0
+                    },
+                    'current_defense_mode': DefenseMode.NORMAL.value,
+                    'recommended_action': 'Normal trading operations',
+                    'defense_adjustments': self.get_trading_adjustments(DefenseMode.NORMAL),
+                    'high_impact_events': 0,
+                    'upcoming_critical_events': 0,
+                    'confidence': 0.0
+                }
             print(f"🌍 Assessing global risk levels...")
             
             # Risk factors assessment

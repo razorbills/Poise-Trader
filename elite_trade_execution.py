@@ -12,8 +12,25 @@ from collections import deque, defaultdict
 from dataclasses import dataclass, field
 import logging
 import json
+import os
 
 logger = logging.getLogger(__name__)
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
+
+def _ensure_simulated_allowed(feature_name: str):
+    if not ALLOW_SIMULATED_FEATURES:
+        raise RuntimeError(
+            f"{feature_name} is simulation-only and is disabled in REAL_TRADING/STRICT_REAL_DATA. "
+            f"Refusing to simulate execution."
+        )
 
 @dataclass
 class ExecutionOrder:
@@ -72,6 +89,7 @@ class EliteTradeExecutionEngine:
     """⚡ Elite trade execution with advanced algorithms"""
     
     def __init__(self, capital: float = 1000.0, max_position_size: float = 300.0, risk_per_trade: float = 0.02):
+        _ensure_simulated_allowed('EliteTradeExecutionEngine')
         self.capital = capital
         self.max_position_size = max_position_size
         self.risk_per_trade = risk_per_trade
@@ -301,6 +319,7 @@ class SmartOrderRouter(BaseExecutionAlgorithm):
     async def execute(self, order: ExecutionOrder, market_data: Dict, conditions: Dict) -> ExecutionResult:
         """Smart order execution with dynamic routing"""
         try:
+            _ensure_simulated_allowed('SmartOrderRouter')
             # Simulate smart execution
             target_price = order.target_price or market_data.get('current_price', 0)
             
@@ -367,6 +386,7 @@ class TWAPExecutor(BaseExecutionAlgorithm):
     async def execute(self, order: ExecutionOrder, market_data: Dict, conditions: Dict) -> ExecutionResult:
         """Execute using TWAP algorithm"""
         try:
+            _ensure_simulated_allowed('TWAPExecutor')
             # Simulate TWAP execution over time
             execution_slices = 5  # Split into 5 slices
             slice_size = order.quantity / execution_slices
@@ -424,6 +444,7 @@ class VWAPExecutor(BaseExecutionAlgorithm):
     async def execute(self, order: ExecutionOrder, market_data: Dict, conditions: Dict) -> ExecutionResult:
         """Execute using VWAP algorithm"""
         try:
+            _ensure_simulated_allowed('VWAPExecutor')
             # Get volume profile
             volume_profile = market_data.get('volume_profile', [])
             if not volume_profile:
@@ -505,6 +526,7 @@ class IcebergExecutor(BaseExecutionAlgorithm):
     async def execute(self, order: ExecutionOrder, market_data: Dict, conditions: Dict) -> ExecutionResult:
         """Execute large order as hidden iceberg"""
         try:
+            _ensure_simulated_allowed('IcebergExecutor')
             # Break large order into small visible chunks
             visible_size = min(order.quantity * 0.1, 100)  # 10% or 100 units max
             num_icebergs = int(np.ceil(order.quantity / visible_size))
@@ -569,6 +591,7 @@ class SniperExecutor(BaseExecutionAlgorithm):
     async def execute(self, order: ExecutionOrder, market_data: Dict, conditions: Dict) -> ExecutionResult:
         """Execute with sniper precision timing"""
         try:
+            _ensure_simulated_allowed('SniperExecutor')
             # Wait for optimal execution moment
             optimal_moment = await self._wait_for_optimal_moment(order, market_data, conditions)
             
@@ -605,6 +628,7 @@ class SniperExecutor(BaseExecutionAlgorithm):
     async def _wait_for_optimal_moment(self, order: ExecutionOrder, market_data: Dict, conditions: Dict) -> Optional[Dict]:
         """Wait for optimal execution moment"""
         try:
+            _ensure_simulated_allowed('SniperExecutor')
             target_price = order.target_price or market_data.get('current_price', 100)
             wait_time = 0
             max_wait = 30  # Maximum 30 seconds
@@ -644,6 +668,7 @@ class StealthExecutor(BaseExecutionAlgorithm):
     async def execute(self, order: ExecutionOrder, market_data: Dict, conditions: Dict) -> ExecutionResult:
         """Execute with stealth to minimize market impact"""
         try:
+            _ensure_simulated_allowed('StealthExecutor')
             # Ultra-small slices with random timing
             num_slices = max(10, int(order.quantity / 10))  # At least 10 slices
             slice_size = order.quantity / num_slices
@@ -1018,9 +1043,9 @@ class OrderManagementSystem:
         except Exception as e:
             logger.error(f"Order cancellation error: {e}")
 
-# Global execution engine
-execution_engine = EliteTradeExecutionEngine()
-order_manager = OrderManagementSystem()
+# Global execution engine (simulation-only)
+execution_engine = EliteTradeExecutionEngine() if ALLOW_SIMULATED_FEATURES else None
+order_manager = OrderManagementSystem() if ALLOW_SIMULATED_FEATURES else None
 
 # Helper function to create orders
 def create_execution_order(
@@ -1033,8 +1058,8 @@ def create_execution_order(
     priority: int = 5
 ) -> ExecutionOrder:
     """Create execution order with smart defaults"""
-    
-    order_id = f"{symbol}_{side}_{datetime.now().strftime('%H%M%S')}_{np.random.randint(1000, 9999)}"
+
+    order_id = f"{symbol}_{side}_{datetime.now().strftime('%H%M%S%f')}"
     
     return ExecutionOrder(
         order_id=order_id,
@@ -1050,6 +1075,7 @@ def create_execution_order(
         execution_window=timedelta(minutes=10)
     )
 
-print("⚡ Elite Trade Execution Engine ready!")
-print("   🎯 Features: Smart routing, TWAP/VWAP, stealth execution")
-print("   📊 Goal: Minimize slippage, maximize execution quality")
+if ALLOW_SIMULATED_FEATURES:
+    print("⚡ Elite Trade Execution Engine ready!")
+    print("   🎯 Features: Smart routing, TWAP/VWAP, stealth execution")
+    print("   📊 Goal: Minimize slippage, maximize execution quality")

@@ -16,11 +16,20 @@ FEATURES:
 
 import numpy as np
 import pandas as pd
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 class MarketSentiment(Enum):
     """Market sentiment states"""
@@ -418,6 +427,16 @@ class SentimentAggregator:
         
     async def get_aggregated_sentiment(self, symbol: str) -> Dict:
         """Get aggregated sentiment score"""
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return {
+                'symbol': symbol,
+                'aggregate_score': 0.0,
+                'classification': 'NEUTRAL',
+                'sources': {},
+                'confidence': 0.0,
+                'timestamp': datetime.now()
+            }
         
         sentiments = {}
         

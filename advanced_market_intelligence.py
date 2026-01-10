@@ -25,10 +25,19 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Any
 from collections import deque, defaultdict
 from dataclasses import dataclass
+import os
 import re
 import statistics
 import warnings
 warnings.filterwarnings('ignore')
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 @dataclass
 class MarketRegime:
@@ -256,7 +265,13 @@ class AdvancedMarketRegimeDetector:
         """Volume analysis and price-volume relationships"""
         
         if volume_history is None:
-            # Simulate volume based on price movement
+            if not ALLOW_SIMULATED_FEATURES:
+                return {
+                    'score': 0.0,
+                    'trend': 0.0,
+                    'pv_correlation': 0.0,
+                    'relative_volume': 1.0
+                }
             volume_history = self._simulate_realistic_volume(prices)
         
         volume = np.array(volume_history)
@@ -297,7 +312,10 @@ class AdvancedMarketRegimeDetector:
     
     def _simulate_realistic_volume(self, prices: np.ndarray) -> List[float]:
         """Simulate realistic volume based on price action"""
-        
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return [1.0] * len(prices)
+         
         volume = []
         base_volume = 1000000
         
@@ -505,13 +523,18 @@ class AdvancedMarketRegimeDetector:
         """Default regime when insufficient data"""
         return MarketRegime(
             regime_type='neutral',
-            confidence=0.5,
+            confidence=0.0,
             trend_strength=0.0,
             volatility_level='normal',
             duration=0,
-            support_level=50000,
-            resistance_level=55000,
-            key_indicators={}
+            support_level=0.0,
+            resistance_level=0.0,
+            key_indicators={
+                'trend_score': 0.0,
+                'volatility_score': 0.0,
+                'momentum_score': 0.0,
+                'volume_score': 0.0
+            }
         )
 
 class AdvancedSentimentAnalyzer:
@@ -620,14 +643,16 @@ class AdvancedSentimentAnalyzer:
     
     async def _analyze_social_sentiment(self, symbol: str) -> float:
         """Analyze social media sentiment (simulated)"""
-        
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
+         
         # In real implementation, this would analyze:
         # - Twitter mentions and sentiment
         # - Reddit discussions and upvotes
         # - Telegram groups activity
         # - Discord communities sentiment
         
-        # Simulated social sentiment with realistic patterns
         base_sentiment = np.random.uniform(-0.3, 0.3)
         
         # Add momentum bias (social media follows price)
@@ -639,7 +664,10 @@ class AdvancedSentimentAnalyzer:
     
     async def _analyze_news_sentiment(self, symbol: str) -> float:
         """Analyze news sentiment impact"""
-        
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
+         
         # In real implementation, this would:
         # - Scrape news from CoinDesk, Cointelegraph, etc.
         # - Use NLP to analyze sentiment
@@ -749,7 +777,10 @@ class VolumeProfileAnalyzer:
         
         # Simulate volume if not provided
         if volume_history is None:
-            volume_history = self._generate_volume_profile(price_history)
+            if not ALLOW_SIMULATED_FEATURES:
+                volume_history = [1.0] * len(price_history)
+            else:
+                volume_history = self._generate_volume_profile(price_history)
         
         prices = np.array(price_history[-50:])  # Last 50 periods
         volumes = np.array(volume_history[-50:])
@@ -799,7 +830,10 @@ class VolumeProfileAnalyzer:
     
     def _generate_volume_profile(self, price_history: List[float]) -> List[float]:
         """Generate realistic volume profile based on price action"""
-        
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return [1.0] * len(price_history)
+         
         volume_profile = []
         base_volume = 1000000
         
@@ -862,9 +896,9 @@ class VolumeProfileAnalyzer:
     def _default_volume_profile(self) -> VolumeProfile:
         """Default volume profile when insufficient data"""
         return VolumeProfile(
-            volume_weighted_price=50000,
-            high_volume_nodes=[49000, 50000, 51000],
-            low_volume_nodes=[48000, 52000],
+            volume_weighted_price=0.0,
+            high_volume_nodes=[],
+            low_volume_nodes=[],
             profile_type='balanced',
             volume_trend='stable',
             relative_volume=1.0
@@ -887,7 +921,10 @@ class OrderFlowAnalyzer:
         prices = np.array(price_history[-20:])
         
         if volume_history is None:
-            volumes = self._simulate_order_flow_volume(prices)
+            if not ALLOW_SIMULATED_FEATURES:
+                volumes = np.ones(len(prices))
+            else:
+                volumes = self._simulate_order_flow_volume(prices)
         else:
             volumes = np.array(volume_history[-20:])
         
@@ -1037,7 +1074,10 @@ class OrderFlowAnalyzer:
     
     def _simulate_order_flow_volume(self, prices: np.ndarray) -> np.ndarray:
         """Simulate realistic order flow volume"""
-        
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return np.ones(len(prices))
+         
         volumes = []
         base_volume = 1000000
         

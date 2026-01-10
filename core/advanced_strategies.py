@@ -12,8 +12,17 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from scipy.optimize import minimize
 from scipy import stats
+import os
 import warnings
 warnings.filterwarnings('ignore')
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 @dataclass
 class ArbitrageOpportunity:
@@ -50,6 +59,8 @@ class StatisticalArbitrageEngine:
         
     async def pairs_trading_strategy(self, symbols: List[str]) -> List[ArbitrageOpportunity]:
         """Implement pairs trading using cointegration analysis"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         opportunities = []
         
         # Find cointegrated pairs
@@ -107,17 +118,23 @@ class StatisticalArbitrageEngine:
     
     def _test_cointegration(self, symbol1: str, symbol2: str) -> bool:
         """Test for cointegration between two time series"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return False
         # Mock implementation - in production, use actual ADF test
         correlation = np.random.uniform(0.7, 0.95)  # High correlation
         return correlation > 0.8
     
     def _calculate_hedge_ratio(self, symbol1: str, symbol2: str) -> float:
         """Calculate optimal hedge ratio using regression"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 1.0
         # Mock hedge ratio calculation
         return np.random.uniform(0.8, 1.2)
     
     def _calculate_spread(self, symbol1: str, symbol2: str, hedge_ratio: float) -> np.ndarray:
         """Calculate spread between two assets"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return np.array([])
         # Mock spread calculation
         return np.random.normal(0, 0.02, 100)  # 100 data points
     
@@ -131,6 +148,8 @@ class StatisticalArbitrageEngine:
 
     async def mean_reversion_baskets(self, symbols: List[str]) -> List[ArbitrageOpportunity]:
         """Mean reversion strategy on baskets of correlated assets"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         opportunities = []
         
         # Create baskets based on correlation
@@ -180,11 +199,15 @@ class StatisticalArbitrageEngine:
     
     def _calculate_basket_return(self, symbols: List[str]) -> float:
         """Calculate equal-weighted basket return"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         # Mock return calculation
         return np.random.uniform(-0.1, 0.1)
     
     def _calculate_benchmark_return(self) -> float:
         """Calculate benchmark return (e.g., total crypto market)"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         return np.random.uniform(-0.05, 0.05)
 
 class VolatilityTradingEngine:
@@ -196,6 +219,17 @@ class VolatilityTradingEngine:
         
     async def volatility_surface_analysis(self, symbol: str) -> VolatilitySignal:
         """Analyze volatility surface for trading opportunities"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return VolatilitySignal(
+                symbol=symbol,
+                current_iv=0.0,
+                fair_iv=0.0,
+                iv_rank=0.0,
+                volatility_regime='normal_vol',
+                trade_direction='hold',
+                expected_profit=0.0,
+                timestamp=datetime.now()
+            )
         
         # Get current implied volatility
         current_iv = await self._get_current_iv(symbol)
@@ -236,21 +270,29 @@ class VolatilityTradingEngine:
     
     async def _get_current_iv(self, symbol: str) -> float:
         """Get current implied volatility"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         # Mock IV data
         return np.random.uniform(0.3, 1.5)
     
     def _calculate_fair_iv(self, symbol: str) -> float:
         """Calculate fair value IV using GARCH model"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         # Mock fair value calculation
         return np.random.uniform(0.4, 1.2)
     
     def _calculate_iv_rank(self, symbol: str, current_iv: float) -> float:
         """Calculate IV rank (percentile of current IV)"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         # Mock IV rank calculation
         return np.random.uniform(0, 100)
     
     def _determine_volatility_regime(self, symbol: str) -> str:
         """Determine current volatility regime"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 'normal_vol'
         regimes = ['low_vol', 'normal_vol', 'high_vol', 'crisis_vol']
         return np.random.choice(regimes)
 
@@ -263,11 +305,16 @@ class FundingRateArbitrageEngine:
         
     async def analyze_funding_opportunities(self, symbols: List[str]) -> List[ArbitrageOpportunity]:
         """Analyze funding rate arbitrage opportunities"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         opportunities = []
         
         for symbol in symbols:
             # Get current funding rates across exchanges
             funding_rates = await self._get_funding_rates(symbol)
+
+            if not funding_rates:
+                continue
             
             # Calculate average and identify outliers
             avg_funding = np.mean(list(funding_rates.values()))
@@ -308,6 +355,8 @@ class FundingRateArbitrageEngine:
     
     async def _get_funding_rates(self, symbol: str) -> Dict[str, float]:
         """Get funding rates from multiple exchanges"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return {}
         # Mock funding rates
         exchanges = ['binance', 'bybit', 'okx', 'mexc']
         rates = {}
@@ -327,6 +376,8 @@ class LatencyArbitrageEngine:
         
     async def detect_latency_arbitrage(self, symbols: List[str]) -> List[ArbitrageOpportunity]:
         """Detect latency arbitrage opportunities"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         opportunities = []
         
         for symbol in symbols:
@@ -377,6 +428,8 @@ class LatencyArbitrageEngine:
     
     async def _get_real_time_prices(self, symbol: str) -> Dict[str, float]:
         """Get real-time prices from exchanges"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return {}
         # Mock price data with small random differences
         base_price = 45000  # Mock BTC price
         exchanges = ['binance', 'coinbase', 'kraken', 'mexc']
@@ -425,6 +478,9 @@ class AdvancedStrategyManager:
             'funding_rate_arbitrage': [],
             'latency_arbitrage': []
         }
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return opportunities
         
         try:
             # Statistical arbitrage
@@ -491,4 +547,4 @@ class AdvancedStrategyManager:
         return best_strategy
 
 # Global instance
-advanced_strategies = AdvancedStrategyManager()
+advanced_strategies = AdvancedStrategyManager() if ALLOW_SIMULATED_FEATURES else None

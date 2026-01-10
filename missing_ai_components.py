@@ -1,4 +1,4 @@
-ok. who told you that windows defender would be off in competetion pc#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 🔧 MISSING AI COMPONENTS - FALLBACK IMPLEMENTATIONS 🔧
 
@@ -9,10 +9,26 @@ to prevent import errors and ensure the bot runs smoothly.
 import asyncio
 import random
 import numpy as np
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
+try:
+    from live_paper_trading_test import LiveMexcDataFeed as _RealLiveMexcDataFeed
+    from live_paper_trading_test import LivePaperTradingManager as _RealLivePaperTradingManager
+except Exception:
+    _RealLiveMexcDataFeed = None
+    _RealLivePaperTradingManager = None
 
 # ===============================
 # AI Trading Engine Components
@@ -103,13 +119,23 @@ class SentimentAnalyzer:
         
     async def analyze_sentiment(self, symbol: str) -> Dict:
         """Analyze market sentiment"""
-        # Simulate sentiment analysis
+        if not ALLOW_SIMULATED_FEATURES:
+            return {
+                'composite_sentiment': 0.0,
+                'fear_greed_index': 50.0,
+                'social_sentiment': 0.0,
+                'news_impact': 0.0,
+                'confidence': 0.0,
+                'bullish_probability': 0.5,
+                'bearish_probability': 0.5
+            }
+
         fear_greed = random.uniform(0, 100)
         social_sentiment = random.uniform(-1, 1)
         news_impact = random.uniform(-0.5, 0.5)
-        
+
         composite_sentiment = (fear_greed / 100) * 0.5 + social_sentiment * 0.3 + news_impact * 0.2
-        
+
         return {
             'composite_sentiment': composite_sentiment,
             'fear_greed_index': fear_greed,
@@ -128,6 +154,8 @@ class AIStrategyEngine:
         
     async def select_best_strategy(self, symbol: str, market_data: Dict) -> str:
         """Select best strategy for current market conditions"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 'momentum'
         strategies = ['momentum', 'mean_reversion', 'trend_following', 'scalping']
         return random.choice(strategies)
     
@@ -189,6 +217,9 @@ class ReinforcementLearningOptimizer:
     def choose_action(self, state: str) -> str:
         """Choose trading action using epsilon-greedy"""
         actions = ['BUY', 'SELL', 'HOLD']
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return 'HOLD'
         
         if random.random() < self.epsilon or state not in self.q_table:
             return random.choice(actions)
@@ -281,146 +312,40 @@ class PatternRecognitionEngine:
 # ===============================
 
 class LiveMexcDataFeed:
-    """Live MEXC data feed (simulated for paper trading)"""
-    
+    """Live MEXC data feed (delegates to real implementation)"""
+
     def __init__(self):
-        self.symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'XRP/USDT', 
-                       'ADA/USDT', 'DOGE/USDT', 'MATIC/USDT', 'DOT/USDT', 'AVAX/USDT',
-                       'LINK/USDT', 'UNI/USDT', 'ATOM/USDT', 'LTC/USDT', 'APT/USDT',
-                       'ARB/USDT', 'OP/USDT', 'SUI/USDT', 'TIA/USDT', 'SEI/USDT',
-                       'XAU/USDT', 'XAG/USDT', 'WTI/USDT']
-        self.base_prices = {
-            # Cryptocurrencies
-            'BTC/USDT': 65000,
-            'ETH/USDT': 3500,
-            'BNB/USDT': 580,
-            'SOL/USDT': 150,
-            'XRP/USDT': 0.55,
-            'ADA/USDT': 0.45,
-            'DOGE/USDT': 0.12,
-            'MATIC/USDT': 0.85,
-            'DOT/USDT': 7.5,
-            'AVAX/USDT': 38,
-            'LINK/USDT': 14,
-            'UNI/USDT': 8.5,
-            'ATOM/USDT': 9.5,
-            'LTC/USDT': 85,
-            'APT/USDT': 10,
-            'ARB/USDT': 1.2,
-            'OP/USDT': 2.5,
-            'SUI/USDT': 1.8,
-            'TIA/USDT': 8.0,
-            'SEI/USDT': 0.45,
-            # Precious Metals & Commodities
-            'XAU/USDT': 2050,    # Gold (simulated USDT price)
-            'XAG/USDT': 24.5,    # Silver (simulated USDT price)
-            'WTI/USDT': 78.0     # Crude Oil (simulated USDT price)
-        }
-        
+        if _RealLiveMexcDataFeed is None:
+            raise RuntimeError("LiveMexcDataFeed fallback requires live_paper_trading_test")
+        self._delegate = _RealLiveMexcDataFeed()
+
     async def get_multiple_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """Get live prices for multiple symbols"""
-        prices = {}
-        
-        for symbol in symbols:
-            if symbol in self.base_prices:
-                # Simulate price movement (±2% random walk)
-                base = self.base_prices[symbol]
-                change = random.uniform(-0.02, 0.02)
-                new_price = base * (1 + change)
-                
-                # Update base price for next call
-                self.base_prices[symbol] = new_price
-                prices[symbol] = new_price
-            else:
-                # Silently skip invalid symbols (they won't appear in returned dict)
-                pass
-                
-        return prices
-    
+        return await self._delegate.get_multiple_prices(symbols)
+
     async def get_symbol_price(self, symbol: str) -> Optional[float]:
-        """Get single symbol price"""
-        prices = await self.get_multiple_prices([symbol])
+        if hasattr(self._delegate, 'get_symbol_price'):
+            return await self._delegate.get_symbol_price(symbol)
+        prices = await self._delegate.get_multiple_prices([symbol])
         return prices.get(symbol)
 
 class LivePaperTradingManager:
-    """Live paper trading manager"""
-    
+    """Live paper trading manager (delegates to real implementation)"""
+
     def __init__(self, initial_capital: float = 5000):
-        self.initial_capital = initial_capital
-        self.cash = initial_capital
-        self.positions = {}
-        self.trades = []
-        self.total_trades = 0
-        
-    async def execute_live_trade(self, symbol: str, action: str, 
-                               position_size: float, strategy: str) -> Dict:
-        """Execute paper trade"""
-        try:
-            # Simulate trade execution
-            self.total_trades += 1
-            
-            if action == 'BUY':
-                if self.cash >= position_size:
-                    self.cash -= position_size
-                    if symbol not in self.positions:
-                        self.positions[symbol] = {'quantity': 0, 'cost_basis': 0}
-                    
-                    # Update position
-                    old_qty = self.positions[symbol]['quantity']
-                    old_cost = self.positions[symbol]['cost_basis']
-                    
-                    new_qty = old_qty + position_size
-                    new_cost = old_cost + position_size
-                    
-                    self.positions[symbol] = {
-                        'quantity': new_qty,
-                        'cost_basis': new_cost,
-                        'current_value': new_cost,  # Will be updated
-                        'unrealized_pnl': 0
-                    }
-                    
-                    return {'success': True, 'trade_id': self.total_trades}
-                else:
-                    return {'success': False, 'error': 'Insufficient cash'}
-                    
-            elif action == 'SELL':
-                if symbol in self.positions and self.positions[symbol]['quantity'] > 0:
-                    # Close position
-                    position = self.positions[symbol]
-                    realized_pnl = position_size - position['cost_basis']
-                    
-                    self.cash += position_size
-                    self.positions[symbol] = {'quantity': 0, 'cost_basis': 0, 'current_value': 0, 'unrealized_pnl': 0}
-                    
-                    return {'success': True, 'trade_id': self.total_trades, 'pnl': realized_pnl}
-                else:
-                    return {'success': False, 'error': 'No position to sell'}
-                    
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
+        if _RealLivePaperTradingManager is None:
+            raise RuntimeError("LivePaperTradingManager fallback requires live_paper_trading_test")
+        self._delegate = _RealLivePaperTradingManager(initial_capital=initial_capital)
+
+    async def execute_live_trade(self, *args, **kwargs) -> Dict:
+        return await self._delegate.execute_live_trade(*args, **kwargs)
+
     async def get_portfolio_value(self) -> Dict:
-        """Get current portfolio state"""
-        total_value = self.cash
-        
-        # Update position values (simulate market movement)
-        for symbol, position in self.positions.items():
-            if position['quantity'] > 0:
-                # Simulate current market value
-                market_change = random.uniform(-0.05, 0.05)  # ±5% change
-                current_value = position['cost_basis'] * (1 + market_change)
-                unrealized_pnl = current_value - position['cost_basis']
-                
-                position['current_value'] = current_value
-                position['unrealized_pnl'] = unrealized_pnl
-                total_value += current_value
-        
-        return {
-            'total_value': total_value,
-            'cash': self.cash,
-            'positions': self.positions,
-            'unrealized_pnl': sum(p.get('unrealized_pnl', 0) for p in self.positions.values())
-        }
+        return await self._delegate.get_portfolio_value()
+
+    def get_portfolio_value_sync(self) -> Dict:
+        if hasattr(self._delegate, 'get_portfolio_value_sync'):
+            return self._delegate.get_portfolio_value_sync()
+        return {}
 
 # ===============================
 # AI Brain System

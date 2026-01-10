@@ -24,6 +24,10 @@ import aiohttp
 import ccxt.async_support as ccxt
 from datetime import datetime, timedelta
 import numpy as np
+import os
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 
 
 @dataclass
@@ -118,33 +122,36 @@ class AdvancedFeedManager:
     
     async def _initialize_exchanges(self):
         """Initialize exchange API connections"""
+        use_sandbox = bool(self.config.get('use_sandbox', False if (_REAL_TRADING_ENABLED or _STRICT_REAL_DATA) else True))
+        if (_REAL_TRADING_ENABLED or _STRICT_REAL_DATA) and use_sandbox:
+            raise RuntimeError("use_sandbox cannot be enabled when REAL_TRADING/STRICT_REAL_DATA is active")
+
         exchange_configs = {
             'mexc': {
                 'apiKey': self.config.get('mexc_api_key'),
                 'secret': self.config.get('mexc_api_secret'),
-                'sandbox': self.config.get('use_sandbox', True),
+                'sandbox': use_sandbox,
                 'enableRateLimit': True,
                 'timeout': 30000,
             },
             'binance': {
                 'apiKey': self.config.get('binance_api_key'),
                 'secret': self.config.get('binance_api_secret'),
-                'sandbox': self.config.get('use_sandbox', True),
+                'sandbox': use_sandbox,
                 'enableRateLimit': True,
                 'timeout': 30000,
             }
         }
         
         for exchange_name, config in exchange_configs.items():
-            if config['apiKey']:  # Only initialize if API key provided
-                try:
-                    exchange_class = getattr(ccxt, exchange_name)
-                    exchange = exchange_class(config)
-                    await exchange.load_markets()
-                    self.exchanges[exchange_name] = exchange
-                    self.logger.info(f"✅ {exchange_name} exchange initialized")
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to initialize {exchange_name}: {e}")
+            try:
+                exchange_class = getattr(ccxt, exchange_name)
+                exchange = exchange_class(config)
+                await exchange.load_markets()
+                self.exchanges[exchange_name] = exchange
+                self.logger.info(f"✅ {exchange_name} exchange initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to initialize {exchange_name}: {e}")
     
     async def _start_websocket_feeds(self):
         """Start WebSocket connections for real-time data"""
@@ -153,27 +160,66 @@ class AdvancedFeedManager:
                 # Start WebSocket for each target symbol
                 for symbol in self.target_symbols:
                     if symbol in exchange.markets:
-                        asyncio.create_task(
-                            self._websocket_feed_handler(exchange_name, symbol)
-                        )
+                        if hasattr(exchange, 'watch_ticker') and hasattr(exchange, 'watch_order_book'):
+                            asyncio.create_task(
+                                self._websocket_feed_handler(exchange_name, symbol)
+                            )
+                        else:
+                            asyncio.create_task(
+                                self._polling_feed_handler(exchange_name, symbol)
+                            )
+                        self.websocket_connections[f"{exchange_name}:{symbol}"] = True
                 
                 self.logger.info(f"🔗 WebSocket feeds started for {exchange_name}")
             except Exception as e:
                 self.logger.error(f"❌ Failed to start WebSocket for {exchange_name}: {e}")
+
+    async def _polling_feed_handler(self, exchange_name: str, symbol: str):
+        while True:
+            try:
+                exchange = self.exchanges.get(exchange_name)
+                if not exchange:
+                    await asyncio.sleep(5)
+                    continue
+
+                ticker = None
+                try:
+                    ticker = await exchange.fetch_ticker(symbol)
+                except Exception:
+                    ticker = None
+
+                if ticker:
+                    await self._process_market_tick(exchange_name, symbol, ticker)
+
+                order_book = None
+                try:
+                    order_book = await exchange.fetch_order_book(symbol, limit=20)
+                except Exception:
+                    order_book = None
+
+                if order_book:
+                    await self._process_order_book(exchange_name, symbol, order_book)
+
+                await asyncio.sleep(1)
+            except Exception as e:
+                self.logger.error(f"Polling error for {exchange_name} {symbol}: {e}")
+                await asyncio.sleep(5)
     
     async def _websocket_feed_handler(self, exchange_name: str, symbol: str):
         """Handle WebSocket data feed for a specific exchange and symbol"""
         while True:
             try:
                 exchange = self.exchanges[exchange_name]
-                
-                # Subscribe to ticker stream
-                async for ticker in exchange.watch_ticker(symbol):
-                    await self._process_market_tick(exchange_name, symbol, ticker)
-                
-                # Subscribe to order book stream  
-                async for order_book in exchange.watch_order_book(symbol):
-                    await self._process_order_book(exchange_name, symbol, order_book)
+
+                async def _ticker_loop():
+                    async for ticker in exchange.watch_ticker(symbol):
+                        await self._process_market_tick(exchange_name, symbol, ticker)
+
+                async def _orderbook_loop():
+                    async for order_book in exchange.watch_order_book(symbol):
+                        await self._process_order_book(exchange_name, symbol, order_book)
+
+                await asyncio.gather(_ticker_loop(), _orderbook_loop())
                 
             except Exception as e:
                 self.logger.error(f"WebSocket error for {exchange_name} {symbol}: {e}")

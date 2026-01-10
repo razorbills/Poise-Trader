@@ -12,12 +12,18 @@ Working paper trading bot with REAL live MEXC prices
 
 import asyncio
 import random
+import os
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
 
 # Import our working live data feed
 from live_paper_trading_test import LiveMexcDataFeed, LivePaperTradingManager
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+if _REAL_TRADING_ENABLED or _STRICT_REAL_DATA:
+    raise RuntimeError("simple_live_bot.py is a demo bot that uses random trading logic and cannot be used with REAL_TRADING/STRICT_REAL_DATA")
 
 class SimpleLiveTradingBot:
     """Simplified bot using live MEXC data"""

@@ -16,10 +16,19 @@ import aiohttp
 import logging
 from collections import deque
 import random
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 class MarketRegime(Enum):
     """Market regime classifications"""
@@ -252,8 +261,20 @@ class SentimentAnalyzer:
             if self.sentiment_history:
                 return self.sentiment_history[-1]
         
+        if not ALLOW_SIMULATED_FEATURES:
+            sentiment_data = SentimentData(
+                twitter_sentiment=0.0,
+                reddit_sentiment=0.0,
+                news_sentiment=0.0,
+                fear_greed_index=0.5,
+                composite_sentiment=0.0,
+                confidence=0.0
+            )
+            self.sentiment_history.append(sentiment_data)
+            self.last_update = current_time
+            return sentiment_data
+
         try:
-            # Simulate sentiment data (in production, connect to real APIs)
             twitter_sentiment = await self._get_twitter_sentiment()
             reddit_sentiment = await self._get_reddit_sentiment()
             news_sentiment = await self._get_news_sentiment()
@@ -318,8 +339,19 @@ class OnChainAnalyzer:
             if self.onchain_history:
                 return self.onchain_history[-1]
         
+        if not ALLOW_SIMULATED_FEATURES:
+            onchain_data = OnChainData(
+                btc_dominance=0.0,
+                stablecoin_inflows=0.0,
+                whale_activity=0.0,
+                exchange_flows=0.0,
+                network_activity=0.0
+            )
+            self.onchain_history.append(onchain_data)
+            self.last_update = current_time
+            return onchain_data
+
         try:
-            # Simulate on-chain data (in production, use real APIs)
             btc_dominance = await self._get_btc_dominance()
             stablecoin_flows = await self._get_stablecoin_flows()
             whale_activity = await self._get_whale_activity()
@@ -396,7 +428,7 @@ class SelfHealingWatchdog:
         try:
             # Simulate API check (in production: ping exchange APIs)
             await asyncio.sleep(0.1)
-            if random.random() < 0.02:  # 2% chance of simulated failure
+            if ALLOW_SIMULATED_FEATURES and random.random() < 0.02:  # 2% chance of simulated failure
                 raise Exception("API connectivity lost")
         except Exception as e:
             self.error_count += 1
@@ -408,7 +440,7 @@ class SelfHealingWatchdog:
         try:
             # Simulate data feed check
             await asyncio.sleep(0.1)
-            if random.random() < 0.01:  # 1% chance of failure
+            if ALLOW_SIMULATED_FEATURES and random.random() < 0.01:  # 1% chance of failure
                 raise Exception("Market data feed interrupted")
         except Exception as e:
             self.error_count += 1
@@ -420,7 +452,7 @@ class SelfHealingWatchdog:
         try:
             # Simulate trading engine check
             await asyncio.sleep(0.1)
-            if random.random() < 0.005:  # 0.5% chance of failure
+            if ALLOW_SIMULATED_FEATURES and random.random() < 0.005:  # 0.5% chance of failure
                 raise Exception("Trading engine malfunction")
         except Exception as e:
             self.error_count += 1

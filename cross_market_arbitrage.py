@@ -11,6 +11,15 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import logging
+import os
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +82,8 @@ class CrossMarketArbitrage:
         
     async def update_all_markets(self):
         """Update data from all markets simultaneously"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return
         await asyncio.gather(
             self._update_crypto_data(),
             self._update_forex_data(),
@@ -165,6 +176,9 @@ class CrossMarketArbitrage:
     
     async def find_arbitrage_opportunities(self) -> List[ArbitrageOpportunity]:
         """Find cross-market arbitrage opportunities"""
+        if not ALLOW_SIMULATED_FEATURES:
+            self.arbitrage_opportunities = []
+            return []
         opportunities = []
         
         # BTC vs Gold arbitrage
@@ -250,6 +264,9 @@ class CrossMarketArbitrage:
     
     async def detect_hedge_signals(self) -> List[HedgeSignal]:
         """Detect when instant hedging is needed"""
+        if not ALLOW_SIMULATED_FEATURES:
+            self.hedge_signals = []
+            return []
         signals = []
         
         # BTC tanks → Gold hedge
@@ -323,6 +340,8 @@ class CrossMarketArbitrage:
     
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> Dict[str, Any]:
         """Execute cross-market arbitrage trade"""
+        if not ALLOW_SIMULATED_FEATURES:
+            raise RuntimeError("CrossMarketArbitrage execution is simulation-only and disabled in REAL_TRADING/STRICT_REAL_DATA")
         print(f"⚡ EXECUTING ARBITRAGE: {opportunity.asset_pair}")
         print(f"   💰 Spread: {opportunity.spread_pct:.2f}%")
         print(f"   🎯 Est. Profit: ${opportunity.estimated_profit:.2f}")
@@ -344,6 +363,8 @@ class CrossMarketArbitrage:
     
     async def execute_hedge(self, signal: HedgeSignal) -> Dict[str, Any]:
         """Execute instant hedge trade"""
+        if not ALLOW_SIMULATED_FEATURES:
+            raise RuntimeError("CrossMarketArbitrage hedge execution is simulation-only and disabled in REAL_TRADING/STRICT_REAL_DATA")
         print(f"🛡️ EXECUTING HEDGE: {signal.trigger_asset} → {signal.hedge_asset}")
         print(f"   📊 Hedge Ratio: {signal.hedge_ratio:.1%}")
         print(f"   🚨 Urgency: {signal.urgency.upper()}")
@@ -376,6 +397,15 @@ class CrossMarketArbitrage:
     
     async def monitor_cross_market_flows(self) -> Dict[str, Any]:
         """Monitor capital flows between markets"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return {
+                'crypto_to_gold': 0,
+                'forex_to_crypto': 0,
+                'stocks_to_commodities': 0,
+                'total_arbitrage_volume': 0,
+                'active_hedges': 0,
+                'market_stress_level': 0.0
+            }
         flows = {
             'crypto_to_gold': 0,
             'forex_to_crypto': 0,
@@ -396,6 +426,8 @@ class CrossMarketArbitrage:
     
     def _calculate_market_stress(self) -> float:
         """Calculate overall market stress level"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         stress_factors = []
         
         # VIX level
@@ -418,4 +450,7 @@ class CrossMarketArbitrage:
     
     async def detect_opportunities(self) -> List[ArbitrageOpportunity]:
         """Detect arbitrage opportunities (alias for find_arbitrage_opportunities)"""
+        if not ALLOW_SIMULATED_FEATURES:
+            self.arbitrage_opportunities = []
+            return []
         return await self.find_arbitrage_opportunities()

@@ -7,6 +7,7 @@ Copycat mode to mirror best-performing wallets
 import asyncio
 import hashlib
 import numpy as np
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
@@ -14,6 +15,14 @@ from collections import defaultdict, deque
 import logging
 
 logger = logging.getLogger(__name__)
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 @dataclass
 class WhaleActivity:
@@ -75,6 +84,8 @@ class DarkPoolTracker:
         
     async def track_whale_activities(self) -> List[WhaleActivity]:
         """Track whale wallet activities across multiple chains"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         activities = []
         
         # Simulated whale activities (replace with real blockchain monitoring)
@@ -196,6 +207,13 @@ class DarkPoolTracker:
     async def analyze_dark_pools(self, symbols: List[str], price_data: Dict[str, List[float]]) -> Dict[str, Any]:
         """Analyze dark pool activities for given symbols"""
         try:
+            if not ALLOW_SIMULATED_FEATURES:
+                return {
+                    'large_block_trades': [],
+                    'hidden_volume': {},
+                    'institutional_flow': {},
+                    'dark_pool_sentiment': 'neutral'
+                }
             dark_pool_analysis = {
                 'large_block_trades': [],
                 'hidden_volume': {},
@@ -231,6 +249,8 @@ class DarkPoolTracker:
     async def detect_whale_accumulation(self) -> List[Dict[str, Any]]:
         """Detect whale accumulation patterns"""
         try:
+            if not ALLOW_SIMULATED_FEATURES:
+                return []
             accumulation_signals = []
             
             # Simulate whale accumulation detection
@@ -265,6 +285,14 @@ class DarkPoolTracker:
     
     async def detect_hidden_liquidity(self) -> Dict[str, Any]:
         """Detect hidden liquidity movements and iceberg orders"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return {
+                'large_orders': [],
+                'iceberg_orders': [],
+                'dark_pool_volume': {},
+                'institutional_flow': {},
+                'order_book_anomalies': []
+            }
         hidden_liquidity = {
             'large_orders': [],
             'iceberg_orders': [],
@@ -586,6 +614,8 @@ class CopycatTrader:
         
     async def analyze_wallet_performance(self, whale_activities: List[WhaleActivity]) -> Dict[str, Any]:
         """Analyze performance of tracked wallets"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return {}
         performance_data = {}
         
         for activity in whale_activities:
@@ -628,6 +658,8 @@ class CopycatTrader:
     
     def _simulate_trade_pnl(self, activity: WhaleActivity) -> float:
         """Simulate P&L for whale trade (replace with real tracking)"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         # Simulate based on market conditions and whale success patterns
         base_return = np.random.normal(0.05, 0.15)  # 5% average with 15% volatility
         
@@ -660,7 +692,9 @@ class CopycatTrader:
         self.tracked_wallets[wallet]['win_rate'] = win_rate
         
         # Calculate average hold time (simulated)
-        avg_hold_time = np.random.randint(3600, 86400)  # 1-24 hours
+        avg_hold_time = 0
+        if ALLOW_SIMULATED_FEATURES:
+            avg_hold_time = np.random.randint(3600, 86400)  # 1-24 hours
         self.tracked_wallets[wallet]['avg_hold_time'] = avg_hold_time
         
         # Calculate risk score

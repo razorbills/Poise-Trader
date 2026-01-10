@@ -43,6 +43,14 @@ from concurrent.futures import ThreadPoolExecutor
 import ssl
 import numpy as np
 
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
 # Optional production data layer for scalable storage/streaming
 try:
     from core.data_layer import data_layer
@@ -155,7 +163,7 @@ class RealTimeDataManager:
         
     async def initialize(self):
         """Initialize all data connections"""
-        logger.info("🚀 Initializing Real-Time Data Manager...")
+        logger.info(" Initializing Real-Time Data Manager...")
         
         # Create aiohttp session
         connector = aiohttp.TCPConnector(
@@ -177,11 +185,11 @@ class RealTimeDataManager:
         if DATA_LAYER_AVAILABLE and data_layer and not getattr(data_layer, 'is_initialized', False):
             try:
                 await data_layer.initialize()
-                logger.info("✅ Production data layer initialized")
+                logger.info(" Production data layer initialized")
             except Exception as e:
-                logger.warning(f"⚠️ Data layer init failed: {e}")
+                logger.warning(f" Data layer init failed: {e}")
         
-        logger.info("✅ Real-Time Data Manager initialized successfully")
+        logger.info(" Real-Time Data Manager initialized successfully")
     
     def _load_config(self):
         """Load API configurations from file"""
@@ -197,7 +205,7 @@ class RealTimeDataManager:
                 self._create_default_config()
                 
         except Exception as e:
-            logger.error(f"❌ Failed to load config: {e}")
+            logger.error(f" Failed to load config: {e}")
             self._create_default_config()
     
     def _create_default_config(self):
@@ -267,8 +275,8 @@ class RealTimeDataManager:
         with open(self.config_path, 'w') as f:
             json.dump(default_config, f, indent=2)
         
-        logger.info(f"📝 Created default config at {self.config_path}")
-        logger.info("🔑 Please update API keys in the config file to enable data sources")
+        logger.info(f" Created default config at {self.config_path}")
+        logger.info(" Please update API keys in the config file to enable data sources")
     
     def _init_database(self):
         """Initialize SQLite database for data persistence"""
@@ -342,7 +350,7 @@ class RealTimeDataManager:
         conn.commit()
         conn.close()
         
-        logger.info("📊 Database initialized successfully")
+        logger.info(" Database initialized successfully")
     
     async def _init_twitter_client(self):
         """Initialize Twitter API v2 client"""
@@ -354,11 +362,11 @@ class RealTimeDataManager:
                     bearer_token=twitter_config.api_key,
                     wait_on_rate_limit=True
                 )
-                logger.info("🐦 Twitter API client initialized")
+                logger.info(" Twitter API client initialized")
             else:
-                logger.warning("⚠️ Twitter API not configured or disabled")
+                logger.warning(" Twitter API not configured or disabled")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Twitter client: {e}")
+            logger.error(f" Failed to initialize Twitter client: {e}")
     
     async def _init_reddit_client(self):
         """Initialize Reddit API client"""
@@ -370,11 +378,11 @@ class RealTimeDataManager:
                     client_secret=reddit_config.api_secret,
                     user_agent="PoiseTrader/1.0"
                 )
-                logger.info("🤖 Reddit API client initialized")
+                logger.info(" Reddit API client initialized")
             else:
-                logger.warning("⚠️ Reddit API not configured or disabled")
+                logger.warning(" Reddit API not configured or disabled")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Reddit client: {e}")
+            logger.error(f" Failed to initialize Reddit client: {e}")
     
     async def _check_rate_limit(self, source_name: str) -> bool:
         """Check if API call is within rate limits"""
@@ -451,7 +459,7 @@ class RealTimeDataManager:
                     ))
         
         except Exception as e:
-            logger.error(f"❌ Twitter sentiment error: {e}")
+            logger.error(f" Twitter sentiment error: {e}")
             return await self._get_fallback_twitter_sentiment(symbols)
         
         # Store in history and database
@@ -503,7 +511,10 @@ class RealTimeDataManager:
     
     async def _get_fallback_twitter_sentiment(self, symbols: List[str]) -> List[SocialSentimentData]:
         """Fallback sentiment data when Twitter API is unavailable"""
-        logger.warning("⚠️ Using fallback Twitter sentiment data")
+        logger.warning(" Using fallback Twitter sentiment data")
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         
         fallback_data = []
         for symbol in symbols:
@@ -552,7 +563,7 @@ class RealTimeDataManager:
                                 'sentiment': self._analyze_reddit_sentiment(post.title)
                             })
                     except Exception as e:
-                        logger.warning(f"⚠️ Error accessing subreddit {subreddit_name}: {e}")
+                        logger.warning(f" Error accessing subreddit {subreddit_name}: {e}")
                         continue
                 
                 if posts_data:
@@ -574,7 +585,7 @@ class RealTimeDataManager:
                     ))
         
         except Exception as e:
-            logger.error(f"❌ Reddit sentiment error: {e}")
+            logger.error(f" Reddit sentiment error: {e}")
             return await self._get_fallback_reddit_sentiment(symbols)
         
         # Store in history and database
@@ -623,7 +634,10 @@ class RealTimeDataManager:
     
     async def _get_fallback_reddit_sentiment(self, symbols: List[str]) -> List[SocialSentimentData]:
         """Fallback Reddit sentiment when API unavailable"""
-        logger.warning("⚠️ Using fallback Reddit sentiment data")
+        logger.warning(" Using fallback Reddit sentiment data")
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         
         fallback_data = []
         for symbol in symbols:
@@ -667,7 +681,7 @@ class RealTimeDataManager:
             except Exception as e:
                 logger.debug(f"Data layer social_sentiment write skipped: {e}")
         except Exception as e:
-            logger.error(f"❌ Failed to store social sentiment: {e}")
+            logger.error(f" Failed to store social sentiment: {e}")
     
     async def get_onchain_data(self, symbols: List[str]) -> List[OnChainData]:
         """Get on-chain analytics from Glassnode and IntoTheBlock"""
@@ -709,6 +723,9 @@ class RealTimeDataManager:
                     self._fetch_glassnode_metric(asset, 'indicators/fear_and_greed', headers),
                     return_exceptions=True
                 )
+
+                if not ALLOW_SIMULATED_FEATURES and any(isinstance(m, Exception) for m in metrics):
+                    continue
                 
                 # Process results
                 active_addresses = metrics[0] if not isinstance(metrics[0], Exception) else 100000
@@ -735,7 +752,7 @@ class RealTimeDataManager:
                 ))
         
         except Exception as e:
-            logger.error(f"❌ Glassnode API error: {e}")
+            logger.error(f" Glassnode API error: {e}")
             return await self._get_fallback_onchain_data(symbols)
         
         # Store in history and database
@@ -756,13 +773,24 @@ class RealTimeDataManager:
         }
         
         async with self.session.get(url, headers=headers, params=params) as response:
-            if response.status == 200:
-                data = await response.json()
-                if data and len(data) > 0:
-                    return float(data[-1]['v'])  # Latest value
-            
-            # Return default if API fails
-            return 0.0
+            if response.status != 200:
+                if not ALLOW_SIMULATED_FEATURES:
+                    raise RuntimeError(f"Glassnode API error: HTTP {response.status} for metric {metric}")
+                return 0.0
+
+            data = await response.json()
+            if not data or len(data) == 0:
+                if not ALLOW_SIMULATED_FEATURES:
+                    raise RuntimeError(f"Glassnode API returned empty data for metric {metric}")
+                return 0.0
+
+            try:
+                return float(data[-1]['v'])  # Latest value
+            except Exception as e:
+                if not ALLOW_SIMULATED_FEATURES:
+                    raise
+                logger.debug(f"Glassnode metric parse failed for {metric}: {e}")
+                return 0.0
     
     async def _get_intotheblock_data(self, symbols: List[str]) -> List[OnChainData]:
         """Get data from IntoTheBlock API"""
@@ -788,6 +816,12 @@ class RealTimeDataManager:
                     self._fetch_itb_metric(asset, 'addresses/whale_vs_retail', headers),
                     return_exceptions=True
                 )
+
+                if not ALLOW_SIMULATED_FEATURES:
+                    if any(isinstance(m, Exception) for m in itb_metrics):
+                        continue
+                    if any(m in (None, {}) for m in itb_metrics):
+                        continue
                 
                 # Process ITB results
                 active_addresses = itb_metrics[0] if not isinstance(itb_metrics[0], Exception) else 50000
@@ -810,7 +844,7 @@ class RealTimeDataManager:
                 ))
         
         except Exception as e:
-            logger.error(f"❌ IntoTheBlock API error: {e}")
+            logger.error(f" IntoTheBlock API error: {e}")
         
         return onchain_data
     
@@ -819,12 +853,16 @@ class RealTimeDataManager:
         url = f"https://api.intotheblock.com/v1/{asset}/{endpoint}"
         
         async with self.session.get(url, headers=headers) as response:
-            if response.status == 200:
-                return await response.json()
-            return {}
+            if response.status != 200:
+                if not ALLOW_SIMULATED_FEATURES:
+                    raise RuntimeError(f"IntoTheBlock API error: HTTP {response.status} for endpoint {endpoint}")
+                return {}
+            return await response.json()
     
     def _calculate_hodl_waves(self, symbol: str) -> Dict[str, float]:
         """Calculate HODL waves (age distribution of coins)"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return {}
         # Simulated HODL waves based on typical crypto patterns
         return {
             '1d_1w': 0.15,    # 15% moved in last week (active trading)
@@ -838,7 +876,10 @@ class RealTimeDataManager:
     
     async def _get_fallback_onchain_data(self, symbols: List[str]) -> List[OnChainData]:
         """Fallback on-chain data when APIs unavailable"""
-        logger.warning("⚠️ Using fallback on-chain data")
+        logger.warning(" Using fallback on-chain data")
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         
         fallback_data = []
         for symbol in symbols:
@@ -928,7 +969,7 @@ class RealTimeDataManager:
                     return events
         
         except Exception as e:
-            logger.error(f"❌ ForexFactory scraping error: {e}")
+            logger.error(f" ForexFactory scraping error: {e}")
         
         return await self._get_fallback_economic_data()
     
@@ -936,6 +977,9 @@ class RealTimeDataManager:
         """Parse ForexFactory calendar HTML"""
         # Simplified parser - in production, use BeautifulSoup
         events = []
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return events
         
         # For demo, return some typical economic events
         sample_events = [
@@ -1011,7 +1055,7 @@ class RealTimeDataManager:
                     return events
         
         except Exception as e:
-            logger.error(f"❌ TradingEconomics API error: {e}")
+            logger.error(f" TradingEconomics API error: {e}")
         
         return []
     
@@ -1026,7 +1070,10 @@ class RealTimeDataManager:
     
     async def _get_fallback_economic_data(self) -> List[EconomicData]:
         """Fallback economic data when APIs unavailable"""
-        logger.warning("⚠️ Using fallback economic calendar data")
+        logger.warning(" Using fallback economic calendar data")
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         
         # Return some typical upcoming events
         return [
@@ -1108,7 +1155,7 @@ class RealTimeDataManager:
                     ))
         
         except Exception as e:
-            logger.error(f"❌ CBOE options data error: {e}")
+            logger.error(f" CBOE options data error: {e}")
             return await self._get_fallback_options_data(symbols)
         
         # Store in history and database
@@ -1127,6 +1174,9 @@ class RealTimeDataManager:
                 'put_call': f"https://www.cboe.com/us/options/market_statistics/daily/",
             }
             
+            if not ALLOW_SIMULATED_FEATURES:
+                return {}
+             
             # For demo, return realistic simulated data
             # In production, scrape actual CBOE data or use their API
             simulated_stats = {
@@ -1149,11 +1199,13 @@ class RealTimeDataManager:
             return simulated_stats
             
         except Exception as e:
-            logger.error(f"❌ CBOE market stats error: {e}")
+            logger.error(f" CBOE market stats error: {e}")
             return {}
     
     def _generate_unusual_options_activity(self) -> List[Dict]:
         """Generate realistic unusual options activity"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         activities = []
         
         # Generate 0-3 unusual activities
@@ -1203,7 +1255,7 @@ class RealTimeDataManager:
                         ))
         
         except Exception as e:
-            logger.error(f"❌ Exchange options data error: {e}")
+            logger.error(f" Exchange options data error: {e}")
         
         return options_data
     
@@ -1249,7 +1301,7 @@ class RealTimeDataManager:
                         }
         
         except Exception as e:
-            logger.error(f"❌ Deribit API error: {e}")
+            logger.error(f" Deribit API error: {e}")
         
         return {}
     
@@ -1275,7 +1327,10 @@ class RealTimeDataManager:
     
     async def _get_fallback_options_data(self, symbols: List[str]) -> List[OptionsData]:
         """Fallback options data when APIs unavailable"""
-        logger.warning("⚠️ Using fallback options data")
+        logger.warning(" Using fallback options data")
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         
         fallback_data = []
         for symbol in symbols:

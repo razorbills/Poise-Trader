@@ -14,9 +14,17 @@ from datetime import datetime, timedelta
 from enum import Enum
 from collections import defaultdict, deque
 import json
-import random
+import os
 from concurrent.futures import ThreadPoolExecutor
 import weakref
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 logger = logging.getLogger(__name__)
 
@@ -200,9 +208,8 @@ class AsyncRetryManager:
         """Calculate delay for retry with exponential backoff and jitter"""
         delay = min(self.base_delay * (self.backoff_multiplier ** attempt), self.max_delay)
         
-        if self.jitter:
-            # Add jitter to prevent thundering herd
-            delay *= (0.5 + random.random() * 0.5)
+        if self.jitter and ALLOW_SIMULATED_FEATURES:
+            delay *= 0.75
         
         return delay
 
@@ -332,6 +339,8 @@ class AsyncTaskManager:
         
         # Rate limiting
         self._rate_limiters: Dict[str, asyncio.Semaphore] = {}
+
+        self._task_counter = 0
         
         self._worker_tasks = []
         self._running = False
@@ -368,7 +377,11 @@ class AsyncTaskManager:
     async def submit_task(self, coro, priority: str = 'normal', task_id: str = None) -> str:
         """Submit coroutine as a task with priority"""
         if task_id is None:
-            task_id = f"task_{time.time()}_{random.randint(1000, 9999)}"
+            try:
+                self._task_counter += 1
+            except Exception:
+                self._task_counter = 1
+            task_id = f"task_{int(time.time() * 1000)}_{self._task_counter}"
         
         task_item = {
             'coro': coro,

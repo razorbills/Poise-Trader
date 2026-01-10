@@ -19,6 +19,15 @@ from typing import Dict, List, Any, Optional
 import json
 from pathlib import Path
 import uuid
+import os
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 
 class PaperTradingManager:
@@ -33,6 +42,15 @@ class PaperTradingManager:
     """
     
     def __init__(self, initial_capital: float = 5000.0):
+        try:
+            real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+            strict_env = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower()
+            if real_env in ['1', 'true', 'yes', 'on'] or strict_env in ['1', 'true', 'yes', 'on']:
+                raise RuntimeError("PaperTradingManager is disabled in real trading mode")
+        except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise
+
         self.logger = logging.getLogger("PaperTrading")
         
         # Virtual portfolio
@@ -577,7 +595,7 @@ class PaperTradingManager:
 
 class PaperTradingSimulator:
     """
-    🧪 COMPREHENSIVE PAPER TRADING SIMULATOR
+    🎮 PAPER TRADING SIMULATOR
     
     Provides realistic market simulation for testing:
     • Realistic price movements
@@ -587,6 +605,8 @@ class PaperTradingSimulator:
     """
     
     def __init__(self):
+        if _REAL_TRADING_ENABLED or _STRICT_REAL_DATA:
+            raise RuntimeError("PaperTradingSimulator is disabled in REAL_TRADING/STRICT_REAL_DATA")
         self.logger = logging.getLogger("PaperTradingSimulator")
         self.market_data = {}
         self.last_prices = {}

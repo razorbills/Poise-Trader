@@ -29,6 +29,15 @@ from scipy.stats import pearsonr, spearmanr
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import logging
+import os
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1673,6 +1682,8 @@ class CrossMarketIntelligenceSystem:
             
             # Generate mock price data if none provided
             if not price_data:
+                if not ALLOW_SIMULATED_FEATURES:
+                    return {'correlations': {}, 'strength': 'weak', 'confidence': 0.0}
                 import pandas as pd
                 import numpy as np
                 price_data = {}

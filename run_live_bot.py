@@ -17,6 +17,14 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+if _REAL_TRADING_ENABLED or _STRICT_REAL_DATA:
+    raise RuntimeError(
+        "run_live_bot.py is a paper-trading launcher (it forces PAPER_TRADING_MODE=true). "
+        "It cannot be used with REAL_TRADING/STRICT_REAL_DATA."
+    )
+
 # Load environment with live data settings
 load_dotenv()
 

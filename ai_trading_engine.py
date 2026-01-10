@@ -22,10 +22,13 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Any
 import json
 import random
+import os
 from dataclasses import dataclass
 from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
+
+ALLOW_SIMULATED_FEATURES = str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 
 # Try to import ML libraries (install if needed)
 try:
@@ -215,6 +218,8 @@ class AdvancedTechnicalAnalyzer:
     def _simulate_volume_trend(self, length: int) -> float:
         """Simulate volume trend analysis"""
         # In real implementation, this would analyze actual volume data
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         return random.uniform(-1, 1)  # -1 = declining volume, +1 = increasing volume
     
     def _ai_pattern_recognition(self, prices: np.ndarray) -> float:
@@ -376,16 +381,22 @@ class SentimentAnalyzer:
     def _simulate_volume_sentiment(self) -> float:
         """Simulate volume-based sentiment analysis"""
         # In real implementation, analyze actual volume patterns
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         return random.uniform(-0.3, 0.3)
     
     def _simulate_social_sentiment(self) -> float:
         """Simulate social media sentiment analysis"""
         # In real implementation, analyze Twitter, Reddit, etc.
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         return random.uniform(-0.4, 0.4)
     
     def _simulate_news_sentiment(self) -> float:
         """Simulate news sentiment analysis"""
         # In real implementation, analyze news headlines and content
+        if not ALLOW_SIMULATED_FEATURES:
+            return 0.0
         return random.uniform(-0.3, 0.3)
     
     def _update_fear_greed_index(self, sentiment: float):
@@ -713,12 +724,13 @@ class AIStrategyEngine:
     
     def _calculate_expected_return(self, combined_score: float, confidence: float) -> float:
         """Calculate expected return percentage"""
-        # Base expected return on signal strength and confidence
+        
+        # Base expected return based on signal strength
         base_return = abs(combined_score) * confidence * 5  # Up to 5%
         
-        # Add some randomness for market uncertainty
-        market_factor = random.uniform(0.8, 1.2)
-        
+        market_factor = 1.0
+        if ALLOW_SIMULATED_FEATURES:
+            market_factor = random.uniform(0.8, 1.2)
         expected_return = base_return * market_factor
         
         # Apply sign based on direction

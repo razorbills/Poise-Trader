@@ -23,6 +23,15 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 def check_and_import_fallbacks():
     """Check for missing imports and provide fallbacks"""
     
+    try:
+        real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+        strict_env = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower()
+        if real_env in ['1', 'true', 'yes', 'on'] or strict_env in ['1', 'true', 'yes', 'on']:
+            print("⚠️ REAL_TRADING/STRICT_REAL_DATA enabled - fallback components are disabled")
+            return False
+    except Exception:
+        pass
+    
     # Import fallbacks for missing AI components
     try:
         from missing_ai_components import (
@@ -40,6 +49,15 @@ def check_and_import_fallbacks():
 
 def setup_missing_modules():
     """Create missing module placeholders"""
+    
+    try:
+        real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+        strict_env = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower()
+        if real_env in ['1', 'true', 'yes', 'on'] or strict_env in ['1', 'true', 'yes', 'on']:
+            print("⚠️ REAL_TRADING/STRICT_REAL_DATA enabled - auto-creating fallback modules is disabled")
+            return
+    except Exception:
+        pass
     
     missing_modules = [
         'ai_trading_engine',
@@ -226,11 +244,26 @@ def _wrap_critical_methods(bot_instance):
                 await original_collect()
             except Exception as e:
                 print(f"⚠️ Data collection error (continuing): {e}")
-                # Try to initialize data feed again
                 try:
-                    from missing_ai_components import LiveMexcDataFeed
-                    bot_instance.data_feed = LiveMexcDataFeed()
-                except:
+                    real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+                    if real_env in ['1', 'true', 'yes', 'on']:
+                        return
+                except Exception:
+                    pass
+
+                try:
+                    market_type = str(os.getenv('PAPER_MARKET_TYPE', 'futures') or 'futures').strip().lower()
+                except Exception:
+                    market_type = 'futures'
+
+                try:
+                    if market_type == 'futures':
+                        from live_paper_trading_test import MexcFuturesDataFeed
+                        bot_instance.data_feed = MexcFuturesDataFeed()
+                    else:
+                        from live_paper_trading_test import LiveMexcDataFeed
+                        bot_instance.data_feed = LiveMexcDataFeed()
+                except Exception:
                     pass
         
         bot_instance._collect_market_data = safe_collect_market_data

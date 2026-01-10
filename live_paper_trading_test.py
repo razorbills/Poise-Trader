@@ -38,6 +38,14 @@ MEXC_API_KEY = os.getenv('MEXC_API_KEY', '')
 MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY', '') or os.getenv('MEXC_API_SECRET', '')
 PAPER_TRADING_MODE = True  # Set to False for real trading
 
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
 class LiveMexcDataFeed:
     """Live MEXC data feed with comprehensive market data for AI learning"""
     
@@ -731,7 +739,9 @@ class LivePaperTradingManager:
     """Paper trading manager using LIVE market prices"""
     
     def __init__(self, initial_capital: float = 5.0):
-        self.state_file = "trading_state.json"
+        state_dir = Path("data")
+        state_dir.mkdir(parents=True, exist_ok=True)
+        self.state_file = str(state_dir / "trading_state.json")
         self.initial_capital = initial_capital
         
         # Try to load existing state
@@ -1107,6 +1117,11 @@ class LivePaperTradingManager:
         
         print(f"\n🎯 EXECUTING LIVE TRADE: {action} ${amount_usd} of {symbol}")
 
+        if _REAL_TRADING_ENABLED and not self._real_trading_ready():
+            raise RuntimeError(
+                "REAL_TRADING enabled but futures real trading is not ready (missing API keys/ccxt, or market_type not futures). Refusing to paper trade."
+            )
+
         if self._real_trading_ready():
             try:
                 return await self._execute_real_trade(symbol, action, amount_usd, strategy=strategy)
@@ -1125,7 +1140,9 @@ class LivePaperTradingManager:
         # Add minimal, zero-mean slippage for paper trading (±0.02%)
         # This avoids the UI always showing immediate losses simply because BUY fills
         # are systematically above the mark price.
-        slippage_pct = random.uniform(-0.0002, 0.0002)
+        slippage_pct = 0.0
+        if ALLOW_SIMULATED_FEATURES:
+            slippage_pct = random.uniform(-0.0002, 0.0002)
         execution_price = current_price * (1 + slippage_pct)
 
         contract_meta = None
@@ -1449,6 +1466,124 @@ class LivePaperTradingManager:
         self._save_state()
         
         return {"success": True, "trade": trade_record}
+
+    async def execute_trade(self, signal: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            symbol = signal.get('symbol')
+            action_u = str(signal.get('action') or '').upper()
+            if not symbol or action_u not in ['BUY', 'SELL']:
+                return {'success': False, 'error': 'Invalid signal'}
+
+            stop_loss = signal.get('stop_loss')
+            take_profit = signal.get('take_profit')
+            strategy = signal.get('strategy_name', 'paper')
+
+            qty = 0.0
+            try:
+                qty = float(signal.get('position_size') or 0)
+            except Exception:
+                qty = 0.0
+
+            current_price = None
+            try:
+                current_price = await self.data_feed.get_live_price(symbol)
+            except Exception:
+                current_price = None
+            if not current_price:
+                try:
+                    current_price = float(signal.get('entry_price') or 0) or None
+                except Exception:
+                    current_price = None
+
+            if not current_price or float(current_price) <= 0:
+                return {'success': False, 'error': 'Unable to fetch price for sizing'}
+            current_price = float(current_price)
+
+            existing = self.positions.get(symbol) if isinstance(getattr(self, 'positions', None), dict) else None
+            existing_qty = float(existing.get('quantity', 0) or 0) if isinstance(existing, dict) else 0.0
+            existing_side = str(existing.get('action', 'BUY') or 'BUY').upper() if isinstance(existing, dict) else 'BUY'
+
+            if qty <= 0:
+                portfolio = self.get_portfolio_value_sync() or {}
+                total_value = float(portfolio.get('total_value') or self.cash_balance or 0)
+                target_notional = total_value * 0.05
+                qty = target_notional / current_price if current_price > 0 else 0.0
+                if qty <= 0:
+                    return {'success': False, 'error': 'Unable to size position'}
+
+            is_close = False
+            if existing_qty > 0:
+                if action_u == 'SELL' and existing_side == 'BUY':
+                    is_close = True
+                elif action_u == 'BUY' and existing_side == 'SELL':
+                    is_close = True
+
+            leverage_factor = float(self.leverage if getattr(self, 'enable_shorting', False) else 1.0)
+            if leverage_factor <= 0:
+                leverage_factor = 1.0
+
+            if is_close:
+                amount_usd = qty * current_price
+            else:
+                amount_usd = (qty * current_price) / leverage_factor
+
+            result = await self.execute_live_trade(
+                symbol,
+                action_u,
+                float(amount_usd or 0),
+                strategy=strategy,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+            )
+
+            if not isinstance(result, dict):
+                return {'success': False, 'error': 'Unexpected paper trader response'}
+            if not result.get('success'):
+                return result
+
+            trade = result.get('trade') if isinstance(result.get('trade'), dict) else {}
+
+            portfolio_value = 0.0
+            total_pnl = 0.0
+            try:
+                portfolio = await self.get_portfolio_value()
+                if isinstance(portfolio, dict):
+                    portfolio_value = float(portfolio.get('total_value') or 0)
+                    total_pnl = float(portfolio.get('total_pnl') or 0)
+            except Exception:
+                pass
+
+            return {
+                'success': True,
+                'execution_price': trade.get('execution_price'),
+                'position_size': trade.get('quantity'),
+                'commission': trade.get('commission', 0),
+                'portfolio_value': portfolio_value,
+                'total_pnl': total_pnl,
+                'trade': trade,
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def get_performance_summary(self) -> Dict[str, Any]:
+        portfolio = self.get_portfolio_value_sync() or {}
+        open_positions = 0
+        try:
+            if isinstance(getattr(self, 'positions', None), dict):
+                open_positions = sum(1 for p in self.positions.values() if isinstance(p, dict) and float(p.get('quantity', 0) or 0) > 0)
+        except Exception:
+            open_positions = 0
+
+        portfolio_value = float(portfolio.get('total_value') or 0)
+        total_pnl = float(portfolio.get('total_pnl') or 0)
+
+        return {
+            'portfolio_value': portfolio_value,
+            'total_pnl': total_pnl,
+            'cash_balance': float(getattr(self, 'cash_balance', 0) or 0),
+            'open_positions': open_positions,
+            'total_trades': int(getattr(self, 'total_trades', 0) or 0),
+        }
     
     async def get_portfolio_value(self):
         """Calculate total portfolio value using live prices"""
@@ -1592,7 +1727,8 @@ class LivePaperTradingManager:
                         last_save = datetime.fromisoformat(last_save_time)
                         age_minutes = (datetime.now() - last_save).total_seconds() / 60
                         
-                        if age_minutes > 30:
+                        max_age_minutes = float(os.getenv('PAPER_STATE_MAX_AGE_MINUTES', '10080') or 10080)
+                        if max_age_minutes > 0 and age_minutes > max_age_minutes:
                             is_stale = True
                             print(f"⚠️ State is {age_minutes:.1f} minutes old - STALE DATA DETECTED")
                     except:

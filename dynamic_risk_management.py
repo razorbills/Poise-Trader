@@ -27,6 +27,15 @@ from collections import deque, defaultdict
 from dataclasses import dataclass
 import warnings
 warnings.filterwarnings('ignore')
+import os
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 @dataclass
 class RiskParameters:
@@ -1083,6 +1092,8 @@ class RealTimeRiskMonitor:
         
         # In real system, this would analyze current vs historical volatility
         # Simulate volatility spike detection
+        if not ALLOW_SIMULATED_FEATURES:
+            return False
         volatility_multiplier = np.random.uniform(0.5, 4.0)
         return volatility_multiplier > 2.5
     

@@ -16,11 +16,20 @@ FEATURES:
 
 import asyncio
 import numpy as np
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import json
 import aiohttp
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
 
 # Import professional modules
 from professional_trader_enhancements import ProfessionalTraderBrain
@@ -387,7 +396,15 @@ class ProfessionalBotIntegration:
     
     async def _assess_current_conditions(self) -> Dict:
         """Assess current market conditions"""
-        
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return {
+                'volatility': 0.0,
+                'trend': 'neutral',
+                'volume': 'unknown',
+                'session': self.pro_brain._get_current_session()
+            }
+
         return {
             'volatility': np.random.uniform(0.01, 0.05),  # Simulated
             'trend': 'bullish',
@@ -397,7 +414,10 @@ class ProfessionalBotIntegration:
     
     async def _detect_regime_change(self, conditions: Dict) -> bool:
         """Detect market regime changes"""
-        
+
+        if not ALLOW_SIMULATED_FEATURES:
+            return False
+
         # Simplified regime detection
         return np.random.random() < 0.05  # 5% chance
     
@@ -490,17 +510,24 @@ class ProfessionalBotIntegration:
                     'price': prices[-1] if prices else 0,
                     'price_change_24h': ((prices[-1] - prices[0]) / prices[0]) if len(prices) > 1 and prices[0] > 0 else 0,
                     'volatility': np.std(prices) / np.mean(prices) if len(prices) > 1 else 0.02,
-                    'volume_vs_average': np.random.uniform(0.5, 2.0),  # Simulated
+                    'volume_vs_average': (np.random.uniform(0.5, 2.0) if ALLOW_SIMULATED_FEATURES else 1.0),
                     'order_book': {},  # Would get from exchange
                     'trades': []  # Would get from exchange
                 }
         
         # Add market-wide data
-        market_data['market'] = {
-            'fear_greed_index': np.random.uniform(20, 80),
-            'put_call_ratio': np.random.uniform(0.7, 1.3),
-            'social_sentiment': np.random.uniform(-1, 1)
-        }
+        if ALLOW_SIMULATED_FEATURES:
+            market_data['market'] = {
+                'fear_greed_index': np.random.uniform(20, 80),
+                'put_call_ratio': np.random.uniform(0.7, 1.3),
+                'social_sentiment': np.random.uniform(-1, 1)
+            }
+        else:
+            market_data['market'] = {
+                'fear_greed_index': 50.0,
+                'put_call_ratio': 1.0,
+                'social_sentiment': 0.0
+            }
         
         return market_data
     
@@ -521,6 +548,8 @@ class NewsAnalyzer:
     
     async def get_todays_events(self) -> List[Dict]:
         """Get today's economic events"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return []
         return [
             {'time': '14:30', 'event': 'US CPI', 'impact': 'HIGH'},
             {'time': '18:00', 'event': 'Fed Minutes', 'impact': 'MEDIUM'}
@@ -533,6 +562,12 @@ class NewsAnalyzer:
     
     async def assess_impact(self, news: Dict) -> Dict:
         """Assess news impact on markets"""
+        if not ALLOW_SIMULATED_FEATURES:
+            return {
+                'severity': 'LOW',
+                'expected_direction': 'neutral',
+                'confidence': 0.0
+            }
         return {
             'severity': 'MEDIUM',
             'expected_direction': 'positive',
@@ -552,6 +587,9 @@ class CorrelationManager:
     
     async def update_correlations(self, symbols: List[str]):
         """Update correlation matrix"""
+        if not ALLOW_SIMULATED_FEATURES:
+            self.correlations = {}
+            return
         # Simplified - in production would calculate from price data
         for s1 in symbols:
             for s2 in symbols:

@@ -62,11 +62,27 @@ sys.path.append(str(Path(__file__).parent))
 # Load environment variables securely
 load_dotenv()
 
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
+_USE_TESTNET = str(os.getenv('USE_TESTNET', 'false') or 'false').strip().lower() in ['1', 'true', 'yes', 'on']
+if (_REAL_TRADING_ENABLED or _STRICT_REAL_DATA) and _USE_TESTNET:
+    raise RuntimeError("USE_TESTNET cannot be enabled when REAL_TRADING/STRICT_REAL_DATA is active")
+
 from core.framework.config_manager import ConfigManager, Environment
 from core.feeds.advanced_feed_manager import AdvancedFeedManager
 from core.strategies.intelligent_strategy_engine import IntelligentStrategyEngine
 from core.execution.autonomous_executor import AutonomousExecutor
-from core.execution.paper_trading_manager import PaperTradingManager
+
+try:
+    from supabase_state_sync import SupabaseStateSync
+except Exception:
+    SupabaseStateSync = None
 
 
 class PoiseMasterBot:
@@ -91,13 +107,13 @@ class PoiseMasterBot:
             colorama.init()
         
         # Paper trading mode
-        self.paper_trading = os.getenv('PAPER_TRADING_MODE', 'true').lower() == 'true'
+        paper_trading_default = 'false' if _REAL_TRADING_ENABLED else 'true'
+        self.paper_trading = os.getenv('PAPER_TRADING_MODE', paper_trading_default).lower() == 'true'
         self.paper_trader = None
-        
-        if self.paper_trading:
-            initial_capital = float(os.getenv('INITIAL_PAPER_CAPITAL', '5000'))
-            self.paper_trader = PaperTradingManager(initial_capital)
-        
+
+        if _REAL_TRADING_ENABLED and self.paper_trading:
+            raise RuntimeError("Paper trading cannot be enabled when REAL_TRADING is active")
+
         # Core system components
         self.config_manager = None
         self.feed_manager = None
@@ -112,6 +128,7 @@ class PoiseMasterBot:
         
         # Configuration
         self.config_path = config_path
+        self.state_sync = None
         self.bot_config = {
             'name': 'Poise Master Bot',
             'version': '1.0.0',
@@ -154,6 +171,13 @@ class PoiseMasterBot:
         self.logger.info("🚀 Initializing Poise Master Bot...")
         
         try:
+            if SupabaseStateSync is not None:
+                self.state_sync = SupabaseStateSync.from_env()
+                if self.state_sync:
+                    self.logger.info("☁️ Restoring state from Supabase...")
+                    await self.state_sync.restore_on_startup()
+                    self.state_sync.start_background_sync()
+
             # Initialize configuration manager
             self.config_manager = ConfigManager(
                 config_dir=self.config_path,
@@ -199,11 +223,12 @@ class PoiseMasterBot:
         """Get comprehensive configuration for all systems"""
         
         # Configuration using secure environment variables
+        use_sandbox = _USE_TESTNET
         default_config = {
             'feeds': {
                 'mexc_api_key': os.getenv('MEXC_API_KEY'),
                 'mexc_api_secret': os.getenv('MEXC_API_SECRET'),
-                'use_sandbox': os.getenv('USE_TESTNET', 'true').lower() == 'true',
+                'use_sandbox': use_sandbox,
                 'symbols': [
                     'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'AVAX/USDT',
                     'PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'FLOKI/USDT',
@@ -245,7 +270,7 @@ class PoiseMasterBot:
             'execution': {
                 'mexc_api_key': os.getenv('MEXC_API_KEY'),
                 'mexc_api_secret': os.getenv('MEXC_API_SECRET'),
-                'use_sandbox': os.getenv('USE_TESTNET', 'true').lower() == 'true',
+                'use_sandbox': use_sandbox,
                 'paper_trading': self.paper_trading,
                 'initial_capital': 5000,
                 'max_concurrent_orders': 10,
@@ -268,10 +293,22 @@ class PoiseMasterBot:
                 'error_alerts': True,
             }
         }
-        
-        # Override with user configurations
-        config = self.config_manager.get_config("system", default_config)
-        
+
+        config = default_config
+        try:
+            if self.config_manager:
+                cfg_feeds = self.config_manager.get_config('feeds', None)
+                if isinstance(cfg_feeds, dict):
+                    config['feeds'].update(cfg_feeds)
+                cfg_strategies = self.config_manager.get_config('strategies', None)
+                if isinstance(cfg_strategies, dict):
+                    config['strategies'].update(cfg_strategies)
+                cfg_execution = self.config_manager.get_config('execution', None)
+                if isinstance(cfg_execution, dict):
+                    config['execution'].update(cfg_execution)
+        except Exception:
+            pass
+
         return config
     
     async def start(self):
@@ -464,8 +501,15 @@ class PoiseMasterBot:
                 return "NO_ACTIVE_STRATEGIES"
             
             # Check executor
-            if not self.executor or not self.executor.active_exchange:
+            if not self.executor:
                 return "EXECUTOR_DISCONNECTED"
+
+            if getattr(self, 'paper_trading', False):
+                if not getattr(self.executor, 'paper_trader', None):
+                    return "EXECUTOR_DISCONNECTED"
+            else:
+                if not getattr(self.executor, 'active_exchange', None):
+                    return "EXECUTOR_DISCONNECTED"
             
             # All checks passed
             return "HEALTHY"
@@ -653,6 +697,12 @@ class PoiseMasterBot:
         self.running = False
         
         try:
+            if self.state_sync:
+                try:
+                    await self.state_sync.sync_once()
+                except Exception:
+                    pass
+
             # Close all positions if in emergency
             if self.executor:
                 self.logger.info("💼 Closing all positions for safety...")
@@ -671,6 +721,13 @@ class PoiseMasterBot:
             
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
+
+            if self.state_sync:
+                try:
+                    await self.state_sync.sync_once()
+                    await self.state_sync.stop()
+                except Exception:
+                    pass
             
             self.logger.info("✅ Poise Master Bot shutdown completed successfully")
             

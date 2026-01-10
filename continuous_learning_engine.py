@@ -21,10 +21,18 @@ from collections import deque, defaultdict
 from datetime import datetime, timedelta
 import random
 
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
 
 class DataAggregator:
     """
-    📥 MASSIVE DATA COLLECTION SYSTEM
+ MASSIVE DATA COLLECTION SYSTEM
     Gathers trading data from every available source
     """
     
@@ -36,10 +44,13 @@ class DataAggregator:
             'cross_market': True,
             'pattern_library': True
         }
+
+        if not ALLOW_SIMULATED_FEATURES:
+            self.data_sources['synthetic_generation'] = False
         
         self.collected_data_points = 0
         self.pattern_database = {}
-        self.historical_cache_file = "historical_training_data.json"
+        self.historical_cache_file = os.path.join("data", "historical_training_data.json")
         
         # Load existing historical data
         self._load_historical_cache()
@@ -59,6 +70,7 @@ class DataAggregator:
     def _save_historical_cache(self):
         """Save collected data for future sessions"""
         try:
+            os.makedirs("data", exist_ok=True)
             cache = {
                 'total_points': self.collected_data_points,
                 'patterns': self.pattern_database,
@@ -254,8 +266,9 @@ class ContinuousLearningEngine:
     def _load_learned_knowledge(self):
         """Load previously learned patterns and strategies"""
         try:
-            if os.path.exists("learned_knowledge.json"):
-                with open("learned_knowledge.json", 'r') as f:
+            knowledge_path = os.path.join("data", "learned_knowledge.json")
+            if os.path.exists(knowledge_path):
+                with open(knowledge_path, 'r') as f:
                     knowledge = json.load(f)
                     self.learning_iterations = knowledge.get('iterations', 0)
                     self.learned_rules = knowledge.get('rules', [])
@@ -267,13 +280,16 @@ class ContinuousLearningEngine:
     def _save_learned_knowledge(self):
         """Save learned knowledge for future sessions"""
         try:
+            os.makedirs("data", exist_ok=True)
             knowledge = {
                 'iterations': self.learning_iterations,
+                'q_table': dict(self.q_table),
                 'rules': self.learned_rules,
                 'patterns': self.pattern_success_rates,
                 'last_update': datetime.now().isoformat()
             }
-            with open("learned_knowledge.json", 'w') as f:
+            knowledge_path = os.path.join("data", "learned_knowledge.json")
+            with open(knowledge_path, 'w') as f:
                 json.dump(knowledge, f, indent=2)
         except Exception as e:
             print(f"⚠️ Could not save knowledge: {e}")
@@ -290,7 +306,7 @@ class ContinuousLearningEngine:
             live_data = await self.data_aggregator.gather_live_data(data_feed, symbols)
             
             # 2. Generate synthetic scenarios for training
-            if live_data and 'data' in live_data:
+            if live_data and 'data' in live_data and self.data_aggregator.data_sources.get('synthetic_generation', False):
                 current_prices = {s: d['price'] for s, d in live_data['data'].items()}
                 synthetic_data = self.data_aggregator.generate_synthetic_data(current_prices, num_scenarios=500)
                 

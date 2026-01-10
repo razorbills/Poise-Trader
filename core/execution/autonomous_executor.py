@@ -30,6 +30,19 @@ except ImportError:
 import numpy as np
 from .paper_trading_manager import PaperTradingManager
 
+try:
+    from live_paper_trading_test import LivePaperTradingManager
+except Exception:
+    LivePaperTradingManager = None
+
+_REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+_STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+ALLOW_SIMULATED_FEATURES = (
+    str(os.getenv('ALLOW_SIMULATED_FEATURES', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+    and not _REAL_TRADING_ENABLED
+    and not _STRICT_REAL_DATA
+)
+
 
 class OrderType(Enum):
     """Order types supported by the executor"""
@@ -164,11 +177,18 @@ class AutonomousExecutor:
         # Paper trading support
         self.paper_trading = config.get('paper_trading', True)
         self.paper_trader = None
+
+        if _REAL_TRADING_ENABLED and self.paper_trading:
+            raise RuntimeError("Paper trading cannot be enabled when REAL_TRADING is active")
         
         if self.paper_trading:
             initial_capital = config.get('initial_capital', 5000)
-            self.paper_trader = PaperTradingManager(initial_capital)
-            self.logger.info(f"📊 Paper trading mode enabled with ${initial_capital:,.2f} virtual capital")
+            if LivePaperTradingManager is not None:
+                self.paper_trader = LivePaperTradingManager(float(initial_capital))
+                self.logger.info(f"📊 Live-price paper trading enabled with ${float(initial_capital):,.2f} virtual capital")
+            else:
+                self.paper_trader = PaperTradingManager(initial_capital)
+                self.logger.info(f"📊 Paper trading mode enabled with ${initial_capital:,.2f} virtual capital")
         
         # Exchange connections
         self.exchanges = {}
@@ -235,11 +255,15 @@ class AutonomousExecutor:
     
     async def _initialize_exchanges(self):
         """Initialize exchange API connections"""
+        use_sandbox = bool(self.config.get('use_sandbox', False if (_REAL_TRADING_ENABLED or _STRICT_REAL_DATA) else True))
+        if (_REAL_TRADING_ENABLED or _STRICT_REAL_DATA) and use_sandbox:
+            raise RuntimeError("use_sandbox cannot be enabled when REAL_TRADING/STRICT_REAL_DATA is active")
+
         exchange_configs = {
             'mexc': {
                 'apiKey': self.config.get('mexc_api_key'),
                 'secret': self.config.get('mexc_api_secret'),
-                'sandbox': self.config.get('use_sandbox', True),
+                'sandbox': use_sandbox,
                 'enableRateLimit': True,
                 'timeout': 30000,
                 'options': {
@@ -250,7 +274,7 @@ class AutonomousExecutor:
             'binance': {
                 'apiKey': self.config.get('binance_api_key'),
                 'secret': self.config.get('binance_api_secret'),
-                'sandbox': self.config.get('use_sandbox', True),
+                'sandbox': use_sandbox,
                 'enableRateLimit': True,
                 'timeout': 30000,
                 'options': {
@@ -599,7 +623,10 @@ class AutonomousExecutor:
                     
                     # Delay between chunks (stealth)
                     if i < len(chunks) - 1:
-                        await asyncio.sleep(np.random.uniform(10, 30))  # 10-30 second random delay
+                        delay_s = 20.0
+                        if ALLOW_SIMULATED_FEATURES:
+                            delay_s = float(np.random.uniform(10, 30))  # 10-30 second random delay
+                        await asyncio.sleep(delay_s)
                         
                 except Exception as e:
                     self.logger.warning(f"Stealth chunk {i+1} failed: {e}")
@@ -1203,7 +1230,15 @@ class AutonomousExecutor:
         """Continuous position monitoring and risk management"""
         while True:
             try:
+                if self.paper_trading:
+                    await asyncio.sleep(30)
+                    continue
+
                 if not self.positions:
+                    await asyncio.sleep(30)
+                    continue
+
+                if not self.active_exchange:
                     await asyncio.sleep(30)
                     continue
                 
@@ -1358,6 +1393,18 @@ class AutonomousExecutor:
         """Update total portfolio value"""
         
         try:
+            if self.paper_trading and self.paper_trader and hasattr(self.paper_trader, 'get_performance_summary'):
+                summary = self.paper_trader.get_performance_summary() or {}
+                try:
+                    self.portfolio_value = float(summary.get('portfolio_value') or self.portfolio_value)
+                except Exception:
+                    pass
+                try:
+                    self.execution_stats['total_unrealized_pnl'] = float(summary.get('total_pnl') or self.execution_stats.get('total_unrealized_pnl', 0) or 0)
+                except Exception:
+                    pass
+                return
+
             total_value = 0.0
             
             # Add cash balances
