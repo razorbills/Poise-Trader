@@ -10,7 +10,7 @@ import json
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import logging
 import re
@@ -46,6 +46,14 @@ class SentimentData:
     volume: int  # Number of mentions
     trending_score: float
     fear_greed_index: float
+    timestamp: datetime
+
+@dataclass
+class SentimentScore:
+    symbol: str
+    score: float
+    confidence: float
+    sources: Dict[str, float]
     timestamp: datetime
 
 @dataclass
