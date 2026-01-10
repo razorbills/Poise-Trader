@@ -41,6 +41,11 @@ import time
 import sys
 import inspect
 
+try:
+    from win_rate_optimizer import win_rate_optimizer
+except Exception:
+    win_rate_optimizer = None
+
 _REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 _STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 ALLOW_SIMULATED_FEATURES = (
@@ -3706,6 +3711,137 @@ class LegendaryCryptoTitanBot:
         
         print(f"      ✅ APPROVED: {recommendation} (Quality: {quality_score:.1f}, Confidence: {signal_confidence:.1%})")
         return True, f"Trade approved: {recommendation}"
+
+    def _record_trade_outcome(
+        self,
+        symbol: str,
+        strategy: str,
+        profit_loss: float,
+        quality_score: float = None,
+        confidence: float = None,
+        entry_price: float = None,
+        exit_price: float = None,
+        exit_reason: str = None,
+    ):
+        try:
+            pnl = float(profit_loss or 0.0)
+        except Exception:
+            pnl = 0.0
+
+        try:
+            q = float(quality_score) if quality_score is not None else 50.0
+        except Exception:
+            q = 50.0
+
+        try:
+            conf = float(confidence) if confidence is not None else 0.0
+        except Exception:
+            conf = 0.0
+
+        ep = entry_price
+        if ep is None:
+            try:
+                sig = None
+                if isinstance(getattr(self, 'active_signals', None), dict):
+                    sig = self.active_signals.get(symbol)
+                if sig is not None:
+                    ep = float(getattr(sig, 'entry_price', 0) or 0)
+            except Exception:
+                ep = None
+        try:
+            ep = float(ep or 0.0)
+        except Exception:
+            ep = 0.0
+
+        xp = exit_price
+        if xp is None:
+            try:
+                if isinstance(getattr(self, 'price_history', None), dict) and symbol in self.price_history:
+                    ph = self.price_history.get(symbol)
+                    if ph:
+                        xp = float(list(ph)[-1] or 0)
+            except Exception:
+                xp = None
+        try:
+            xp = float(xp or 0.0)
+        except Exception:
+            xp = 0.0
+
+        if not exit_reason:
+            exit_reason = 'UNKNOWN'
+
+        total_completed = int(getattr(self, 'total_completed_trades', 0) or 0) + 1
+        winning = int(getattr(self, 'winning_trades', 0) or 0)
+
+        if pnl > 0:
+            winning += 1
+            self.current_win_streak = int(getattr(self, 'current_win_streak', 0) or 0) + 1
+            self.current_loss_streak = 0
+            self.consecutive_losses = 0
+        else:
+            self.current_loss_streak = int(getattr(self, 'current_loss_streak', 0) or 0) + 1
+            self.current_win_streak = 0
+            self.consecutive_losses = int(getattr(self, 'consecutive_losses', 0) or 0) + 1
+
+        self.longest_win_streak = max(int(getattr(self, 'longest_win_streak', 0) or 0), int(getattr(self, 'current_win_streak', 0) or 0))
+        self.total_completed_trades = total_completed
+        self.winning_trades = winning
+        try:
+            self.win_rate = winning / total_completed if total_completed > 0 else 0.0
+        except Exception:
+            self.win_rate = 0.0
+
+        try:
+            if not hasattr(self, 'trade_quality_history') or self.trade_quality_history is None or not isinstance(self.trade_quality_history, list):
+                self.trade_quality_history = []
+            self.trade_quality_history.append({
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'strategy': strategy,
+                'profit_loss': pnl,
+                'quality_score': q,
+                'confidence': conf,
+                'entry_price': ep,
+                'exit_price': xp,
+                'exit_reason': exit_reason,
+            })
+            if len(self.trade_quality_history) > 1000:
+                self.trade_quality_history = self.trade_quality_history[-1000:]
+        except Exception:
+            pass
+
+        try:
+            if not hasattr(self, 'strategy_win_rates') or self.strategy_win_rates is None or not isinstance(self.strategy_win_rates, dict):
+                self.strategy_win_rates = {}
+            stats = self.strategy_win_rates.get(strategy) or {'wins': 0, 'losses': 0}
+            if pnl > 0:
+                stats['wins'] = int(stats.get('wins', 0) or 0) + 1
+            else:
+                stats['losses'] = int(stats.get('losses', 0) or 0) + 1
+            self.strategy_win_rates[strategy] = stats
+        except Exception:
+            pass
+
+        try:
+            if win_rate_optimizer is not None and bool(getattr(self, 'win_rate_optimizer_enabled', False)):
+                try:
+                    trade_id = f"{symbol}-{int(time.time() * 1000)}"
+                except Exception:
+                    trade_id = f"{symbol}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                if ep > 0 and xp > 0:
+                    win_rate_optimizer.record_trade_outcome(
+                        trade_id=trade_id,
+                        symbol=symbol,
+                        strategy=strategy or 'unknown',
+                        entry_price=ep,
+                        exit_price=xp,
+                        profit_loss=pnl,
+                        confidence=conf,
+                        quality_score=q,
+                        exit_reason=exit_reason,
+                    )
+        except Exception:
+            pass
     
     async def run_micro_trading_cycle(self, cycles: int = 100):
         """🚀 Run the micro trading bot for specified cycles"""

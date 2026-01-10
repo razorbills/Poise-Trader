@@ -534,5 +534,16 @@ class UltraAIOptimizer:
         except Exception as e:
             print(f"Error in save_state: {e}")
 
+    def get_recommendations(self) -> List[str]:
+        try:
+            recs = self._generate_recommendations()
+            if not recs:
+                return []
+            if isinstance(recs, list):
+                return recs
+            return list(recs)
+        except Exception:
+            return []
+
 # Global instance
 ultra_ai_optimizer = UltraAIOptimizer()
