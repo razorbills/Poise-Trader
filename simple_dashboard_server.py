@@ -199,10 +199,17 @@ def get_recent_trades():
 
     trades = []
     try:
+        bot_trades = []
+        trader_trades = []
+
         if bot_instance and hasattr(bot_instance, 'trade_history') and isinstance(getattr(bot_instance, 'trade_history', None), list):
-            trades = bot_instance.trade_history
-        elif bot_instance and hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'trade_history'):
-            trades = bot_instance.trader.trade_history
+            bot_trades = bot_instance.trade_history
+
+        if bot_instance and hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'trade_history') and isinstance(getattr(bot_instance.trader, 'trade_history', None), list):
+            trader_trades = bot_instance.trader.trade_history
+
+        # Prefer the source that has more records (usually trader.trade_history)
+        trades = trader_trades if len(trader_trades) >= len(bot_trades) else bot_trades
     except Exception:
         trades = []
 
@@ -223,7 +230,23 @@ def get_recent_trades():
         except Exception:
             continue
 
-    return jsonify({'trades': normalized[-10:]})
+    try:
+        limit = int(str(request.args.get('limit', '50') or '50').strip() or 50)
+    except Exception:
+        limit = 50
+    limit = max(1, min(limit, 500))
+
+    try:
+        order = str(request.args.get('order', 'desc') or 'desc').strip().lower()
+    except Exception:
+        order = 'desc'
+
+    if order == 'asc':
+        trades_out = normalized[-limit:]
+    else:
+        trades_out = list(reversed(normalized))[:limit]
+
+    return jsonify({'trades': trades_out, 'total': len(trades or []), 'returned': len(trades_out)})
 
 @app.route('/api/portfolio')
 def get_portfolio():

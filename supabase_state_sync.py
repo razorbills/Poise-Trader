@@ -119,6 +119,15 @@ class SupabaseStateSync:
             if not content_b64:
                 return False
             self._write_local_b64(key, content_b64)
+            try:
+                path = self._local_path_for_key(key)
+                size = os.path.getsize(path) if os.path.exists(path) else None
+                if size is not None:
+                    self.logger.info(f"✅ Restored {key} from Supabase ({size} bytes)")
+                else:
+                    self.logger.info(f"✅ Restored {key} from Supabase")
+            except Exception:
+                self.logger.info(f"✅ Restored {key} from Supabase")
             return True
         except Exception as e:
             self.logger.warning(f"State download failed for {key}: {e}")
@@ -150,8 +159,19 @@ class SupabaseStateSync:
     async def restore_on_startup(self) -> None:
         if not self.keys:
             return
+        restored = 0
+        missing = 0
         for key in self.keys:
-            await asyncio.to_thread(self.download_key, key)
+            ok = await asyncio.to_thread(self.download_key, key)
+            if ok:
+                restored += 1
+            else:
+                missing += 1
+                self.logger.info(f"No state found in Supabase for {key} (skipping)")
+
+        self.logger.info(
+            f"☁️ Supabase restore complete: restored={restored}, missing={missing}, total={len(self.keys)}"
+        )
 
     async def sync_once(self) -> None:
         if not self.keys:
@@ -163,6 +183,9 @@ class SupabaseStateSync:
         if self._task:
             return self._task
         self._stop_event = asyncio.Event()
+        self.logger.info(
+            f"☁️ Supabase background sync started (interval={self.interval_seconds}s, keys={len(self.keys)})"
+        )
         self._task = asyncio.create_task(self._run_loop())
         return self._task
 

@@ -4,6 +4,7 @@ Runs bot + dashboard with ALL features on Render.com
 """
 
 import asyncio
+import logging
 import os
 import sys
 from datetime import datetime
@@ -20,6 +21,18 @@ print(f"⏰ Starting at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print("🎯 Full features enabled (Dashboard + Bot)")
 print("🌐 Web service mode activated")
 print("-"*70)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(name)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
+try:
+    from supabase_state_sync import SupabaseStateSync
+except Exception:
+    SupabaseStateSync = None
 
 # Import full dashboard server with ALL routes
 import simple_dashboard_server
@@ -52,9 +65,22 @@ def run_bot():
     
     async def start_trading_bot():
         global bot_instance
+
+        state_sync = None
         
         try:
             print("\n🔄 Initializing trading bot...")
+
+            if SupabaseStateSync is not None:
+                try:
+                    state_sync = SupabaseStateSync.from_env()
+                except Exception:
+                    state_sync = None
+
+            if state_sync:
+                logging.getLogger("render_launcher").info("☁️ Restoring state from Supabase...")
+                await state_sync.restore_on_startup()
+                state_sync.start_background_sync()
             
             from micro_trading_bot import LegendaryCryptoTitanBot
             
@@ -92,6 +118,13 @@ def run_bot():
             print(f"❌ Bot error: {e}")
             import traceback
             traceback.print_exc()
+        finally:
+            if state_sync:
+                try:
+                    await state_sync.sync_once()
+                    await state_sync.stop()
+                except Exception:
+                    pass
     
     # Run async bot
     try:

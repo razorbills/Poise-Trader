@@ -264,7 +264,7 @@
 
         /* Trade History */
         .trade-list {
-            max-height: 300px;
+            max-height: 650px;
             overflow-y: auto;
             margin-top: 10px;
         }
@@ -1144,7 +1144,7 @@
                 return;
             }
             
-            tradeList.innerHTML = trades.slice(0, 10).map(trade => {
+            tradeList.innerHTML = trades.map(trade => {
                 const pnl = trade.pnl || 0;
                 const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
                 const pnlSign = pnl >= 0 ? '+' : '';
@@ -1214,7 +1214,7 @@
                     updatePortfolio(portfolio);
                 }
 
-                const tradesResponse = await fetch(`${API_URL}/api/trades`);
+                const tradesResponse = await fetch(`${API_URL}/api/trades?limit=200&order=desc`);
                 if (tradesResponse.ok) {
                     const data = await tradesResponse.json();
                     updateTrades(data.trades || []);
