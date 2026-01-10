@@ -806,6 +806,14 @@ class PortfolioOptimizer:
             
             return result.x if result.success else np.array([1/len(mean_returns)]*len(mean_returns))
 
+        except Exception:
+            try:
+                import numpy as np
+                n = len(mean_returns) if mean_returns is not None and len(mean_returns) > 0 else 1
+                return np.array([1/n] * n)
+            except Exception:
+                return [1.0]
+
 # 📊 ALTERNATIVE DATA INTEGRATION
 class AlternativeDataAggregator:
     """Social sentiment, on-chain analytics, and macro data integration"""
