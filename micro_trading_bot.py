@@ -42,6 +42,11 @@ import sys
 import inspect
 
 try:
+    from risk_engine_v2 import RiskEngineV2
+except Exception:
+    RiskEngineV2 = None
+
+try:
     from win_rate_optimizer import win_rate_optimizer
 except Exception:
     win_rate_optimizer = None
@@ -2232,6 +2237,14 @@ class LegendaryCryptoTitanBot:
         self.aggressive_trade_interval = 60.0
 
         try:
+            if RiskEngineV2 is not None:
+                self.risk_engine = RiskEngineV2(initial_equity=self.initial_capital)
+            else:
+                self.risk_engine = None
+        except Exception:
+            self.risk_engine = None
+
+        try:
             self.max_feed_stale_seconds = float(os.getenv('MAX_FEED_STALE_SECONDS', '45') or 45)
         except Exception:
             self.max_feed_stale_seconds = 45.0
@@ -2306,6 +2319,50 @@ class LegendaryCryptoTitanBot:
         
         # Initialize ALL advanced systems directly in the bot
         self._initialize_world_class_systems()
+
+    def _exp_log(self, event: str, payload: Dict[str, Any]):
+        try:
+            path = getattr(self, '_experiment_log_path', None)
+            if not path:
+                return
+
+            try:
+                run_id = str(getattr(self, '_experiment_run_id', '') or '')
+            except Exception:
+                run_id = ''
+
+            try:
+                preset = str(os.getenv('POISE_PRESET', '') or '').strip().lower()
+            except Exception:
+                preset = ''
+
+            record = {
+                'ts': datetime.now().isoformat(),
+                'run_id': run_id,
+                'preset': preset,
+                'trading_mode': str(getattr(self, 'trading_mode', '') or ''),
+                'event': str(event or ''),
+                'data': payload or {},
+            }
+
+            lock = getattr(self, '_experiment_log_lock', None)
+            if lock is not None:
+                try:
+                    lock.acquire()
+                except Exception:
+                    lock = None
+
+            try:
+                with open(path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(record, default=str) + "\n")
+            finally:
+                if lock is not None:
+                    try:
+                        lock.release()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         
     def _initialize_world_class_systems(self):
         """Initialize world-class trading systems that make this bot BETTER than orchestrator!"""
@@ -3433,6 +3490,23 @@ class LegendaryCryptoTitanBot:
 
         self.min_seconds_between_entries = 180.0
         self.last_entry_ts = 0.0
+
+        try:
+            self._experiment_run_id = datetime.now().strftime('%Y%m%d_%H%M%S') + f"_{random.randint(1000, 9999)}"
+        except Exception:
+            self._experiment_run_id = str(int(time.time()))
+
+        try:
+            exp_dir = os.path.join('data', 'experiments')
+            os.makedirs(exp_dir, exist_ok=True)
+            self._experiment_log_path = os.path.join(exp_dir, f"run_{self._experiment_run_id}.jsonl")
+        except Exception:
+            self._experiment_log_path = None
+
+        try:
+            self._experiment_log_lock = threading.Lock()
+        except Exception:
+            self._experiment_log_lock = None
         
         # Initialize enhanced live graph visualization
         self.live_chart = None
@@ -4289,9 +4363,34 @@ class LegendaryCryptoTitanBot:
                 current_value = portfolio.get('total_value', self.current_capital)
                 pnl = current_value - self.initial_capital
                 pnl_pct = (pnl / self.initial_capital) * 100 if self.initial_capital > 0 else 0
+
+                try:
+                    if getattr(self, 'risk_engine', None) is not None:
+                        self.risk_engine.update_equity(float(current_value or 0.0))
+                except Exception:
+                    pass
                 
                 # UPDATE CURRENT CAPITAL FOR DASHBOARD
                 self.current_capital = current_value
+
+                try:
+                    rs = None
+                    if getattr(self, 'risk_engine', None) is not None:
+                        rs = getattr(self.risk_engine, 'last_state', None)
+                    self._exp_log('cycle', {
+                        'cycle': int(cycle),
+                        'portfolio_value': float(current_value or 0.0),
+                        'pnl': float(pnl or 0.0),
+                        'pnl_pct': float(pnl_pct or 0.0),
+                        'win_rate': float(getattr(self, 'win_rate', 0.0) or 0.0),
+                        'total_trades': int(getattr(self, 'total_completed_trades', 0) or 0),
+                        'active_positions': int(len([p for p in portfolio.get('positions', {}).values() if p.get('quantity', 0) > 0])),
+                        'market_regime': str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN'),
+                        'volatility_regime': str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL'),
+                        'risk_state': rs if isinstance(rs, dict) else None,
+                    })
+                except Exception:
+                    pass
                 
                 # Count active positions
                 active_pos_count = len([p for p in portfolio.get('positions', {}).values() if p.get('quantity', 0) > 0])
@@ -5544,191 +5643,6 @@ class LegendaryCryptoTitanBot:
         except Exception as e:
             print(f"   ❌ Error creating forced signal: {e}")
             return None
-        
-        portfolio = await self.trader.get_portfolio_value()
-        current_positions = portfolio.get('positions', {})
-        available_cash = portfolio['cash']
-        
-        print(f"\n💰 EXECUTING MICRO TRADES:")
-        print(f"   💵 Available Cash: ${available_cash:.2f}")
-        
-        # PREVENT NEW TRADES IF ANY POSITIONS ARE OPEN (wait for TP/SL)
-        active_positions = len([p for p in current_positions.values() if p.get('quantity', 0) != 0])
-
-        if active_positions > 0:
-            print(f"   ⏳ Waiting for {active_positions} open positions to reach TP/SL before new trades")
-            return
-            
-        if active_positions >= self.max_positions:
-            print(f"   ⚠️ Max positions ({self.max_positions}) reached")
-            return
-        
-        # Filter out None signals and sort by confidence
-        valid_signals = [s for s in signals if s is not None and hasattr(s, 'confidence')]
-        sorted_signals = sorted(valid_signals, key=lambda x: x.confidence, reverse=True)
-        
-        try:
-            import time as _t
-            now_ts = float(_t.time())
-            last_ts = float(getattr(self, 'last_entry_ts', 0.0) or 0.0)
-            min_gap = float(getattr(self, 'min_seconds_between_entries', 180.0) or 180.0)
-            if min_gap > 0 and now_ts - last_ts < min_gap:
-                print(f"   ⏳ Entry throttle: waiting {min_gap - (now_ts - last_ts):.0f}s before next trade")
-                return
-        except Exception:
-            pass
-
-        for signal in sorted_signals[:1]:  # Take only the best signal
-            if signal.symbol in current_positions and current_positions[signal.symbol]['quantity'] > 0:
-                print(f"   ⚠️ {signal.symbol}: Already have position")
-                continue
-            
-            # Calculate dynamic micro position size based on confidence, volatility and cash
-            position_size = await self._calculate_dynamic_position_size(signal, available_cash)
-            print(f"   📏 Position Size (USD): ${position_size:.2f} | Confidence: {signal.confidence:.2%}")
-
-            try:
-                ep = float(getattr(signal, 'entry_price', 0) or 0)
-                sl_pct = float(getattr(self, 'stop_loss', 0.5) or 0.5)
-                tp_pct = float(getattr(self, 'take_profit', 1.0) or 1.0)
-                if ep > 0 and sl_pct > 0 and tp_pct > 0:
-                    if str(getattr(signal, 'action', 'BUY')).upper() == 'BUY':
-                        signal.stop_loss = ep * (1 - sl_pct / 100.0)
-                        signal.take_profit = ep * (1 + tp_pct / 100.0)
-                    else:
-                        signal.stop_loss = ep * (1 + sl_pct / 100.0)
-                        signal.take_profit = ep * (1 - tp_pct / 100.0)
-            except Exception:
-                pass
-            
-            if position_size < self.min_trade_size:
-                print(f"   ⚠️ Insufficient funds for minimum trade (${self.min_trade_size})")
-                continue
-            
-            # Execute the micro trade with Elite Execution Engine if available
-            if getattr(self, 'elite_engine', None) and ELITE_EXECUTION_AVAILABLE and ALLOW_SIMULATED_FEATURES:
-                # Create ExecutionOrder for elite engine
-                from datetime import timedelta
-                import uuid
-                
-                execution_order = ExecutionOrder(
-                    order_id=str(uuid.uuid4()),
-                    symbol=signal.symbol,
-                    side=signal.action.upper(),  # Ensure uppercase
-                    quantity=position_size / signal.entry_price,  # Convert USD to quantity
-                    order_type='MARKET',
-                    target_price=signal.entry_price,
-                    time_in_force='IOC',  # Immediate or Cancel for micro trades
-                    execution_strategy='SMART',
-                    priority=5,
-                    max_slippage=0.01,
-                    execution_window=timedelta(seconds=30),
-                    metadata={
-                        'confidence': signal.confidence,
-                        'expected_return': signal.expected_return,
-                        'ai_reasoning': signal.ai_reasoning,
-                        'position_size_usd': position_size,
-                        'stop_loss': signal.stop_loss,
-                        'take_profit': signal.take_profit,
-                        'strategy': f'MICRO_{signal.strategy_name}'
-                    }
-                )
-                
-                # Execute using Elite Trade Execution Engine
-                print(f"   ⚡ Using ELITE EXECUTION ENGINE for {signal.symbol}")
-                
-                # Prepare market data for elite engine
-                market_data = {
-                    'current_price': signal.entry_price,
-                    'prices': list(self.price_history.get(signal.symbol, [signal.entry_price])),
-                    'volumes': [1000] * 10,  # Simulated volume data
-                    'volume_profile': [100] * 10,  # Simulated volume profile
-                    'bid_depth': 1000,
-                    'ask_depth': 1000,
-                    'spread': 0.001
-                }
-                
-                execution_result = await self.elite_engine.execute_order(execution_order, market_data)
-                
-                # Convert ExecutionResult to compatible format
-                if execution_result.status == 'filled' or execution_result.status == 'partially_filled':
-                    result = {
-                        'success': True,
-                        'execution_price': execution_result.fill_price or signal.entry_price,
-                        'filled_quantity': execution_result.filled_quantity,
-                        'commission': execution_result.commission,
-                        'slippage': execution_result.slippage,
-                        'execution_time': execution_result.execution_time,
-                        'execution_quality': execution_result.execution_quality,
-                        'elite_execution': True,
-                        'strategy_used': execution_result.strategy_used,
-                        'market_impact': execution_result.market_impact
-                    }
-                    print(f"      ⚡ Elite Execution: {execution_result.strategy_used}")
-                    print(f"      📊 Quality Score: {execution_result.execution_quality:.2f}/100")
-                    print(f"      💰 Slippage: {execution_result.slippage:.4f}%")
-                    print(f"      ⏱️ Speed: {execution_result.execution_time:.3f}s")
-                else:
-                    result = {
-                        'success': False,
-                        'error': f'Elite execution failed: {execution_result.status}',
-                        'elite_execution': True,
-                        'execution_result': execution_result
-                    }
-                    print(f"      ❌ Elite Execution Failed: {execution_result.status}")
-            else:
-                # Fallback to standard execution
-                result = await self.trader.execute_live_trade(
-                    signal.symbol,
-                    signal.action,
-                    position_size,
-                    f'MICRO_{signal.strategy_name}'
-                )
-            
-            if result['success']:
-                self.trade_count += 1
-                self.active_signals[signal.symbol] = signal
-
-                try:
-                    import time as _t
-                    self.last_entry_ts = float(_t.time())
-                except Exception:
-                    pass
-                
-                # Persist TP/SL and action onto the live position for accurate management
-                if hasattr(self, 'trader') and hasattr(self.trader, 'positions'):
-                    if signal.symbol in self.trader.positions:
-                        try:
-                            self.trader.positions[signal.symbol]['take_profit'] = getattr(signal, 'take_profit', None)
-                            self.trader.positions[signal.symbol]['stop_loss'] = getattr(signal, 'stop_loss', None)
-                            self.trader.positions[signal.symbol]['action'] = signal.action
-                        except Exception:
-                            pass
-
-                # Track entry time for grace period
-                import time as _time_module
-                self.position_entry_time[signal.symbol] = _time_module.time()
-                
-                print(f"   ✅ {signal.symbol}: ${position_size:.2f} @ ${signal.entry_price:.4f}")
-                print(f"      🎯 Expected: {signal.expected_return:+.2f}%")
-                
-                # Update live chart with trade levels
-                if self.live_chart:
-                    self.live_chart.set_trade_levels(
-                        symbol=signal.symbol,
-                        entry_price=signal.entry_price,
-                        take_profit=signal.take_profit,
-                        stop_loss=signal.stop_loss,
-                        side=signal.action
-                    )
-                
-                # Learn from trade execution and sync counters
-                await self._learn_from_trade_execution(signal.symbol, signal, result)
-                print(f"      🧮 Trades: bot={self.trade_count}, manager={self.trader.total_trades}")
-                available_cash -= position_size
-            else:
-                print(f"   ❌ {signal.symbol}: Trade failed - {result.get('error', 'unknown error')}")
-                await self._learn_from_trade_execution(signal.symbol, signal, result)
     
     async def _manage_micro_positions(self):
         """Advanced position management with AI-driven exit optimization"""
@@ -6144,6 +6058,12 @@ class LegendaryCryptoTitanBot:
             print(f"   📊 Position closed successfully, triggering AI learning...")
 
             try:
+                if getattr(self, 'risk_engine', None) is not None:
+                    self.risk_engine.on_trade_closed(float(pnl or 0.0))
+            except Exception:
+                pass
+
+            try:
                 if symbol in self.position_cycles:
                     del self.position_cycles[symbol]
                 if symbol in self.position_high_water_marks:
@@ -6174,6 +6094,24 @@ class LegendaryCryptoTitanBot:
                 })
                 if len(self.trade_history) > 200:
                     self.trade_history = self.trade_history[-200:]
+            except Exception:
+                pass
+
+            try:
+                sig = None
+                if isinstance(getattr(self, 'active_signals', None), dict):
+                    sig = self.active_signals.get(symbol)
+                self._exp_log('trade_close', {
+                    'symbol': str(symbol),
+                    'pnl': float(pnl or 0.0),
+                    'reason': str(reason),
+                    'entry_price': float(position.get('avg_price', 0) or 0),
+                    'exit_price': float(self.price_history[symbol][-1] if symbol in self.price_history and self.price_history[symbol] else 0),
+                    'confidence': float(getattr(sig, 'confidence', 0.0) or 0.0) if sig is not None else 0.0,
+                    'strategy': str(getattr(sig, 'strategy_name', '') or '') if sig is not None else '',
+                    'market_regime': str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN'),
+                    'volatility_regime': str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL'),
+                })
             except Exception:
                 pass
             
@@ -9474,6 +9412,15 @@ class LegendaryCryptoTitanBot:
         portfolio = await self.trader.get_portfolio_value()
         current_positions = portfolio.get('positions', {})
         available_cash = portfolio['cash']
+
+        try:
+            if getattr(self, 'risk_engine', None) is not None:
+                state = self.risk_engine.update_equity(float(portfolio.get('total_value', 0) or 0))
+                if isinstance(state, dict) and not bool(state.get('allowed', True)):
+                    print(f"   🛡️ RiskEngine paused entries ({state.get('reason')})")
+                    return
+        except Exception:
+            pass
         
         print(f"\n💰 EXECUTING MICRO TRADES:")
         print(f"   💵 Available Cash: ${available_cash:.2f}")
@@ -9503,6 +9450,49 @@ class LegendaryCryptoTitanBot:
             now_ts = float(_t.time())
             last_ts = float(getattr(self, 'last_entry_ts', 0.0) or 0.0)
             min_gap = float(getattr(self, 'min_seconds_between_entries', 180.0) or 180.0)
+
+            try:
+                preset = str(os.getenv('POISE_PRESET', '') or '').strip().lower()
+            except Exception:
+                preset = ''
+
+            if preset in ['world_class', 'world-class', 'wc']:
+                try:
+                    if str(getattr(self, 'trading_mode', '') or '').upper() == 'AGGRESSIVE':
+                        min_gap = 20.0
+                    else:
+                        min_gap = 45.0
+
+                    vol_regime = str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL').upper()
+                    if vol_regime == 'HIGH':
+                        min_gap *= 1.6
+                    elif vol_regime == 'LOW':
+                        min_gap *= 0.8
+
+                    regime = str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN').upper()
+                    if 'VOLATILE' in regime:
+                        min_gap *= 1.3
+                    if regime in ['CONSOLIDATION', 'SIDEWAYS', 'VOLATILE_SIDEWAYS']:
+                        min_gap *= 1.15
+
+                    try:
+                        if getattr(self, 'risk_engine', None) is not None:
+                            rs = getattr(self.risk_engine, 'last_state', None)
+                            if isinstance(rs, dict):
+                                rm = float(rs.get('risk_multiplier', 1.0) or 1.0)
+                                if rm < 0.6:
+                                    min_gap *= 1.8
+                                elif rm < 0.85:
+                                    min_gap *= 1.25
+                    except Exception:
+                        pass
+
+                    if min_gap < 8.0:
+                        min_gap = 8.0
+                    if min_gap > 300.0:
+                        min_gap = 300.0
+                except Exception:
+                    pass
             if min_gap > 0 and now_ts - last_ts < min_gap:
                 print(f"   ⏳ Entry throttle: waiting {min_gap - (now_ts - last_ts):.0f}s before next trade")
                 return
@@ -9520,6 +9510,24 @@ class LegendaryCryptoTitanBot:
             
             # 🌍 MULTI-ASSET POSITION SIZING (Dynamic allocation by asset type!)
             position_size = self._calculate_multi_asset_position_size(signal, available_cash, signal.confidence)
+
+            try:
+                if getattr(self, 'risk_engine', None) is not None:
+                    leverage = float(getattr(getattr(self, 'trader', None), 'leverage', 1.0) or 1.0)
+                    equity = float(portfolio.get('total_value', 0) or 0)
+                    allowed, risk_mult, reason = self.risk_engine.check_entry(
+                        symbol=signal.symbol,
+                        equity=equity,
+                        positions=current_positions,
+                        proposed_margin_usd=float(position_size or 0),
+                        leverage=leverage,
+                    )
+                    if not allowed:
+                        print(f"   🛡️ {signal.symbol}: RiskEngine blocked entry ({reason})")
+                        continue
+                    position_size = float(position_size or 0) * float(risk_mult or 1.0)
+            except Exception:
+                pass
             
             if position_size < self.min_trade_size:
                 print(f"   ⚠️ {signal.symbol}: Insufficient capital (${position_size:.2f} < ${self.min_trade_size})")
@@ -9623,20 +9631,6 @@ class LegendaryCryptoTitanBot:
                 print(f"   ❌ {signal.symbol}: Trade failed - {result.get('error', 'unknown error')}")
                 await self._learn_from_trade_execution(signal.symbol, signal, result)
 
-    async def _execute_legendary_trades(self, signals: List[AITradingSignal]):
-        """⚡ Execute trades with SBF's lightning speed! ⚡"""
-        if not signals:
-            print("🔍 No legendary signals to trade")
-            return
-        
-        portfolio = await self.trader.get_portfolio_value()
-        current_positions = portfolio.get('positions', {})
-        available_cash = portfolio['cash']
-        
-        print(f"\n⚡ LEGENDARY EXECUTION ACTIVATED!")
-        print(f"💰 Available Capital: ${available_cash:.2f}")
-        print(f"🎯 Executing with the speed of SBF!")
-        
         # Check positions
         active_positions = len([p for p in current_positions.values() if p.get('quantity', 0) > 0])
         max_positions = max(self.max_concurrent_positions, 5)  # At least 5 for legends
@@ -9665,6 +9659,24 @@ class LegendaryCryptoTitanBot:
                 position_size = min(max_pos_size, available_cash * 0.9)  # 90% on BEST setups!
             else:
                 position_size = min(max_pos_size, available_cash * 0.7)  # 70% on good setups
+
+            try:
+                if getattr(self, 'risk_engine', None) is not None:
+                    leverage = float(getattr(getattr(self, 'trader', None), 'leverage', 1.0) or 1.0)
+                    equity = float(portfolio.get('total_value', 0) or 0)
+                    allowed, risk_mult, reason = self.risk_engine.check_entry(
+                        symbol=signal.symbol,
+                        equity=equity,
+                        positions=current_positions,
+                        proposed_margin_usd=float(position_size or 0),
+                        leverage=leverage,
+                    )
+                    if not allowed:
+                        print(f"   🛡️ {signal.symbol}: RiskEngine blocked entry ({reason})")
+                        continue
+                    position_size = float(position_size or 0) * float(risk_mult or 1.0)
+            except Exception:
+                pass
             
             if position_size < self.min_trade_size:
                 print(f"   ⚠️ {signal.symbol}: Insufficient legendary capital")
@@ -9872,6 +9884,12 @@ class LegendaryCryptoTitanBot:
             pnl = position['unrealized_pnl']
             status = "🏆 LEGENDARY WIN" if pnl > 0 else "🔥 LEGENDARY LESSON"
             print(f"   {status}: {symbol} CLOSED - ${pnl:+.2f} ({reason})")
+
+            try:
+                if getattr(self, 'risk_engine', None) is not None:
+                    self.risk_engine.on_trade_closed(float(pnl or 0.0))
+            except Exception:
+                pass
             
             # Enhanced legendary learning
             if symbol in self.active_signals:

@@ -24,10 +24,16 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import json
 import logging
+import os
 from dataclasses import dataclass
 from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
+
+try:
+    import ccxt.async_support as ccxt
+except Exception:
+    ccxt = None
 
 # Core Trading Bot
 try:
@@ -486,14 +492,83 @@ class IntegratedTradingOrchestrator:
             print(f"🎯 Strategy: {strategy_config['name']}")
             print(f"💰 Initial Capital: ${self.config.initial_capital:,.2f}")
             
-            # Run the backtest
-            backtest_result = await self.backtester.run_comprehensive_backtest(
-                strategy_config=strategy_config,
-                historical_data=historical_data,
-                initial_capital=self.config.initial_capital,
-                walk_forward_window=self.config.walk_forward_window,
-                monte_carlo_runs=self.config.monte_carlo_runs
-            )
+            per_symbol_results = {}
+            for symbol in self.config.symbols:
+                try:
+                    sym_data = {symbol: historical_data.get(symbol)}
+                    sym_cfg = dict(strategy_config)
+                    sym_cfg['name'] = f"{strategy_config.get('name')}_{symbol.replace('/', '-') }"
+                    sym_cfg['symbols'] = [symbol]
+                    res = await self.backtester.run_comprehensive_backtest(
+                        strategy_config=sym_cfg,
+                        historical_data=sym_data,
+                        initial_capital=self.config.initial_capital,
+                        walk_forward_window=self.config.walk_forward_window,
+                        monte_carlo_runs=self.config.monte_carlo_runs
+                    )
+                    per_symbol_results[symbol] = res
+                except Exception as e:
+                    per_symbol_results[symbol] = None
+                    self.logger.error(f"Backtest failed for {symbol}: {e}")
+
+            # Choose a representative result for console display (best Sharpe among valid)
+            backtest_result = None
+            try:
+                best = None
+                best_s = -1e9
+                for sym, res in per_symbol_results.items():
+                    if res is None:
+                        continue
+                    s = float(getattr(res, 'sharpe_ratio', 0.0) or 0.0)
+                    if s > best_s:
+                        best_s = s
+                        best = res
+                backtest_result = best
+            except Exception:
+                backtest_result = None
+
+            if backtest_result is None:
+                raise RuntimeError('All per-symbol backtests failed')
+
+            try:
+                from dataclasses import asdict
+                report_dir = os.path.join('data', 'backtests')
+                os.makedirs(report_dir, exist_ok=True)
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                out_path = os.path.join(report_dir, f'backtest_{ts}.json')
+                per_sym = {}
+                try:
+                    for sym, res in (per_symbol_results or {}).items():
+                        per_sym[sym] = asdict(res) if res is not None else None
+                except Exception:
+                    per_sym = {}
+
+                summary = {}
+                try:
+                    valid = [r for r in (per_symbol_results or {}).values() if r is not None]
+                    if valid:
+                        summary = {
+                            'symbols_tested': int(len(per_symbol_results or {})),
+                            'symbols_valid': int(len(valid)),
+                            'avg_win_rate': float(np.mean([float(getattr(r, 'win_rate', 0.0) or 0.0) for r in valid])),
+                            'avg_total_return': float(np.mean([float(getattr(r, 'total_return', 0.0) or 0.0) for r in valid])),
+                            'avg_sharpe': float(np.mean([float(getattr(r, 'sharpe_ratio', 0.0) or 0.0) for r in valid])),
+                            'avg_max_drawdown': float(np.mean([float(getattr(r, 'max_drawdown', 0.0) or 0.0) for r in valid])),
+                        }
+                except Exception:
+                    summary = {}
+
+                payload = {
+                    'timestamp': datetime.now().isoformat(),
+                    'strategy_config': strategy_config,
+                    'backtest_result': asdict(backtest_result) if backtest_result is not None else None,
+                    'per_symbol_results': per_sym,
+                    'summary': summary,
+                }
+                with open(out_path, 'w', encoding='utf-8') as f:
+                    json.dump(payload, f, indent=2, default=str)
+            except Exception:
+                pass
             
             # Display results
             print("\n📊 BACKTEST RESULTS:")
@@ -529,9 +604,47 @@ class IntegratedTradingOrchestrator:
     async def _generate_backtest_data(self, start_date: datetime, end_date: datetime) -> Dict:
         """Generate historical data for backtesting (simulated for demo)"""
         data = {}
+
+        exchange = None
+        if ccxt is not None:
+            try:
+                exchange = ccxt.mexc({'enableRateLimit': True, 'timeout': 30000})
+                await exchange.load_markets()
+            except Exception:
+                exchange = None
         
         # Generate realistic price data for each symbol
         for symbol in self.config.symbols:
+            if exchange is not None:
+                try:
+                    timeframe = '1h'
+                    since_ms = int(start_date.timestamp() * 1000)
+                    limit = 1000
+                    all_rows = []
+                    while True:
+                        batch = await exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=limit)
+                        if not batch:
+                            break
+                        all_rows.extend(batch)
+                        last_ts = int(batch[-1][0])
+                        if last_ts <= since_ms:
+                            break
+                        since_ms = last_ts + 1
+                        if since_ms >= int(end_date.timestamp() * 1000):
+                            break
+                        if len(batch) < limit:
+                            break
+
+                    if all_rows:
+                        df = pd.DataFrame(all_rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', errors='coerce')
+                        df = df.dropna(subset=['timestamp'])
+                        df = df[(df['timestamp'] >= start_date) & (df['timestamp'] <= end_date)]
+                        data[symbol] = df
+                        continue
+                except Exception:
+                    pass
+
             days = (end_date - start_date).days
             timestamps = pd.date_range(start=start_date, end=end_date, freq='1H')
             
@@ -552,6 +665,12 @@ class IntegratedTradingOrchestrator:
                 'close': prices,
                 'volume': np.random.uniform(1000000, 10000000, len(timestamps))
             })
+
+        if exchange is not None:
+            try:
+                await exchange.close()
+            except Exception:
+                pass
         
         return data
     

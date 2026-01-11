@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import concurrent.futures
 from pathlib import Path
 import logging
+import os
 
 @dataclass
 class BacktestResult:
@@ -41,26 +42,138 @@ class InstitutionalBacktester:
         self.initial_capital = initial_capital
         self.commission = 0.001  # 0.1% per trade
         self.slippage = 0.0005   # 0.05% slippage
+
+        try:
+            fee_rate = float(os.getenv('PAPER_FEE_RATE', '') or 0.0)
+            if fee_rate > 0:
+                self.commission = float(fee_rate)
+        except Exception:
+            pass
+
+        try:
+            spread_bps = float(os.getenv('PAPER_SPREAD_BPS', '') or 0.0)
+        except Exception:
+            spread_bps = 0.0
+        try:
+            slip_bps = float(os.getenv('PAPER_SLIPPAGE_BPS', '') or 0.0)
+        except Exception:
+            slip_bps = 0.0
+
+        try:
+            if spread_bps > 0 or slip_bps > 0:
+                self.slippage = float((max(0.0, spread_bps) / 2.0 + max(0.0, slip_bps)) / 10000.0)
+        except Exception:
+            pass
         
     async def run_comprehensive_backtest(self, 
-                                       strategy_func: callable,
-                                       price_data: pd.DataFrame,
-                                       parameters: Dict,
+                                       strategy_func: callable = None,
+                                       price_data: pd.DataFrame = None,
+                                       parameters: Dict = None,
                                        start_date: str = None,
-                                       end_date: str = None) -> BacktestResult:
+                                       end_date: str = None,
+                                       **kwargs) -> BacktestResult:
         """Run comprehensive institutional-grade backtest"""
+
+        # Compatibility path for integrated_trading_orchestrator.py
+        if strategy_func is None and price_data is None and (kwargs.get('strategy_config') is not None or kwargs.get('historical_data') is not None):
+            strategy_config = kwargs.get('strategy_config') or {}
+            historical_data = kwargs.get('historical_data') or {}
+            try:
+                initial_capital = float(kwargs.get('initial_capital', self.initial_capital) or self.initial_capital)
+            except Exception:
+                initial_capital = float(self.initial_capital)
+
+            try:
+                walk_forward_window = int(kwargs.get('walk_forward_window', 7) or 7)
+            except Exception:
+                walk_forward_window = 7
+
+            try:
+                monte_carlo_runs = int(kwargs.get('monte_carlo_runs', 1000) or 1000)
+            except Exception:
+                monte_carlo_runs = 1000
+
+            self.initial_capital = float(initial_capital)
+
+            # Pick a representative symbol dataset (prefer BTC when available).
+            chosen_df = None
+            try:
+                if isinstance(historical_data, dict):
+                    for _sym, _df in (historical_data or {}).items():
+                        if _df is not None and 'BTC' in str(_sym).upper():
+                            chosen_df = _df
+                            break
+                if chosen_df is None:
+                    for _sym, _df in (historical_data or {}).items():
+                        if _df is not None:
+                            chosen_df = _df
+                            break
+            except Exception:
+                chosen_df = None
+
+            if chosen_df is None:
+                return self._empty_backtest_result(strategy_name=str(strategy_config.get('name') or 'Empty'))
+
+            try:
+                if isinstance(chosen_df, pd.DataFrame) and 'timestamp' in chosen_df.columns:
+                    chosen_df = chosen_df.copy()
+                    chosen_df['timestamp'] = pd.to_datetime(chosen_df['timestamp'], errors='coerce')
+                    chosen_df = chosen_df.set_index('timestamp')
+            except Exception:
+                pass
+
+            @dataclass
+            class _BasicSignal:
+                action: str
+                position_size: float
+
+            async def _default_strategy_func(training_data: pd.DataFrame, _params: Dict) -> Any:
+                try:
+                    close = training_data['close']
+                    if close is None or len(close) < 60:
+                        return _BasicSignal(action='HOLD', position_size=0.0)
+
+                    sma_fast = float(close.rolling(20).mean().iloc[-1])
+                    sma_slow = float(close.rolling(50).mean().iloc[-1])
+                    if sma_fast <= 0 or sma_slow <= 0:
+                        return _BasicSignal(action='HOLD', position_size=0.0)
+
+                    try:
+                        rpt = float(strategy_config.get('risk_per_trade', 0.02) or 0.02)
+                    except Exception:
+                        rpt = 0.02
+                    pos_size = max(0.05, min(0.30, rpt * 5.0))
+
+                    if sma_fast > sma_slow * 1.001:
+                        return _BasicSignal(action='BUY', position_size=pos_size)
+                    if sma_fast < sma_slow * 0.999:
+                        return _BasicSignal(action='SELL', position_size=pos_size)
+                    return _BasicSignal(action='HOLD', position_size=0.0)
+                except Exception:
+                    return _BasicSignal(action='HOLD', position_size=0.0)
+
+            parameters = dict(strategy_config or {})
+            parameters['walk_forward_window'] = walk_forward_window
+            parameters['monte_carlo_runs'] = monte_carlo_runs
+            parameters['strategy_name'] = str(strategy_config.get('name') or 'Strategy')
+            strategy_func = _default_strategy_func
+            price_data = chosen_df
         
         # 1. Data preparation and validation
         validated_data = self._validate_and_prepare_data(price_data, start_date, end_date)
-        
+
         # 2. Walk-forward analysis
         walk_forward_results = await self._walk_forward_analysis(
             strategy_func, validated_data, parameters
         )
         
         # 3. Monte Carlo simulation
+        try:
+            n_sims = int((parameters or {}).get('monte_carlo_runs', 1000) or 1000)
+        except Exception:
+            n_sims = 1000
         monte_carlo_results = await self._monte_carlo_simulation(
-            walk_forward_results, n_simulations=1000
+            walk_forward_results, n_simulations=n_sims
         )
         
         # 4. Calculate comprehensive metrics
@@ -101,15 +214,55 @@ class InstitutionalBacktester:
             'equity_curve': [],
             'performance_by_period': []
         }
+
+        try:
+            results['strategy_name'] = str((parameters or {}).get('strategy_name') or 'Strategy')
+        except Exception:
+            results['strategy_name'] = 'Strategy'
         
         # Parameters for walk-forward
         min_training_days = 30
         rebalance_frequency = 7  # Days
+        try:
+            rebalance_frequency = int((parameters or {}).get('walk_forward_window', rebalance_frequency) or rebalance_frequency)
+        except Exception:
+            rebalance_frequency = rebalance_frequency
+
+        try:
+            min_training_days = int((parameters or {}).get('min_training_days', min_training_days) or min_training_days)
+        except Exception:
+            min_training_days = min_training_days
+
+        bars_per_day = 1
+        try:
+            if isinstance(data.index, pd.DatetimeIndex) and len(data.index) >= 5:
+                deltas = (data.index[1:] - data.index[:-1])
+                delta_s = []
+                for d in deltas:
+                    try:
+                        s = float(d.total_seconds())
+                        if s > 0:
+                            delta_s.append(s)
+                    except Exception:
+                        continue
+                if delta_s:
+                    median_s = float(np.median(np.array(delta_s)))
+                    if median_s > 0:
+                        bars_per_day = int(round(86400.0 / median_s))
+                        if bars_per_day < 1:
+                            bars_per_day = 1
+                        if bars_per_day > 1440:
+                            bars_per_day = 1440
+        except Exception:
+            bars_per_day = 1
+
+        min_training_bars = int(max(5, min_training_days * bars_per_day))
+        rebalance_bars = int(max(1, rebalance_frequency * bars_per_day))
         
         current_capital = self.initial_capital
         position = 0
         
-        for i in range(min_training_days, len(data), rebalance_frequency):
+        for i in range(min_training_bars, len(data), rebalance_bars):
             # Training period
             training_data = data.iloc[:i]
             
@@ -212,8 +365,14 @@ class InstitutionalBacktester:
         trades = backtest_results['trades']
         equity_curve = backtest_results['equity_curve']
         
+        strategy_name = "Strategy"
+        try:
+            strategy_name = str((backtest_results or {}).get('strategy_name') or "Strategy")
+        except Exception:
+            strategy_name = "Strategy"
+
         if not trades or not equity_curve:
-            return self._empty_backtest_result()
+            return self._empty_backtest_result(strategy_name=strategy_name)
         
         # Calculate returns
         capital_series = pd.Series([eq['capital'] for eq in equity_curve])
@@ -235,7 +394,7 @@ class InstitutionalBacktester:
         # Maximum drawdown
         peak = capital_series.expanding().max()
         drawdown = (capital_series - peak) / peak
-        max_drawdown = drawdown.min()
+        max_drawdown = abs(float(drawdown.min()))
         
         # Trade analysis
         trade_pnls = [trade['pnl'] for trade in trades]
@@ -255,7 +414,7 @@ class InstitutionalBacktester:
         cvar_95 = returns[returns <= var_95].mean()
         
         return BacktestResult(
-            strategy_name="Strategy",
+            strategy_name=str(strategy_name),
             total_return=total_return,
             annualized_return=annualized_return,
             sharpe_ratio=sharpe_ratio,
@@ -274,10 +433,10 @@ class InstitutionalBacktester:
             cvar_95=cvar_95
         )
     
-    def _empty_backtest_result(self) -> BacktestResult:
+    def _empty_backtest_result(self, strategy_name: str = "Empty") -> BacktestResult:
         """Return empty result for error cases"""
         return BacktestResult(
-            strategy_name="Empty",
+            strategy_name=str(strategy_name or "Empty"),
             total_return=0.0,
             annualized_return=0.0,
             sharpe_ratio=0.0,

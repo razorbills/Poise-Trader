@@ -17,6 +17,7 @@ import requests
 import urllib3
 import os
 import time
+import uuid
 
 try:
     import ccxt.async_support as ccxt  # type: ignore
@@ -73,6 +74,12 @@ class LiveMexcDataFeed:
         self.consecutive_failures = 0
         self.total_requests = 0
         self.total_failures = 0
+
+        self._adaptive_delay_s = 0.0
+        self._adaptive_min_delay_s = 0.05
+        self._adaptive_max_delay_s = 2.5
+        self._adaptive_next_ts = 0.0
+        self._adaptive_last_reason = None
         try:
             url = f"{self.base_url}/api/v3/exchangeInfo"
             resp = requests.get(url, timeout=8, verify=False)
@@ -88,6 +95,44 @@ class LiveMexcDataFeed:
         except Exception:
             self.exchange_symbols = None
         print("📊 Enhanced MEXC Data Feed initialized - collecting comprehensive market data")
+
+    async def _adaptive_wait(self):
+        try:
+            now = time.time()
+            next_ts = float(getattr(self, '_adaptive_next_ts', 0.0) or 0.0)
+            if next_ts > now:
+                await asyncio.sleep(next_ts - now)
+        except Exception:
+            pass
+
+    def _adaptive_note(self, ok: bool, status_code: int = None, latency_ms: int = None):
+        try:
+            delay = float(getattr(self, '_adaptive_delay_s', 0.0) or 0.0)
+            min_d = float(getattr(self, '_adaptive_min_delay_s', 0.05) or 0.05)
+            max_d = float(getattr(self, '_adaptive_max_delay_s', 2.5) or 2.5)
+
+            if ok:
+                if latency_ms is not None and int(latency_ms) > 1200:
+                    delay = min(max_d, max(min_d, delay * 1.15 + 0.05))
+                    self._adaptive_last_reason = 'high_latency'
+                else:
+                    delay = max(0.0, delay * 0.85 - 0.02)
+                    self._adaptive_last_reason = None
+            else:
+                if int(status_code or 0) == 429:
+                    delay = min(max_d, max(1.0, delay * 2.5 + 0.5))
+                    self._adaptive_last_reason = 'rate_limit_429'
+                else:
+                    delay = min(max_d, max(min_d, delay * 1.7 + 0.10))
+                    self._adaptive_last_reason = f'error_{int(status_code or 0)}'
+
+            self._adaptive_delay_s = float(delay)
+            self._adaptive_next_ts = float(time.time()) + float(delay)
+        except Exception:
+            try:
+                self._adaptive_next_ts = float(time.time()) + 0.1
+            except Exception:
+                pass
 
     def get_health(self) -> Dict[str, Any]:
         try:
@@ -146,6 +191,7 @@ class LiveMexcDataFeed:
             return None
         
         # Use requests library which works reliably
+        await self._adaptive_wait()
         start = time.time()
         self.total_requests += 1
         try:
@@ -166,6 +212,8 @@ class LiveMexcDataFeed:
                     'price': price,
                     'timestamp': datetime.now()
                 }
+
+                self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                 
                 return price
             else:
@@ -179,6 +227,8 @@ class LiveMexcDataFeed:
                 self.last_error = f"HTTP_{response.status_code}"
 
                 print(f"⚠️ Failed to get {symbol} price: Status {response.status_code}")
+
+                self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
 
                 cached = self.prices_cache.get(symbol)
                 if cached and isinstance(cached, dict):
@@ -196,6 +246,8 @@ class LiveMexcDataFeed:
             self.last_error_time = datetime.now()
             self.last_latency_ms = int((time.time() - start) * 1000)
             self.last_error = str(e)[:120]
+
+            self._adaptive_note(False, status_code=0, latency_ms=int((time.time() - start) * 1000))
             print(f"❌ Error getting {symbol} price: {str(e)[:50]}")
 
             cached = self.prices_cache.get(symbol)
@@ -213,6 +265,11 @@ class LiveMexcDataFeed:
             self.last_error_time = datetime.now()
             self.last_latency_ms = int((time.time() - start) * 1000)
             self.last_error = str(e)[:120]
+
+            try:
+                self._adaptive_note(False, status_code=0, latency_ms=int((time.time() - start) * 1000))
+            except Exception:
+                pass
             print(f"❌ Unexpected error getting {symbol} price: {str(e)[:50]}")
 
             cached = self.prices_cache.get(symbol)
@@ -237,6 +294,7 @@ class LiveMexcDataFeed:
             start = time.time()
             self.total_requests += 1
             try:
+                await self._adaptive_wait()
                 url = f"{self.base_url}/api/v3/ticker/price"
                 response = requests.get(url, timeout=8, verify=False)
                 if response.status_code == 200:
@@ -263,6 +321,7 @@ class LiveMexcDataFeed:
                         self.last_latency_ms = int((time.time() - start) * 1000)
                         self.last_error = None
                         self.consecutive_failures = 0
+                        self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                         return prices
             except Exception as e:
                 self.total_failures += 1
@@ -270,6 +329,7 @@ class LiveMexcDataFeed:
                 self.last_error_time = datetime.now()
                 self.last_latency_ms = int((time.time() - start) * 1000)
                 self.last_error = str(e)[:120]
+                self._adaptive_note(False, status_code=0, latency_ms=int((time.time() - start) * 1000))
 
         for symbol in symbols:
             price = await self.get_live_price(symbol)
@@ -285,6 +345,8 @@ class LiveMexcDataFeed:
             return None
         
         try:
+            await self._adaptive_wait()
+            start = time.time()
             url = f"{self.base_url}/api/v3/depth?symbol={mexc_symbol}&limit={limit}"
             response = requests.get(url, timeout=5, verify=False)
             
@@ -309,11 +371,23 @@ class LiveMexcDataFeed:
                     orderbook['mid_price'] = (orderbook['bids'][0][0] + orderbook['asks'][0][0]) / 2
                 
                 self.orderbook_cache[symbol] = orderbook
+                try:
+                    self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                except Exception:
+                    pass
                 return orderbook
             
+            try:
+                self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
+            except Exception:
+                pass
             return None
         except Exception as e:
             print(f"⚠️ Error getting orderbook for {symbol}: {str(e)[:50]}")
+            try:
+                self._adaptive_note(False, status_code=0, latency_ms=None)
+            except Exception:
+                pass
             return None
     
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict]:
@@ -323,6 +397,8 @@ class LiveMexcDataFeed:
             return None
         
         try:
+            await self._adaptive_wait()
+            start = time.time()
             url = f"{self.base_url}/api/v3/trades?symbol={mexc_symbol}&limit={limit}"
             response = requests.get(url, timeout=5, verify=False)
             
@@ -356,11 +432,23 @@ class LiveMexcDataFeed:
                     }
                     
                     self.trades_cache[symbol] = trade_data
+                    try:
+                        self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                    except Exception:
+                        pass
                     return trade_data
             
+            try:
+                self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
+            except Exception:
+                pass
             return None
         except Exception as e:
             print(f"⚠️ Error getting trades for {symbol}: {str(e)[:50]}")
+            try:
+                self._adaptive_note(False, status_code=0, latency_ms=None)
+            except Exception:
+                pass
             return None
     
     async def get_24h_ticker(self, symbol: str) -> Dict:
@@ -370,6 +458,8 @@ class LiveMexcDataFeed:
             return None
         
         try:
+            await self._adaptive_wait()
+            start = time.time()
             url = f"{self.base_url}/api/v3/ticker/24hr?symbol={mexc_symbol}"
             response = requests.get(url, timeout=5, verify=False)
             
@@ -401,11 +491,23 @@ class LiveMexcDataFeed:
                     ticker['price_position'] = ((ticker['close_price'] - ticker['low_24h']) / (ticker['high_24h'] - ticker['low_24h'])) if ticker['high_24h'] != ticker['low_24h'] else 0.5
                 
                 self.ticker_24h_cache[symbol] = ticker
+                try:
+                    self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                except Exception:
+                    pass
                 return ticker
             
+            try:
+                self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
+            except Exception:
+                pass
             return None
         except Exception as e:
             print(f"⚠️ Error getting 24h ticker for {symbol}: {str(e)[:50]}")
+            try:
+                self._adaptive_note(False, status_code=0, latency_ms=None)
+            except Exception:
+                pass
             return None
     
     async def get_klines(self, symbol: str, interval: str = '1m', limit: int = 100) -> List[Dict]:
@@ -415,6 +517,8 @@ class LiveMexcDataFeed:
             return None
         
         try:
+            await self._adaptive_wait()
+            start = time.time()
             url = f"{self.base_url}/api/v3/klines?symbol={mexc_symbol}&interval={interval}&limit={limit}"
             response = requests.get(url, timeout=5, verify=False)
             
@@ -448,13 +552,25 @@ class LiveMexcDataFeed:
                         continue
                 
                 self.klines_cache[f"{symbol}_{interval}"] = klines
+                try:
+                    self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                except Exception:
+                    pass
                 return klines if klines else []
             
             if response.status_code in (400, 404):
                 self.unsupported_symbols.add(mexc_symbol)
+            try:
+                self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
+            except Exception:
+                pass
             return None
         except Exception as e:
             print(f"⚠️ Error getting klines for {symbol}: {str(e)[:50]}")
+            try:
+                self._adaptive_note(False, status_code=0, latency_ms=None)
+            except Exception:
+                pass
             return None
     
     async def get_comprehensive_market_data(self, symbol: str) -> Dict:
@@ -551,10 +667,54 @@ class MexcFuturesDataFeed:
         self.total_requests = 0
         self.total_failures = 0
 
+        self._adaptive_delay_s = 0.0
+        self._adaptive_min_delay_s = 0.05
+        self._adaptive_max_delay_s = 2.5
+        self._adaptive_next_ts = 0.0
+        self._adaptive_last_reason = None
+
         try:
             self._load_contracts_if_needed(force=True)
         except Exception:
             pass
+
+    async def _adaptive_wait(self):
+        try:
+            now = time.time()
+            next_ts = float(getattr(self, '_adaptive_next_ts', 0.0) or 0.0)
+            if next_ts > now:
+                await asyncio.sleep(next_ts - now)
+        except Exception:
+            pass
+
+    def _adaptive_note(self, ok: bool, status_code: int = None, latency_ms: int = None):
+        try:
+            delay = float(getattr(self, '_adaptive_delay_s', 0.0) or 0.0)
+            min_d = float(getattr(self, '_adaptive_min_delay_s', 0.05) or 0.05)
+            max_d = float(getattr(self, '_adaptive_max_delay_s', 2.5) or 2.5)
+
+            if ok:
+                if latency_ms is not None and int(latency_ms) > 1200:
+                    delay = min(max_d, max(min_d, delay * 1.15 + 0.05))
+                    self._adaptive_last_reason = 'high_latency'
+                else:
+                    delay = max(0.0, delay * 0.85 - 0.02)
+                    self._adaptive_last_reason = None
+            else:
+                if int(status_code or 0) == 429:
+                    delay = min(max_d, max(1.0, delay * 2.5 + 0.5))
+                    self._adaptive_last_reason = 'rate_limit_429'
+                else:
+                    delay = min(max_d, max(min_d, delay * 1.7 + 0.10))
+                    self._adaptive_last_reason = f'error_{int(status_code or 0)}'
+
+            self._adaptive_delay_s = float(delay)
+            self._adaptive_next_ts = float(time.time()) + float(delay)
+        except Exception:
+            try:
+                self._adaptive_next_ts = float(time.time()) + 0.1
+            except Exception:
+                pass
 
     def get_health(self) -> Dict[str, Any]:
         try:
@@ -605,6 +765,13 @@ class MexcFuturesDataFeed:
 
             start = time.time()
             self.total_requests += 1
+            try:
+                next_ts = float(getattr(self, '_adaptive_next_ts', 0.0) or 0.0)
+                now = time.time()
+                if next_ts > now:
+                    time.sleep(next_ts - now)
+            except Exception:
+                pass
             url = f"{self.base_url}/api/v1/contract/detail"
             resp = requests.get(url, timeout=8, verify=False)
             if resp.status_code != 200:
@@ -613,6 +780,7 @@ class MexcFuturesDataFeed:
                 self.last_error_time = datetime.now()
                 self.last_latency_ms = int((time.time() - start) * 1000)
                 self.last_error = f"HTTP_{resp.status_code}"
+                self._adaptive_note(False, status_code=int(resp.status_code), latency_ms=int((time.time() - start) * 1000))
                 return
 
             payload = resp.json() or {}
@@ -636,11 +804,13 @@ class MexcFuturesDataFeed:
                 self.last_latency_ms = int((time.time() - start) * 1000)
                 self.last_error = None
                 self.consecutive_failures = 0
+                self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
         except Exception as e:
             self.total_failures += 1
             self.consecutive_failures += 1
             self.last_error_time = datetime.now()
             self.last_error = str(e)[:120]
+            self._adaptive_note(False, status_code=0, latency_ms=None)
 
     def is_symbol_supported(self, symbol: str) -> bool:
         try:
@@ -671,6 +841,7 @@ class MexcFuturesDataFeed:
         start = time.time()
         self.total_requests += 1
         try:
+            await self._adaptive_wait()
             url = f"{self.base_url}/api/v1/contract/ticker?symbol={mexc_symbol}"
             response = requests.get(url, timeout=6, verify=False)
 
@@ -690,6 +861,7 @@ class MexcFuturesDataFeed:
                         'price': px,
                         'timestamp': datetime.now()
                     }
+                    self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                     return px
 
             if response.status_code in (400, 404):
@@ -700,6 +872,8 @@ class MexcFuturesDataFeed:
             self.last_error_time = datetime.now()
             self.last_latency_ms = int((time.time() - start) * 1000)
             self.last_error = f"HTTP_{response.status_code}"
+
+            self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
 
             cached = self.prices_cache.get(symbol)
             if cached and isinstance(cached, dict):
@@ -716,6 +890,11 @@ class MexcFuturesDataFeed:
             self.last_error_time = datetime.now()
             self.last_latency_ms = int((time.time() - start) * 1000)
             self.last_error = str(e)[:120]
+
+            try:
+                self._adaptive_note(False, status_code=0, latency_ms=int((time.time() - start) * 1000))
+            except Exception:
+                pass
 
             cached = self.prices_cache.get(symbol)
             if cached and isinstance(cached, dict):
@@ -904,6 +1083,30 @@ class LivePaperTradingManager:
         except Exception:
             return symbol
 
+    def _make_client_order_id(self, symbol: str, side: str, reduce_only: bool) -> str:
+        try:
+            base = str(symbol or '').replace('/', '').replace(':', '').upper()
+        except Exception:
+            base = 'SYMBOL'
+        try:
+            s = str(side or '').lower()[:1]
+        except Exception:
+            s = 'x'
+        try:
+            ro = 'r' if reduce_only else 'o'
+        except Exception:
+            ro = 'o'
+        try:
+            ts = int(time.time() * 1000)
+        except Exception:
+            ts = int(time.time())
+        try:
+            u = uuid.uuid4().hex[:10]
+        except Exception:
+            u = str(random.randint(1000000000, 9999999999))
+        cid = f"POISE{ro}{s}{base}{ts}{u}"
+        return cid[:32]
+
     async def _sync_from_exchange(self, symbol: str = None):
         exchange = await self._get_ccxt_exchange()
 
@@ -1066,6 +1269,13 @@ class LivePaperTradingManager:
         if is_reduce:
             order_params['reduceOnly'] = True
 
+        client_order_id = None
+        try:
+            client_order_id = self._make_client_order_id(symbol, order_side, bool(is_reduce))
+            order_params['clientOrderId'] = client_order_id
+        except Exception:
+            client_order_id = None
+
         # Sizing rules match the paper engine:
         # - OPEN/ADD: amount_usd is margin -> notional = margin * leverage
         # - CLOSE/REDUCE: amount_usd is notional to close (no leverage multiplier)
@@ -1109,20 +1319,53 @@ class LivePaperTradingManager:
         if contracts <= 0:
             return {'success': False, 'error': 'Order size too small after precision/limits'}
 
+        order = None
+        attempts = 0
+        last_err = None
+        max_attempts = 4
+        base_sleep_s = 0.35
+        for attempt in range(1, max_attempts + 1):
+            attempts = attempt
+            try:
+                order = await exchange.create_order(ccxt_symbol, order_type, order_side, contracts, None, order_params)
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                msg = str(e).lower()
+                retryable = any(k in msg for k in ['timeout', 'timed out', 'tempor', 'overload', 'busy', 'network', 'rate limit', '429', 'too many'])
+                if not retryable or attempt >= max_attempts:
+                    break
+                sleep_s = base_sleep_s * (2 ** (attempt - 1))
+                try:
+                    sleep_s += random.uniform(0.0, base_sleep_s)
+                except Exception:
+                    pass
+                await asyncio.sleep(min(5.0, float(sleep_s)))
+
+        if order is None:
+            self.last_real_order_error = str(last_err) if last_err is not None else 'create_order failed'
+            return {'success': False, 'error': self.last_real_order_error}
+
         try:
-            order = await exchange.create_order(ccxt_symbol, order_type, order_side, contracts, None, order_params)
-        except Exception as e:
-            self.last_real_order_error = str(e)
-            return {'success': False, 'error': str(e)}
+            oid = order.get('id') if isinstance(order, dict) else None
+            if oid:
+                fetched = await exchange.fetch_order(oid, ccxt_symbol)
+                if fetched:
+                    order = fetched
+        except Exception:
+            pass
 
         self.last_real_order = {
             'id': order.get('id'),
+            'client_order_id': client_order_id,
             'symbol': symbol,
             'ccxt_symbol': ccxt_symbol,
             'side': order_side,
             'type': order_type,
             'contracts': contracts,
             'strategy': strategy,
+            'attempts': attempts,
             'timestamp': datetime.now().isoformat(),
         }
 
@@ -1144,6 +1387,8 @@ class LivePaperTradingManager:
                 'amount_usd': float(amount_usd or 0),
                 'mode': 'REAL_TRADING',
                 'order_id': order.get('id'),
+                'client_order_id': client_order_id,
+                'attempts': attempts,
                 'strategy': strategy,
                 'reduce_only': bool(is_reduce),
             }
@@ -1166,7 +1411,20 @@ class LivePaperTradingManager:
         
         print(f"\n🎯 EXECUTING LIVE TRADE: {action} ${amount_usd} of {symbol}")
 
-        if _REAL_TRADING_ENABLED and not self._real_trading_ready():
+        real_enabled_now = False
+        try:
+            real_env = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower()
+            real_enabled_now = real_env in ['1', 'true', 'yes', 'on']
+        except Exception:
+            real_enabled_now = False
+
+        try:
+            if not bool(getattr(self, 'real_trading_enabled', False)) and real_enabled_now:
+                self.real_trading_enabled = True
+        except Exception:
+            pass
+
+        if real_enabled_now and not self._real_trading_ready():
             raise RuntimeError(
                 "REAL_TRADING enabled but futures real trading is not ready (missing API keys/ccxt, or market_type not futures). Refusing to paper trade."
             )
