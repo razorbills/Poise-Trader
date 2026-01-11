@@ -6144,6 +6144,22 @@ class LegendaryCryptoTitanBot:
             print(f"   📊 Position closed successfully, triggering AI learning...")
 
             try:
+                if symbol in self.position_cycles:
+                    del self.position_cycles[symbol]
+                if symbol in self.position_high_water_marks:
+                    del self.position_high_water_marks[symbol]
+                if symbol in self.position_entry_time:
+                    del self.position_entry_time[symbol]
+            except Exception:
+                pass
+
+            try:
+                if str(reason or '').upper().startswith('MANUAL'):
+                    self.last_entry_ts = 0.0
+            except Exception:
+                pass
+
+            try:
                 from datetime import datetime as _dt
                 if not hasattr(self, 'trade_history') or self.trade_history is None:
                     self.trade_history = []
@@ -6408,6 +6424,12 @@ class LegendaryCryptoTitanBot:
                 print(f"   🤝 Lesson shared with cross-bot learning system")
                 
                 del self.active_signals[symbol]
+
+            try:
+                if symbol in self.active_signals:
+                    del self.active_signals[symbol]
+            except Exception:
+                pass
         else:
             print(f"   ❌ {symbol}: Failed to close position")
     
