@@ -3985,10 +3985,22 @@ class LegendaryCryptoTitanBot:
     
     async def run_micro_trading_cycle(self, cycles: int = 100):
         """🚀 Run the micro trading bot for specified cycles"""
-        
-        # START IN PAUSED STATE - Wait for dashboard control
-        self.trading_mode = 'PRECISION'  # Default to PRECISION mode
-        self.bot_running = False  # DO NOT START AUTOMATICALLY!
+
+        # Render free-tier default: auto-start PAPER trading so the bot actually trades
+        # (still controllable via dashboard start/stop). In REAL_TRADING/STRICT_REAL_DATA keep manual start.
+        try:
+            if not getattr(self, 'trading_mode', None):
+                self.trading_mode = 'PRECISION'
+        except Exception:
+            self.trading_mode = 'PRECISION'
+
+        try:
+            if _IS_RENDER and not _REAL_TRADING_ENABLED and not _STRICT_REAL_DATA:
+                self.bot_running = True
+            else:
+                self.bot_running = False
+        except Exception:
+            self.bot_running = False
 
         try:
             self.force_trade_mode = False
@@ -4003,19 +4015,27 @@ class LegendaryCryptoTitanBot:
             pass
         
         dashboard_url = self.get_dashboard_url()
-        print(f"\n⏸️ BOT INITIALIZED IN PAUSED STATE")
-        print(f"💰 Initial Capital: ${self.initial_capital:.2f}")
-        print(f"🎮 Waiting for dashboard commands...")
-        print(f"📍 Go to: {dashboard_url}")
-        print(f"👆 Click 'Start Trading' to begin!")
-        print(f"🎯 Default Mode: {self.trading_mode}")
-        print(f"⏸️ AUTO-TRADING: DISABLED - Manual control required")
-        print(f"📊 Markets Ready: {len(self.active_symbols)} symbols loaded")
-        print("=" * 60)
-        print("\n⏳ WAITING FOR YOUR COMMAND IN DASHBOARD...\n")
-        print("   ⚠️ TRADING WILL NOT START UNTIL YOU CLICK 'START TRADING'")
-        print(f"   📍 Dashboard: {dashboard_url}")
-        print("=" * 60 + "\n")
+        if self.bot_running:
+            print(f"\n▶️ BOT AUTO-STARTED (Render paper mode)")
+            print(f"💰 Initial Capital: ${self.initial_capital:.2f}")
+            print(f"🎯 Mode: {self.trading_mode}")
+            print(f"📍 Dashboard: {dashboard_url} (you can STOP at any time)")
+            print(f"📊 Markets Ready: {len(self.active_symbols)} symbols loaded")
+            print("=" * 60 + "\n")
+        else:
+            print(f"\n⏸️ BOT INITIALIZED IN PAUSED STATE")
+            print(f"💰 Initial Capital: ${self.initial_capital:.2f}")
+            print(f"🎮 Waiting for dashboard commands...")
+            print(f"📍 Go to: {dashboard_url}")
+            print(f"👆 Click 'Start Trading' to begin!")
+            print(f"🎯 Default Mode: {self.trading_mode}")
+            print(f"⏸️ AUTO-TRADING: DISABLED - Manual control required")
+            print(f"📊 Markets Ready: {len(self.active_symbols)} symbols loaded")
+            print("=" * 60)
+            print("\n⏳ WAITING FOR YOUR COMMAND IN DASHBOARD...\n")
+            print("   ⚠️ TRADING WILL NOT START UNTIL YOU CLICK 'START TRADING'")
+            print(f"   📍 Dashboard: {dashboard_url}")
+            print("=" * 60 + "\n")
         
         # Initialize entry times for any existing positions loaded from state
         try:
