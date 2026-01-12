@@ -16,26 +16,59 @@ import logging
 import re
 from collections import defaultdict, deque
 import hashlib
+import os
 
-# NLP and sentiment analysis imports
-try:
-    import tweepy
-    import praw  # Reddit API
-    from textblob import TextBlob
-    import requests
-    SOCIAL_AVAILABLE = True
-except ImportError:
-    SOCIAL_AVAILABLE = False
-    print("⚠️ Install tweepy, praw, textblob for social sentiment analysis")
+_IS_RENDER = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
 
-# Blockchain analysis imports
-try:
-    from web3 import Web3
-    import requests
-    ONCHAIN_AVAILABLE = True
-except ImportError:
-    ONCHAIN_AVAILABLE = False
-    print("⚠️ Install web3 for on-chain analytics")
+TextBlob = None
+Web3 = None
+tweepy = None
+praw = None
+requests = None
+
+SOCIAL_AVAILABLE = False
+ONCHAIN_AVAILABLE = False
+
+
+def _ensure_social_imports() -> bool:
+    global tweepy, praw, TextBlob, requests, SOCIAL_AVAILABLE
+    try:
+        if SOCIAL_AVAILABLE and TextBlob is not None:
+            return True
+        if _IS_RENDER:
+            # Defer heavy imports on Render unless explicitly needed.
+            pass
+        import requests as _requests
+        import tweepy as _tweepy
+        import praw as _praw
+        from textblob import TextBlob as _TextBlob
+        requests = _requests
+        tweepy = _tweepy
+        praw = _praw
+        TextBlob = _TextBlob
+        SOCIAL_AVAILABLE = True
+        return True
+    except Exception:
+        SOCIAL_AVAILABLE = False
+        return False
+
+
+def _ensure_onchain_imports() -> bool:
+    global Web3, requests, ONCHAIN_AVAILABLE
+    try:
+        if ONCHAIN_AVAILABLE and Web3 is not None:
+            return True
+        if _IS_RENDER:
+            pass
+        import requests as _requests
+        from web3 import Web3 as _Web3
+        requests = _requests
+        Web3 = _Web3
+        ONCHAIN_AVAILABLE = True
+        return True
+    except Exception:
+        ONCHAIN_AVAILABLE = False
+        return False
 
 @dataclass
 class SentimentData:
@@ -118,7 +151,7 @@ class SocialSentimentAnalyzer:
         """Analyze Twitter sentiment for crypto symbols"""
         sentiments = {}
         
-        if not SOCIAL_AVAILABLE:
+        if not _ensure_social_imports():
             return sentiments
         
         try:
@@ -212,7 +245,7 @@ class SocialSentimentAnalyzer:
         """Analyze Reddit sentiment from crypto subreddits"""
         sentiments = {}
         
-        if not SOCIAL_AVAILABLE:
+        if not _ensure_social_imports():
             return sentiments
         
         try:
@@ -297,7 +330,7 @@ class OnChainAnalyzer:
         """Analyze large wallet movements and whale activity"""
         whale_movements = []
         
-        if not ONCHAIN_AVAILABLE:
+        if not _ensure_onchain_imports():
             return whale_movements
         
         try:
@@ -335,10 +368,12 @@ class OnChainAnalyzer:
     async def analyze_exchange_flows(self, symbol: str) -> Dict:
         """Analyze inflows and outflows from exchanges"""
         try:
+            if not _ensure_onchain_imports():
+                return {}
             # Mock exchange flow data
             flows = {
-                'total_inflow_24h': 15000000,  # USD
-                'total_outflow_24h': 18500000,  # USD
+                'timestamp': datetime.now(),
+                'symbol': symbol,
                 'net_flow': -3500000,  # Negative = net outflow (bullish)
                 'inflow_addresses': 450,
                 'outflow_addresses': 620,

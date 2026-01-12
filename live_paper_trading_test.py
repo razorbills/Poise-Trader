@@ -67,6 +67,21 @@ class LiveMexcDataFeed:
         self.exchange_symbols = None
         self.unsupported_symbols = set()
 
+        try:
+            self._is_render = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
+        except Exception:
+            self._is_render = False
+
+        # Hard caps to avoid Render free-tier OOM (keeps features, bounds memory)
+        self._max_cache_items = 200
+        self._max_kline_items = 60
+        try:
+            if self._is_render:
+                self._max_cache_items = 40
+                self._max_kline_items = 30
+        except Exception:
+            pass
+
         self.last_ok_time = None
         self.last_error_time = None
         self.last_error = None
@@ -372,6 +387,11 @@ class LiveMexcDataFeed:
                 
                 self.orderbook_cache[symbol] = orderbook
                 try:
+                    if isinstance(self.orderbook_cache, dict) and len(self.orderbook_cache) > int(self._max_cache_items):
+                        self.orderbook_cache.pop(next(iter(self.orderbook_cache)), None)
+                except Exception:
+                    pass
+                try:
                     self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                 except Exception:
                     pass
@@ -433,6 +453,11 @@ class LiveMexcDataFeed:
                     
                     self.trades_cache[symbol] = trade_data
                     try:
+                        if isinstance(self.trades_cache, dict) and len(self.trades_cache) > int(self._max_cache_items):
+                            self.trades_cache.pop(next(iter(self.trades_cache)), None)
+                    except Exception:
+                        pass
+                    try:
                         self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                     except Exception:
                         pass
@@ -491,6 +516,11 @@ class LiveMexcDataFeed:
                     ticker['price_position'] = ((ticker['close_price'] - ticker['low_24h']) / (ticker['high_24h'] - ticker['low_24h'])) if ticker['high_24h'] != ticker['low_24h'] else 0.5
                 
                 self.ticker_24h_cache[symbol] = ticker
+                try:
+                    if isinstance(self.ticker_24h_cache, dict) and len(self.ticker_24h_cache) > int(self._max_cache_items):
+                        self.ticker_24h_cache.pop(next(iter(self.ticker_24h_cache)), None)
+                except Exception:
+                    pass
                 try:
                     self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                 except Exception:
@@ -551,7 +581,18 @@ class LiveMexcDataFeed:
                         # Skip invalid klines
                         continue
                 
+                try:
+                    if isinstance(klines, list) and len(klines) > int(self._max_kline_items):
+                        klines = klines[-int(self._max_kline_items):]
+                except Exception:
+                    pass
+
                 self.klines_cache[f"{symbol}_{interval}"] = klines
+                try:
+                    if isinstance(self.klines_cache, dict) and len(self.klines_cache) > int(self._max_cache_items):
+                        self.klines_cache.pop(next(iter(self.klines_cache)), None)
+                except Exception:
+                    pass
                 try:
                     self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                 except Exception:

@@ -17,8 +17,6 @@ import logging
 try:
     from flask import Flask, render_template, jsonify, send_from_directory, request
     from flask_socketio import SocketIO, emit
-    import plotly.graph_objs as go
-    import plotly.utils
     WEB_AVAILABLE = True
 except ImportError:
     WEB_AVAILABLE = False

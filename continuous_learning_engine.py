@@ -21,6 +21,27 @@ from collections import deque, defaultdict
 from datetime import datetime, timedelta
 import random
 
+try:
+    import psutil
+except Exception:
+    psutil = None
+
+
+def _memory_pressure_high() -> bool:
+    try:
+        if psutil is None:
+            return False
+        proc = psutil.Process(os.getpid())
+        rss = float(proc.memory_info().rss or 0)
+        vm = psutil.virtual_memory()
+        total = float(getattr(vm, 'total', 0) or 0)
+        if total > 0:
+            if rss / total >= 0.75:
+                return True
+        return rss >= 420 * 1024 * 1024
+    except Exception:
+        return False
+
 _REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 _STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 ALLOW_SIMULATED_FEATURES = (
@@ -28,6 +49,8 @@ ALLOW_SIMULATED_FEATURES = (
     and not _REAL_TRADING_ENABLED
     and not _STRICT_REAL_DATA
 )
+
+_IS_RENDER = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
 
 
 class DataAggregator:
@@ -51,6 +74,18 @@ class DataAggregator:
         self.collected_data_points = 0
         self.pattern_database = {}
         self.historical_cache_file = os.path.join("data", "historical_training_data.json")
+
+        try:
+            self._is_render = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
+        except Exception:
+            self._is_render = False
+
+        self.max_patterns_in_memory = 5000
+        try:
+            if self._is_render:
+                self.max_patterns_in_memory = 200
+        except Exception:
+            self.max_patterns_in_memory = 5000
         
         # Load existing historical data
         self._load_historical_cache()
@@ -59,10 +94,28 @@ class DataAggregator:
         """Load previously collected data"""
         try:
             if os.path.exists(self.historical_cache_file):
+                try:
+                    if self._is_render:
+                        size = os.path.getsize(self.historical_cache_file)
+                        if size > 5 * 1024 * 1024:
+                            print(f"📚 Historical cache present ({size/1024/1024:.1f}MB) - skipping load on Render")
+                            return
+                except Exception:
+                    pass
                 with open(self.historical_cache_file, 'r') as f:
                     cache = json.load(f)
                     self.collected_data_points = cache.get('total_points', 0)
                     self.pattern_database = cache.get('patterns', {})
+                    try:
+                        if isinstance(self.pattern_database, dict) and len(self.pattern_database) > int(self.max_patterns_in_memory):
+                            while len(self.pattern_database) > int(self.max_patterns_in_memory):
+                                try:
+                                    oldest = next(iter(self.pattern_database))
+                                    self.pattern_database.pop(oldest, None)
+                                except Exception:
+                                    break
+                    except Exception:
+                        pass
                     print(f"📚 Loaded {self.collected_data_points:,} historical data points")
         except Exception as e:
             print(f"⚠️ Could not load historical cache: {e}")
@@ -71,9 +124,18 @@ class DataAggregator:
         """Save collected data for future sessions"""
         try:
             os.makedirs("data", exist_ok=True)
+            patterns = self.pattern_database
+            try:
+                if isinstance(patterns, dict) and len(patterns) > int(self.max_patterns_in_memory):
+                    trimmed = {}
+                    for k in list(patterns.keys())[-int(self.max_patterns_in_memory):]:
+                        trimmed[k] = patterns.get(k)
+                    patterns = trimmed
+            except Exception:
+                patterns = self.pattern_database
             cache = {
                 'total_points': self.collected_data_points,
-                'patterns': self.pattern_database,
+                'patterns': patterns,
                 'last_update': datetime.now().isoformat()
             }
             with open(self.historical_cache_file, 'w') as f:
@@ -105,50 +167,43 @@ class DataAggregator:
             print(f"⚠️ Live data collection error: {e}")
             return {}
     
-    def generate_synthetic_data(self, base_prices: Dict[str, float], num_scenarios: int = 1000) -> List[Dict]:
-        """
-        Generate thousands of synthetic scenarios based on real market behavior
-        Uses Monte Carlo simulation to create realistic price movements
-        """
-        synthetic_scenarios = []
-        
+    def generate_synthetic_data_stream(self, base_prices: Dict[str, float], num_scenarios: int = 1000):
+        """Stream synthetic scenarios to avoid building huge in-memory lists."""
         try:
-            for symbol, base_price in base_prices.items():
-                # Generate 1000 scenarios for each symbol
-                for i in range(num_scenarios):
-                    # Simulate realistic price movements using random walk
-                    volatility = random.uniform(0.01, 0.05)  # 1-5% volatility
-                    num_steps = 50  # 50 time steps per scenario
-                    
-                    prices = [base_price]
-                    for step in range(num_steps):
-                        # Geometric Brownian Motion simulation
+            for symbol, base_price in (base_prices or {}).items():
+                for _i in range(int(num_scenarios or 0)):
+                    volatility = random.uniform(0.01, 0.05)
+                    num_steps = 50
+
+                    prices = [float(base_price)]
+                    for _step in range(int(num_steps)):
                         drift = random.uniform(-0.001, 0.001)
                         shock = np.random.normal(0, volatility)
-                        
                         new_price = prices[-1] * (1 + drift + shock)
-                        prices.append(new_price)
-                    
-                    # Calculate features from this scenario
+                        prices.append(float(new_price))
+
                     scenario = {
                         'symbol': symbol,
                         'prices': prices,
                         'volatility': volatility,
-                        'returns': [(prices[i] - prices[i-1]) / prices[i-1] for i in range(1, len(prices))],
                         'max_drawdown': self._calculate_drawdown(prices),
                         'sharpe_ratio': self._calculate_sharpe(prices),
                         'trend': 'UP' if prices[-1] > prices[0] else 'DOWN'
                     }
-                    
-                    synthetic_scenarios.append(scenario)
                     self.collected_data_points += len(prices)
-            
-            print(f"🔬 Generated {len(synthetic_scenarios):,} synthetic scenarios ({len(synthetic_scenarios) * 50:,} data points)")
-            
+                    yield scenario
         except Exception as e:
             print(f"⚠️ Synthetic data generation error: {e}")
-        
-        return synthetic_scenarios
+
+    def generate_synthetic_data(self, base_prices: Dict[str, float], num_scenarios: int = 1000) -> List[Dict]:
+        """Compatibility wrapper. Prefer generate_synthetic_data_stream to reduce memory."""
+        scenarios = []
+        try:
+            for s in self.generate_synthetic_data_stream(base_prices, num_scenarios=num_scenarios):
+                scenarios.append(s)
+        except Exception:
+            pass
+        return scenarios
     
     def _calculate_drawdown(self, prices: List[float]) -> float:
         """Calculate maximum drawdown"""
@@ -200,6 +255,12 @@ class DataAggregator:
                         'outcome': future_move,
                         'success': (momentum * future_move) > 0  # Same direction
                     })
+
+            try:
+                if len(patterns['momentum_patterns']) > 25:
+                    patterns['momentum_patterns'] = patterns['momentum_patterns'][-25:]
+            except Exception:
+                pass
             
             # Reversal patterns
             for i in range(5, len(price_data) - 5):
@@ -210,6 +271,12 @@ class DataAggregator:
                         'type': 'peak',
                         'outcome': future_move
                     })
+
+            try:
+                if len(patterns['reversal_patterns']) > 25:
+                    patterns['reversal_patterns'] = patterns['reversal_patterns'][-25:]
+            except Exception:
+                pass
             
             # Store in database
             pattern_id = f"pattern_{len(self.pattern_database)}"
@@ -218,6 +285,17 @@ class DataAggregator:
                 'patterns': patterns,
                 'data_points': len(price_data)
             }
+
+            try:
+                if isinstance(self.pattern_database, dict) and len(self.pattern_database) > int(self.max_patterns_in_memory):
+                    while len(self.pattern_database) > int(self.max_patterns_in_memory):
+                        try:
+                            oldest = next(iter(self.pattern_database))
+                            self.pattern_database.pop(oldest, None)
+                        except Exception:
+                            break
+            except Exception:
+                pass
             
         except Exception as e:
             print(f"⚠️ Pattern extraction error: {e}")
@@ -242,16 +320,30 @@ class ContinuousLearningEngine:
     
     def __init__(self):
         self.data_aggregator = DataAggregator()
+
+        self._is_render = _IS_RENDER
         
         # Learning components
         self.strategy_performance = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0.0})
         self.pattern_success_rates = {}
         self.learned_rules = []
         
-        # Experience replay buffer (stores last 10,000 trades)
-        self.experience_buffer = deque(maxlen=10000)
+        exp_maxlen = 10000
+        try:
+            if self._is_render:
+                exp_maxlen = 2500
+        except Exception:
+            exp_maxlen = 10000
+
+        self.experience_buffer = deque(maxlen=int(exp_maxlen))
         
-        # Model parameters (simple Q-learning style)
+        self._max_q_states = 5000
+        try:
+            if self._is_render:
+                self._max_q_states = 500
+        except Exception:
+            self._max_q_states = 5000
+
         self.q_table = defaultdict(lambda: {'BUY': 0.0, 'SELL': 0.0, 'HOLD': 0.0})
         self.learning_rate = 0.1
         self.discount_factor = 0.95
@@ -268,11 +360,34 @@ class ContinuousLearningEngine:
         try:
             knowledge_path = os.path.join("data", "learned_knowledge.json")
             if os.path.exists(knowledge_path):
+                try:
+                    if self._is_render:
+                        size = os.path.getsize(knowledge_path)
+                        if size > 5 * 1024 * 1024:
+                            print(f"🧠 Learned knowledge present ({size/1024/1024:.1f}MB) - skipping load on Render")
+                            return
+                except Exception:
+                    pass
                 with open(knowledge_path, 'r') as f:
                     knowledge = json.load(f)
                     self.learning_iterations = knowledge.get('iterations', 0)
                     self.learned_rules = knowledge.get('rules', [])
                     self.pattern_success_rates = knowledge.get('patterns', {})
+                    try:
+                        qt = knowledge.get('q_table')
+                        if isinstance(qt, dict):
+                            if self._is_render and len(qt) > int(self._max_q_states):
+                                keys = list(qt.keys())[-int(self._max_q_states):]
+                                qt = {k: qt.get(k) for k in keys}
+                            for k, v in qt.items():
+                                if isinstance(v, dict):
+                                    self.q_table[str(k)] = {
+                                        'BUY': float(v.get('BUY', 0.0) or 0.0),
+                                        'SELL': float(v.get('SELL', 0.0) or 0.0),
+                                        'HOLD': float(v.get('HOLD', 0.0) or 0.0),
+                                    }
+                    except Exception:
+                        pass
                     print(f"🧠 Loaded {len(self.learned_rules)} learned rules from previous sessions")
         except Exception as e:
             print(f"⚠️ Could not load knowledge: {e}")
@@ -307,18 +422,37 @@ class ContinuousLearningEngine:
             
             # 2. Generate synthetic scenarios for training
             if live_data and 'data' in live_data and self.data_aggregator.data_sources.get('synthetic_generation', False):
-                current_prices = {s: d['price'] for s, d in live_data['data'].items()}
-                synthetic_data = self.data_aggregator.generate_synthetic_data(current_prices, num_scenarios=500)
-                
-                # 3. Learn from synthetic scenarios
-                for scenario in synthetic_data[:100]:  # Process 100 at a time
-                    self._learn_from_scenario(scenario)
+                if not _memory_pressure_high():
+                    current_prices = {s: d['price'] for s, d in live_data['data'].items()}
+
+                    num_scenarios = 500
+                    processed_limit = 80
+                    try:
+                        if getattr(self.data_aggregator, '_is_render', False):
+                            num_scenarios = 250
+                            processed_limit = 250
+                    except Exception:
+                        num_scenarios = 500
+
+                    try:
+                        if int(processed_limit) > int(num_scenarios):
+                            processed_limit = int(num_scenarios)
+                    except Exception:
+                        pass
+
+                    processed = 0
+                    for scenario in self.data_aggregator.generate_synthetic_data_stream(current_prices, num_scenarios=num_scenarios):
+                        self._learn_from_scenario(scenario)
+                        processed += 1
+                        if processed >= int(processed_limit):
+                            break
             
             # 4. Extract patterns from price history
-            for symbol, prices in price_history.items():
-                if len(prices) >= 50:
-                    patterns = self.data_aggregator.extract_patterns_from_data(list(prices))
-                    self._update_pattern_knowledge(patterns)
+            if not _memory_pressure_high():
+                for symbol, prices in price_history.items():
+                    if len(prices) >= 50:
+                        patterns = self.data_aggregator.extract_patterns_from_data(list(prices))
+                        self._update_pattern_knowledge(patterns)
             
             # 5. Save learned knowledge
             self.learning_iterations += 1
@@ -372,10 +506,10 @@ class ContinuousLearningEngine:
         momentum = (prices[index] - prices[index-5]) / prices[index-5]
         recent_volatility = np.std([prices[i] / prices[i-1] - 1 for i in range(index-5, index)])
         
-        momentum_bucket = "up" if momentum > 0.01 else "down" if momentum < -0.01 else "flat"
-        vol_bucket = "high" if recent_volatility > 0.02 else "low"
-        
-        return f"{momentum_bucket}_{vol_bucket}"
+        momentum_bucket = "U" if momentum > 0.01 else "D" if momentum < -0.01 else "F"
+        vol_bucket = "H" if recent_volatility > 0.02 else "L"
+
+        return f"{momentum_bucket}{vol_bucket}"
     
     def _update_q_value(self, state: str, action: str, reward: float):
         """Update Q-learning table"""
@@ -384,6 +518,17 @@ class ContinuousLearningEngine:
         # Q-learning update rule
         new_q = current_q + self.learning_rate * (reward - current_q)
         self.q_table[state][action] = new_q
+
+        try:
+            if isinstance(self.q_table, dict) and len(self.q_table) > int(self._max_q_states):
+                try:
+                    oldest = next(iter(self.q_table))
+                    if oldest != state:
+                        self.q_table.pop(oldest, None)
+                except Exception:
+                    pass
+        except Exception:
+            pass
     
     def _update_pattern_knowledge(self, patterns: Dict):
         """Update knowledge about pattern success rates"""
@@ -436,7 +581,7 @@ class ContinuousLearningEngine:
         """Analyze experience buffer to discover winning patterns"""
         try:
             # Analyze last 100 trades
-            recent_trades = list(self.experience_buffer)[-100:]
+            recent_trades = list(deque(self.experience_buffer, maxlen=100))
             
             winning_trades = [t for t in recent_trades if t['win']]
             
@@ -455,6 +600,14 @@ class ContinuousLearningEngine:
                     # Add rule if not already present
                     if rule not in self.learned_rules:
                         self.learned_rules.append(rule)
+                        try:
+                            max_rules = 200
+                            if self._is_render:
+                                max_rules = 60
+                            if isinstance(self.learned_rules, list) and len(self.learned_rules) > int(max_rules):
+                                self.learned_rules = self.learned_rules[-int(max_rules):]
+                        except Exception:
+                            pass
                         print(f"🎓 LEARNED NEW RULE: Require {avg_confidence:.1%} confidence (from {len(winning_trades)} winning trades)")
         
         except Exception as e:

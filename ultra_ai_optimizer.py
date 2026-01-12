@@ -12,6 +12,20 @@ from typing import Dict, List, Optional, Tuple
 from collections import deque, defaultdict
 from dataclasses import dataclass, asdict
 
+_IS_RENDER = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
+
+
+def _file_too_large_for_render(path: str, max_mb: float = 5.0) -> bool:
+    try:
+        if not _IS_RENDER:
+            return False
+        if not path or not os.path.exists(path):
+            return False
+        size = os.path.getsize(path)
+        return size > float(max_mb) * 1024 * 1024
+    except Exception:
+        return False
+
 @dataclass
 class TradeLesson:
     """Complete trade lesson for AI learning"""
@@ -488,34 +502,50 @@ class UltraAIOptimizer:
                 
         except Exception as e:
             print(f"Error saving learning data: {e}")
-    
+
     def load_learning_data(self):
         """Load existing learning data"""
         try:
             if os.path.exists(self.learning_file):
-                with open(self.learning_file, 'r') as f:
-                    data = json.load(f)
-                    
-                self.current_win_rate = data.get('current_win_rate', 0.0)
-                self.win_streak = data.get('win_streak', 0)
-                self.loss_streak = data.get('loss_streak', 0)
-                self.strategy_weights = data.get('strategy_weights', self.strategy_weights)
-                self.best_trading_hours = data.get('best_trading_hours', {})
-                
-                # Convert hour keys back to integers
-                self.best_trading_hours = {int(k): v for k, v in self.best_trading_hours.items()}
-                
-                print(f"📚 Loaded AI learning data: {data.get('total_trades', 0)} trades, {self.current_win_rate:.1%} win rate")
-            
+                if _file_too_large_for_render(self.learning_file, max_mb=5.0):
+                    print("📚 Ultra AI learning file is large - skipping load on Render")
+                else:
+                    with open(self.learning_file, 'r') as f:
+                        data = json.load(f)
+
+                    self.current_win_rate = data.get('current_win_rate', 0.0)
+                    self.win_streak = data.get('win_streak', 0)
+                    self.loss_streak = data.get('loss_streak', 0)
+                    self.strategy_weights = data.get('strategy_weights', self.strategy_weights)
+                    self.best_trading_hours = data.get('best_trading_hours', {})
+                    try:
+                        self.best_trading_hours = {int(k): v for k, v in self.best_trading_hours.items()}
+                    except Exception:
+                        pass
+
+                    print(f"📚 Loaded AI learning data: {data.get('total_trades', 0)} trades, {self.current_win_rate:.1%} win rate")
+
             if os.path.exists(self.winning_patterns_file):
+                if _file_too_large_for_render(self.winning_patterns_file, max_mb=5.0):
+                    print("📊 Winning patterns file is large - skipping load on Render")
+                    return
+
                 with open(self.winning_patterns_file, 'r') as f:
                     patterns_data = json.load(f)
-                    
-                for pattern_id, pattern_dict in patterns_data.get('patterns', {}).items():
-                    self.winning_patterns[pattern_id] = WinningPattern(**pattern_dict)
-                
+
+                patterns = patterns_data.get('patterns', {}) or {}
+                if _IS_RENDER and isinstance(patterns, dict) and len(patterns) > 200:
+                    keys = list(patterns.keys())[-200:]
+                    patterns = {k: patterns.get(k) for k in keys}
+
+                for pattern_id, pattern_dict in patterns.items():
+                    try:
+                        self.winning_patterns[pattern_id] = WinningPattern(**pattern_dict)
+                    except Exception:
+                        continue
+
                 print(f"📊 Loaded {len(self.winning_patterns)} winning patterns")
-                
+
         except Exception as e:
             print(f"Error loading learning data: {e}")
 
@@ -526,7 +556,7 @@ class UltraAIOptimizer:
             self.load_learning_data()
         except Exception as e:
             print(f"Error in load_state: {e}")
-    
+
     def save_state(self):
         """Save optimizer state (compat wrapper)."""
         try:
@@ -544,6 +574,7 @@ class UltraAIOptimizer:
             return list(recs)
         except Exception:
             return []
+
 
 # Global instance
 ultra_ai_optimizer = UltraAIOptimizer()

@@ -14,6 +14,20 @@ from collections import defaultdict, deque
 from ml_components import neural_predictor, rl_optimizer, pattern_engine, TradingSignalML
 from ultra_ai_optimizer import UltraAIOptimizer
 
+_IS_RENDER = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
+
+
+def _file_too_large_for_render(path: str, max_mb: float = 5.0) -> bool:
+    try:
+        if not _IS_RENDER:
+            return False
+        if not path or not os.path.exists(path):
+            return False
+        size = os.path.getsize(path)
+        return size > float(max_mb) * 1024 * 1024
+    except Exception:
+        return False
+
 class AIBrain:
     """Persistent AI brain that learns and remembers across sessions"""
     
@@ -124,6 +138,10 @@ class AIBrain:
         """Load AI brain from file"""
         try:
             if os.path.exists(self.brain_file):
+                if _file_too_large_for_render(self.brain_file, max_mb=5.0):
+                    print("🧠 AI brain file is large - skipping load on Render")
+                    self.save_brain()
+                    return
                 with open(self.brain_file, 'r') as f:
                     loaded_brain = json.load(f)
                     
@@ -131,7 +149,40 @@ class AIBrain:
                 self._merge_brain_data(loaded_brain)
                 
                 # Load ultra optimizer state
-                self.ultra_optimizer.load_state()
+                try:
+                    if not _file_too_large_for_render(getattr(self.ultra_optimizer, 'learning_file', ''), max_mb=5.0) and not _file_too_large_for_render(getattr(self.ultra_optimizer, 'winning_patterns_file', ''), max_mb=5.0):
+                        self.ultra_optimizer.load_state()
+                except Exception:
+                    pass
+
+                try:
+                    if _IS_RENDER:
+                        rt = self.brain.get('recent_trades')
+                        if isinstance(rt, list) and len(rt) > 200:
+                            self.brain['recent_trades'] = rt[-200:]
+
+                        wrh = self.brain.get('win_rate_history')
+                        if isinstance(wrh, list) and len(wrh) > 50:
+                            self.brain['win_rate_history'] = wrh[-50:]
+
+                        ks = self.brain.get('knowledge_sessions')
+                        if isinstance(ks, list) and len(ks) > 20:
+                            self.brain['knowledge_sessions'] = ks[-20:]
+
+                        em = self.brain.get('execution_metrics')
+                        if isinstance(em, dict) and isinstance(em.get('slippage'), list) and len(em.get('slippage') or []) > 50:
+                            em['slippage'] = list(em.get('slippage') or [])[-50:]
+                            self.brain['execution_metrics'] = em
+
+                        sk = self.brain.get('symbol_knowledge')
+                        if isinstance(sk, dict) and len(sk) > 120:
+                            trimmed = {}
+                            keys = list(sk.keys())[-120:]
+                            for k in keys:
+                                trimmed[k] = sk.get(k)
+                            self.brain['symbol_knowledge'] = trimmed
+                except Exception:
+                    pass
                 
                 print(f"🧠 AI BRAIN LOADED: {self.brain['total_trades']} trades, {self.brain['learning_sessions']} sessions")
                 print(f"   📈 Win Rate: {self.brain.get('win_rate', 0):.1%}")
@@ -150,6 +201,8 @@ class AIBrain:
             print("🧠 Starting with fresh brain...")
             if os.path.exists(self.backup_file):
                 try:
+                    if _file_too_large_for_render(self.backup_file, max_mb=5.0):
+                        return
                     with open(self.backup_file, 'r') as f:
                         self.brain = json.load(f)
                     print("✅ Restored from backup")

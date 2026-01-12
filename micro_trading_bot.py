@@ -59,6 +59,8 @@ ALLOW_SIMULATED_FEATURES = (
     and not _STRICT_REAL_DATA
 )
 
+_IS_RENDER = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
+
 # Utility: safely await only when needed
 async def _maybe_await(value):
     try:
@@ -101,21 +103,10 @@ except ImportError as e:
     print(f"⚠️ Institutional systems not available: {e}")
 
 # Live graph visualization imports
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
-    from matplotlib.patches import Rectangle, FancyBboxPatch
-    from matplotlib.dates import DateFormatter
-    import matplotlib.dates as mdates
-    from matplotlib.patches import Circle, Arrow
-    import matplotlib.gridspec as gridspec
-    from mplfinance.original_flavor import candlestick_ohlc
-    import pandas as pd
-    PLOTTING_AVAILABLE = True
-    print("📈 Enhanced chart visualization with candlestick patterns ENABLED!")
-except ImportError as e:
+if _IS_RENDER:
+    PLOTTING_AVAILABLE = False
+else:
     try:
-        # Try basic matplotlib without mplfinance
         import matplotlib.pyplot as plt
         import matplotlib.animation as animation
         from matplotlib.patches import Rectangle, FancyBboxPatch
@@ -123,22 +114,40 @@ except ImportError as e:
         import matplotlib.dates as mdates
         from matplotlib.patches import Circle, Arrow
         import matplotlib.gridspec as gridspec
+        from mplfinance.original_flavor import candlestick_ohlc
         import pandas as pd
         PLOTTING_AVAILABLE = True
-        print("📈 Basic enhanced chart visualization ENABLED! (Install mplfinance for full candlestick support)")
-    except ImportError:
-        PLOTTING_AVAILABLE = False
-        print("⚠️ Matplotlib not available. Install with: pip install matplotlib numpy pandas mplfinance")
+        print("📈 Enhanced chart visualization with candlestick patterns ENABLED!")
+    except ImportError as e:
+        try:
+            # Try basic matplotlib without mplfinance
+            import matplotlib.pyplot as plt
+            import matplotlib.animation as animation
+            from matplotlib.patches import Rectangle, FancyBboxPatch
+            from matplotlib.dates import DateFormatter
+            import matplotlib.dates as mdates
+            from matplotlib.patches import Circle, Arrow
+            import matplotlib.gridspec as gridspec
+            import pandas as pd
+            PLOTTING_AVAILABLE = True
+            print("📈 Basic enhanced chart visualization ENABLED! (Install mplfinance for full candlestick support)")
+        except ImportError:
+            PLOTTING_AVAILABLE = False
+            print("⚠️ Matplotlib not available. Install with: pip install matplotlib numpy pandas mplfinance")
 
 # Import our enhanced live chart system
-try:
-    import live_trading_chart as ltc
-    ENHANCED_CHARTS_AVAILABLE = True
-    print("🚀 Enhanced live charts with TP/SL visualization ENABLED!")
-except ImportError as e:
+if _IS_RENDER:
     ENHANCED_CHARTS_AVAILABLE = False
     ltc = None
-    print(f"⚠️ Enhanced charts not available: {e}")
+else:
+    try:
+        import live_trading_chart as ltc
+        ENHANCED_CHARTS_AVAILABLE = True
+        print("🚀 Enhanced live charts with TP/SL visualization ENABLED!")
+    except ImportError as e:
+        ENHANCED_CHARTS_AVAILABLE = False
+        ltc = None
+        print(f"⚠️ Enhanced charts not available: {e}")
 
 try:
     import tkinter as tk
@@ -7660,6 +7669,13 @@ class LegendaryCryptoTitanBot:
         # Initialize market data storage for AI
         if not hasattr(self, 'market_data_history'):
             self.market_data_history = {}
+
+        history_maxlen = 50
+        try:
+            if _IS_RENDER:
+                history_maxlen = 6
+        except Exception:
+            history_maxlen = 50
         
         while True:
             try:
@@ -7727,9 +7743,56 @@ class LegendaryCryptoTitanBot:
                                 if comprehensive_data:
                                     # Store for AI learning
                                     if primary_symbol not in self.market_data_history:
-                                        self.market_data_history[primary_symbol] = deque(maxlen=50)
-                                    
-                                    self.market_data_history[primary_symbol].append(comprehensive_data)
+                                        self.market_data_history[primary_symbol] = deque(maxlen=history_maxlen)
+
+                                    safe_payload = comprehensive_data
+                                    try:
+                                        if _IS_RENDER and isinstance(comprehensive_data, dict):
+                                            ob = comprehensive_data.get('orderbook') if isinstance(comprehensive_data.get('orderbook'), dict) else {}
+                                            tr = comprehensive_data.get('recent_trades') if isinstance(comprehensive_data.get('recent_trades'), dict) else {}
+                                            tk = comprehensive_data.get('ticker_24h') if isinstance(comprehensive_data.get('ticker_24h'), dict) else {}
+                                            kl = comprehensive_data.get('klines') if isinstance(comprehensive_data.get('klines'), dict) else {}
+
+                                            def _tail(x, n):
+                                                try:
+                                                    if isinstance(x, list) and len(x) > n:
+                                                        return x[-n:]
+                                                except Exception:
+                                                    return x
+                                                return x
+
+                                            safe_payload = {
+                                                'symbol': comprehensive_data.get('symbol', primary_symbol),
+                                                'timestamp': comprehensive_data.get('timestamp'),
+                                                'price': comprehensive_data.get('price'),
+                                                'orderbook': {
+                                                    'spread_pct': ob.get('spread_pct', 0.0),
+                                                    'volume_imbalance': ob.get('volume_imbalance', 0.0),
+                                                },
+                                                'recent_trades': {
+                                                    'buy_sell_ratio': tr.get('buy_sell_ratio', 1.0),
+                                                    'volume_pressure': tr.get('volume_pressure', 0.0),
+                                                    'buy_volume': tr.get('buy_volume', 0.0),
+                                                    'sell_volume': tr.get('sell_volume', 0.0),
+                                                },
+                                                'ticker_24h': {
+                                                    'price_change_pct': tk.get('price_change_pct', 0.0),
+                                                    'volatility_24h': tk.get('volatility_24h', 0.0),
+                                                    'volume_24h': tk.get('volume_24h', 0.0),
+                                                },
+                                                'klines': {
+                                                    '1m': _tail(kl.get('1m', []), 5),
+                                                    '5m': _tail(kl.get('5m', []), 5),
+                                                    '15m': _tail(kl.get('15m', []), 5),
+                                                },
+                                                'market_sentiment': comprehensive_data.get('market_sentiment', 0.0),
+                                                'liquidity_score': comprehensive_data.get('liquidity_score', 0.0),
+                                                'momentum_score': comprehensive_data.get('momentum_score', 0.0),
+                                            }
+                                    except Exception:
+                                        safe_payload = comprehensive_data
+
+                                    self.market_data_history[primary_symbol].append(safe_payload)
                                     
                                     # Print summary
                                     print(f"   ✅ {primary_symbol} comprehensive data collected:")
