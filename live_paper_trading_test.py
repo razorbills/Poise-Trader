@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-🔥 LIVE PAPER TRADING TEST
+ LIVE PAPER TRADING TEST
 Test paper trading with REAL live MEXC prices instead of demo data
 """
 
 import asyncio
 import aiohttp
-import json
-import logging
-from datetime import datetime
-from typing import Dict, List, Any
+import time
+import warnings
+import urllib3
+import os
+from typing import Dict, List, Optional
 import random
 import sys
 from pathlib import Path
@@ -24,8 +25,18 @@ try:
 except Exception:
     ccxt = None
 
-# Disable SSL warnings for requests
+# Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+async def _requests_get_async(url: str, timeout: float = 5, verify: bool = False):
+    """Run requests.get in a worker thread so async loops don't stall."""
+    try:
+        return await asyncio.to_thread(requests.get, url, timeout=timeout, verify=verify)
+    except Exception:
+        # Fallback for environments without to_thread
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: requests.get(url, timeout=timeout, verify=verify))
 
 # Add core modules to path
 sys.path.append(str(Path(__file__).parent))
@@ -109,7 +120,6 @@ class LiveMexcDataFeed:
                     self.exchange_symbols = symbols
         except Exception:
             self.exchange_symbols = None
-        print("📊 Enhanced MEXC Data Feed initialized - collecting comprehensive market data")
 
     async def _adaptive_wait(self):
         try:
@@ -202,7 +212,7 @@ class LiveMexcDataFeed:
         # Convert symbol format (BTC/USDT -> BTCUSDT)
         mexc_symbol = self._normalize_symbol(symbol)
         if not self.is_symbol_supported(symbol):
-            print(f"⚠️ Unsupported symbol on MEXC spot: {symbol}")
+            print(f" Unsupported symbol on MEXC spot: {symbol}")
             return None
         
         # Use requests library which works reliably
@@ -211,7 +221,7 @@ class LiveMexcDataFeed:
         self.total_requests += 1
         try:
             url = f"{self.base_url}/api/v3/ticker/price?symbol={mexc_symbol}"
-            response = requests.get(url, timeout=5, verify=False)
+            response = await _requests_get_async(url, timeout=5, verify=False)
             
             if response.status_code == 200:
                 data = response.json()
@@ -241,7 +251,7 @@ class LiveMexcDataFeed:
                 self.last_latency_ms = int((time.time() - start) * 1000)
                 self.last_error = f"HTTP_{response.status_code}"
 
-                print(f"⚠️ Failed to get {symbol} price: Status {response.status_code}")
+                print(f" Failed to get {symbol} price: Status {response.status_code}")
 
                 self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
 
@@ -263,7 +273,7 @@ class LiveMexcDataFeed:
             self.last_error = str(e)[:120]
 
             self._adaptive_note(False, status_code=0, latency_ms=int((time.time() - start) * 1000))
-            print(f"❌ Error getting {symbol} price: {str(e)[:50]}")
+            print(f" Error getting {symbol} price: {str(e)[:50]}")
 
             cached = self.prices_cache.get(symbol)
             if cached and isinstance(cached, dict):
@@ -285,7 +295,7 @@ class LiveMexcDataFeed:
                 self._adaptive_note(False, status_code=0, latency_ms=int((time.time() - start) * 1000))
             except Exception:
                 pass
-            print(f"❌ Unexpected error getting {symbol} price: {str(e)[:50]}")
+            print(f" Unexpected error getting {symbol} price: {str(e)[:50]}")
 
             cached = self.prices_cache.get(symbol)
             if cached and isinstance(cached, dict):
@@ -311,7 +321,7 @@ class LiveMexcDataFeed:
             try:
                 await self._adaptive_wait()
                 url = f"{self.base_url}/api/v3/ticker/price"
-                response = requests.get(url, timeout=8, verify=False)
+                response = await _requests_get_async(url, timeout=8, verify=False)
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, list):
@@ -363,7 +373,7 @@ class LiveMexcDataFeed:
             await self._adaptive_wait()
             start = time.time()
             url = f"{self.base_url}/api/v3/depth?symbol={mexc_symbol}&limit={limit}"
-            response = requests.get(url, timeout=5, verify=False)
+            response = await _requests_get_async(url, timeout=5, verify=False)
             
             if response.status_code == 200:
                 data = response.json()
@@ -420,7 +430,7 @@ class LiveMexcDataFeed:
             await self._adaptive_wait()
             start = time.time()
             url = f"{self.base_url}/api/v3/trades?symbol={mexc_symbol}&limit={limit}"
-            response = requests.get(url, timeout=5, verify=False)
+            response = await _requests_get_async(url, timeout=5, verify=False)
             
             if response.status_code == 200:
                 data = response.json()
@@ -486,7 +496,7 @@ class LiveMexcDataFeed:
             await self._adaptive_wait()
             start = time.time()
             url = f"{self.base_url}/api/v3/ticker/24hr?symbol={mexc_symbol}"
-            response = requests.get(url, timeout=5, verify=False)
+            response = await _requests_get_async(url, timeout=5, verify=False)
             
             if response.status_code == 200:
                 data = response.json()
@@ -550,7 +560,7 @@ class LiveMexcDataFeed:
             await self._adaptive_wait()
             start = time.time()
             url = f"{self.base_url}/api/v3/klines?symbol={mexc_symbol}&interval={interval}&limit={limit}"
-            response = requests.get(url, timeout=5, verify=False)
+            response = await _requests_get_async(url, timeout=5, verify=False)
             
             if response.status_code == 200:
                 data = response.json()
@@ -714,12 +724,9 @@ class MexcFuturesDataFeed:
         self._adaptive_next_ts = 0.0
         self._adaptive_last_reason = None
 
-        try:
-            self._load_contracts_if_needed(force=True)
-        except Exception:
-            pass
+        asyncio.run(self._load_contracts_if_needed(force=True))
 
-    async def _adaptive_wait(self):
+    async def _refresh_contracts(self):
         try:
             now = time.time()
             next_ts = float(getattr(self, '_adaptive_next_ts', 0.0) or 0.0)
@@ -728,77 +735,7 @@ class MexcFuturesDataFeed:
         except Exception:
             pass
 
-    def _adaptive_note(self, ok: bool, status_code: int = None, latency_ms: int = None):
-        try:
-            delay = float(getattr(self, '_adaptive_delay_s', 0.0) or 0.0)
-            min_d = float(getattr(self, '_adaptive_min_delay_s', 0.05) or 0.05)
-            max_d = float(getattr(self, '_adaptive_max_delay_s', 2.5) or 2.5)
-
-            if ok:
-                if latency_ms is not None and int(latency_ms) > 1200:
-                    delay = min(max_d, max(min_d, delay * 1.15 + 0.05))
-                    self._adaptive_last_reason = 'high_latency'
-                else:
-                    delay = max(0.0, delay * 0.85 - 0.02)
-                    self._adaptive_last_reason = None
-            else:
-                if int(status_code or 0) == 429:
-                    delay = min(max_d, max(1.0, delay * 2.5 + 0.5))
-                    self._adaptive_last_reason = 'rate_limit_429'
-                else:
-                    delay = min(max_d, max(min_d, delay * 1.7 + 0.10))
-                    self._adaptive_last_reason = f'error_{int(status_code or 0)}'
-
-            self._adaptive_delay_s = float(delay)
-            self._adaptive_next_ts = float(time.time()) + float(delay)
-        except Exception:
-            try:
-                self._adaptive_next_ts = float(time.time()) + 0.1
-            except Exception:
-                pass
-
-    def get_health(self) -> Dict[str, Any]:
-        try:
-            now = datetime.now()
-            age_ok_s = (now - self.last_ok_time).total_seconds() if self.last_ok_time else None
-            age_err_s = (now - self.last_error_time).total_seconds() if self.last_error_time else None
-            connected = bool(self.last_ok_time and age_ok_s is not None and age_ok_s <= 30)
-            return {
-                'connected': connected,
-                'last_ok_time': self.last_ok_time.isoformat() if self.last_ok_time else None,
-                'last_ok_age_sec': age_ok_s,
-                'last_error_time': self.last_error_time.isoformat() if self.last_error_time else None,
-                'last_error_age_sec': age_err_s,
-                'last_error': self.last_error,
-                'last_latency_ms': self.last_latency_ms,
-                'consecutive_failures': self.consecutive_failures,
-                'total_requests': self.total_requests,
-                'total_failures': self.total_failures,
-                'unsupported_symbols_count': len(getattr(self, 'unsupported_symbols', set()) or set()),
-                'contracts_loaded': bool(self.contract_cache)
-            }
-        except Exception:
-            return {
-                'connected': False,
-                'last_error': 'health_check_failed'
-            }
-
-    def _normalize_contract_symbol(self, symbol: str) -> str:
-        try:
-            s = str(symbol).strip().upper()
-            if '/' in s:
-                base, quote = s.split('/')[:2]
-                return f"{base}_{quote}"
-            if '-' in s:
-                base, quote = s.split('-')[:2]
-                return f"{base}_{quote}"
-            if '_' in s:
-                return s
-            return s
-        except Exception:
-            return str(symbol)
-
-    def _load_contracts_if_needed(self, force: bool = False):
+    async def _load_contracts_if_needed(self, force: bool = False):
         try:
             now = datetime.now()
             if not force and self.contract_last_loaded and (now - self.contract_last_loaded).total_seconds() < 300:
@@ -806,25 +743,19 @@ class MexcFuturesDataFeed:
 
             start = time.time()
             self.total_requests += 1
-            try:
-                next_ts = float(getattr(self, '_adaptive_next_ts', 0.0) or 0.0)
-                now = time.time()
-                if next_ts > now:
-                    time.sleep(next_ts - now)
-            except Exception:
-                pass
+            await self._refresh_contracts()
             url = f"{self.base_url}/api/v1/contract/detail"
-            resp = requests.get(url, timeout=8, verify=False)
-            if resp.status_code != 200:
+            response = await _requests_get_async(url, timeout=8, verify=False)
+            if response.status_code != 200:
                 self.total_failures += 1
                 self.consecutive_failures += 1
                 self.last_error_time = datetime.now()
                 self.last_latency_ms = int((time.time() - start) * 1000)
-                self.last_error = f"HTTP_{resp.status_code}"
-                self._adaptive_note(False, status_code=int(resp.status_code), latency_ms=int((time.time() - start) * 1000))
+                self.last_error = f"HTTP_{response.status_code}"
+                self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
                 return
 
-            payload = resp.json() or {}
+            payload = response.json() or {}
             data = payload.get('data') or []
             if not isinstance(data, list):
                 return
@@ -884,7 +815,7 @@ class MexcFuturesDataFeed:
         try:
             await self._adaptive_wait()
             url = f"{self.base_url}/api/v1/contract/ticker?symbol={mexc_symbol}"
-            response = requests.get(url, timeout=6, verify=False)
+            response = await _requests_get_async(url, timeout=6, verify=False)
 
             if response.status_code == 200:
                 payload = response.json() or {}

@@ -4130,6 +4130,8 @@ class LegendaryCryptoTitanBot:
         
         # Main trading loop - checks bot_running flag each cycle
         waiting_printed = False
+        last_pause_heartbeat_ts = 0.0
+        last_safety_heartbeat_ts = 0.0
         for cycle in range(1, cycles + 1):
             try:
                 # Check if bot should be running (controlled by dashboard)
@@ -4144,6 +4146,24 @@ class LegendaryCryptoTitanBot:
                         print("⏳ Waiting...")
                         print("=" * 60)
                         waiting_printed = True
+                    try:
+                        now_ts = float(time.time())
+                        if (now_ts - float(last_pause_heartbeat_ts or 0.0)) >= 30.0:
+                            health = getattr(self, 'last_feed_health', None)
+                            hp = None
+                            try:
+                                if isinstance(health, dict):
+                                    hp = {
+                                        'connected': health.get('connected'),
+                                        'last_ok_age_sec': health.get('last_ok_age_sec'),
+                                        'consecutive_failures': health.get('consecutive_failures'),
+                                    }
+                            except Exception:
+                                hp = None
+                            print(f"⏸️ Heartbeat: paused | mode={getattr(self, 'trading_mode', '-') or '-'} | feed={hp}", flush=True)
+                            last_pause_heartbeat_ts = now_ts
+                    except Exception:
+                        pass
                     await asyncio.sleep(2)  # Check every 2 seconds when paused
                     continue
                 
@@ -4153,6 +4173,13 @@ class LegendaryCryptoTitanBot:
                 try:
                     now_ts = float(time.time())
                     if self.safety_pause_until_ts and now_ts < float(self.safety_pause_until_ts or 0.0):
+                        try:
+                            if (now_ts - float(last_safety_heartbeat_ts or 0.0)) >= 15.0:
+                                wait_left = float(self.safety_pause_until_ts) - now_ts
+                                print(f"🛑 Heartbeat: safety_pause | remaining={max(0.0, wait_left):.0f}s | reason={getattr(self, 'safety_pause_reason', None)}", flush=True)
+                                last_safety_heartbeat_ts = now_ts
+                        except Exception:
+                            pass
                         await asyncio.sleep(1)
                         continue
                 except Exception:

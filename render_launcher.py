@@ -14,6 +14,20 @@ import time
 # Force REST API for cloud
 os.environ['USE_WEBSOCKETS'] = 'false'
 
+# Ensure logs are not stuck in buffers on Render
+try:
+    os.environ.setdefault('PYTHONUNBUFFERED', '1')
+except Exception:
+    pass
+
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(line_buffering=True)
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 def _apply_poise_preset():
     try:
         preset = str(os.getenv('POISE_PRESET', '') or '').strip().lower()
