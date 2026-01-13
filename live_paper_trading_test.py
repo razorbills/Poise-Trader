@@ -740,6 +740,27 @@ class MexcFuturesDataFeed:
             except Exception:
                 pass
 
+    def _normalize_contract_symbol(self, symbol: str) -> str:
+        try:
+            s = str(symbol).strip().upper()
+            if not s:
+                return ''
+
+            s = s.replace(' ', '')
+            s2 = s.replace('-', '_').replace('/', '_')
+            while '__' in s2:
+                s2 = s2.replace('__', '_')
+            if '_' in s2:
+                return s2
+
+            compact = s.replace('-', '').replace('/', '').replace('_', '').replace(' ', '')
+            for quote in ('USDT', 'USDC', 'USD'):
+                if compact.endswith(quote) and len(compact) > len(quote):
+                    return f"{compact[:-len(quote)]}_{quote}"
+            return compact
+        except Exception:
+            return str(symbol)
+
     def _kick_contracts_load(self, force: bool = False):
         try:
             try:
