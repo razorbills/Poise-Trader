@@ -30,14 +30,14 @@ except Exception:
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-async def _requests_get_async(url: str, timeout: float = 5, verify: bool = False):
+async def _requests_get_async(url: str, timeout: float = 5, verify: bool = False, headers: Dict[str, str] = None):
     """Run requests.get in a worker thread so async loops don't stall."""
     try:
-        return await asyncio.to_thread(requests.get, url, timeout=timeout, verify=verify)
+        return await asyncio.to_thread(requests.get, url, timeout=timeout, verify=verify, headers=headers)
     except Exception:
         # Fallback for environments without to_thread
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, lambda: requests.get(url, timeout=timeout, verify=verify))
+        return await loop.run_in_executor(None, lambda: requests.get(url, timeout=timeout, verify=verify, headers=headers))
 
 # Add core modules to path
 sys.path.append(str(Path(__file__).parent))
@@ -972,6 +972,32 @@ class MexcFuturesDataFeed:
         sym = self._normalize_contract_symbol(symbol)
         return dict(self.contract_cache.get(sym) or {})
 
+    def get_health(self) -> Dict[str, Any]:
+        try:
+            now = datetime.now()
+            age_ok_s = (now - self.last_ok_time).total_seconds() if self.last_ok_time else None
+            age_err_s = (now - self.last_error_time).total_seconds() if self.last_error_time else None
+            connected = bool(self.last_ok_time and age_ok_s is not None and age_ok_s <= 30)
+            return {
+                'connected': connected,
+                'last_ok_time': self.last_ok_time.isoformat() if self.last_ok_time else None,
+                'last_ok_age_sec': age_ok_s,
+                'last_error_time': self.last_error_time.isoformat() if self.last_error_time else None,
+                'last_error_age_sec': age_err_s,
+                'last_error': self.last_error,
+                'last_latency_ms': self.last_latency_ms,
+                'consecutive_failures': self.consecutive_failures,
+                'total_requests': self.total_requests,
+                'total_failures': self.total_failures,
+                'unsupported_symbols_count': len(getattr(self, 'unsupported_symbols', set()) or set()),
+                'contracts_cached_count': len(getattr(self, 'contract_cache', {}) or {})
+            }
+        except Exception:
+            return {
+                'connected': False,
+                'last_error': 'health_check_failed'
+            }
+
     async def get_live_price(self, symbol: str) -> float:
         mexc_symbol = self._normalize_contract_symbol(symbol)
         if not self.is_symbol_supported(symbol):
@@ -984,14 +1010,96 @@ class MexcFuturesDataFeed:
         try:
             await self._adaptive_wait()
             url = f"{self.base_url}/api/v1/contract/ticker?symbol={mexc_symbol}"
-            response = await _requests_get_async(url, timeout=6, verify=False)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (compatible; PoiseTrader/1.0)'
+            }
+            response = await _requests_get_async(url, timeout=6, verify=False, headers=headers)
 
             if response.status_code == 200:
-                payload = response.json() or {}
-                data = payload.get('data') or {}
-                px = float(data.get('lastPrice') or 0)
-                if px <= 0:
-                    px = float(data.get('fairPrice') or 0)
+                try:
+                    payload = response.json() or {}
+                except Exception:
+                    self.total_failures += 1
+                    self.consecutive_failures += 1
+                    self.last_error_time = datetime.now()
+                    self.last_latency_ms = int((time.time() - start) * 1000)
+                    self.last_error = 'INVALID_JSON'
+                    try:
+                        self._adaptive_note(False, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                    except Exception:
+                        pass
+                    cached = self.prices_cache.get(symbol)
+                    if cached and isinstance(cached, dict):
+                        try:
+                            age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                            if age <= 30 and cached.get('price'):
+                                return float(cached.get('price'))
+                        except Exception:
+                            pass
+                    return None
+
+                data = payload.get('data') if isinstance(payload, dict) else None
+
+                try:
+                    success = payload.get('success', True) if isinstance(payload, dict) else True
+                    code = payload.get('code', 0) if isinstance(payload, dict) else 0
+                    if success is False:
+                        raise ValueError('api_success_false')
+                    try:
+                        if code is not None and int(code) != 0:
+                            raise ValueError(f"api_code_{int(code)}")
+                    except ValueError:
+                        raise
+                    except Exception:
+                        pass
+                except Exception as e:
+                    self.total_failures += 1
+                    self.consecutive_failures += 1
+                    self.last_error_time = datetime.now()
+                    self.last_latency_ms = int((time.time() - start) * 1000)
+                    self.last_error = str(e)[:120]
+                    try:
+                        self._adaptive_note(False, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                    except Exception:
+                        pass
+                    cached = self.prices_cache.get(symbol)
+                    if cached and isinstance(cached, dict):
+                        try:
+                            age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                            if age <= 30 and cached.get('price'):
+                                return float(cached.get('price'))
+                        except Exception:
+                            pass
+                    return None
+
+                if isinstance(data, list):
+                    chosen = None
+                    for item in data:
+                        try:
+                            if isinstance(item, dict) and str((item or {}).get('symbol') or '').upper() == str(mexc_symbol).upper():
+                                chosen = item
+                                break
+                        except Exception:
+                            continue
+                    if chosen is None and data:
+                        chosen = data[0]
+                    data = chosen
+
+                if not isinstance(data, dict):
+                    data = {}
+
+                px = 0.0
+                for k in ('lastPrice', 'fairPrice', 'markPrice', 'indexPrice', 'last', 'price', 'ask1', 'bid1'):
+                    try:
+                        v = data.get(k)
+                        if v is None or v == '':
+                            continue
+                        px = float(v)
+                        if px > 0:
+                            break
+                    except Exception:
+                        continue
+
                 if px > 0:
                     self.last_ok_time = datetime.now()
                     self.last_latency_ms = int((time.time() - start) * 1000)
@@ -1005,6 +1113,111 @@ class MexcFuturesDataFeed:
                     self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
                     return px
 
+                try:
+                    await self._adaptive_wait()
+                    url2 = f"{self.base_url}/api/v1/contract/ticker"
+                    resp2 = await _requests_get_async(url2, timeout=8, verify=False, headers=headers)
+                    if resp2.status_code == 200:
+                        try:
+                            payload2 = resp2.json() or {}
+                        except Exception:
+                            payload2 = {}
+                        data2 = payload2.get('data') if isinstance(payload2, dict) else None
+                        if isinstance(data2, list):
+                            chosen2 = None
+                            for item2 in data2:
+                                try:
+                                    if isinstance(item2, dict) and str((item2 or {}).get('symbol') or '').upper() == str(mexc_symbol).upper():
+                                        chosen2 = item2
+                                        break
+                                except Exception:
+                                    continue
+                            if chosen2 is not None:
+                                px2 = 0.0
+                                for k2 in ('lastPrice', 'fairPrice', 'markPrice', 'indexPrice', 'last', 'price', 'ask1', 'bid1'):
+                                    try:
+                                        v2 = (chosen2 or {}).get(k2)
+                                        if v2 is None or v2 == '':
+                                            continue
+                                        px2 = float(v2)
+                                        if px2 > 0:
+                                            break
+                                    except Exception:
+                                        continue
+                                if px2 > 0:
+                                    self.last_ok_time = datetime.now()
+                                    self.last_latency_ms = int((time.time() - start) * 1000)
+                                    self.last_error = None
+                                    self.consecutive_failures = 0
+
+                                    self.prices_cache[symbol] = {
+                                        'price': px2,
+                                        'timestamp': datetime.now()
+                                    }
+                                    try:
+                                        self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                                    except Exception:
+                                        pass
+                                    return px2
+                except Exception:
+                    pass
+
+                try:
+                    await self._adaptive_wait()
+                    spot_symbol = str(mexc_symbol).replace('_', '')
+                    url3 = f"https://api.mexc.com/api/v3/ticker/price?symbol={spot_symbol}"
+                    resp3 = await _requests_get_async(url3, timeout=6, verify=False, headers=headers)
+                    if resp3.status_code == 200:
+                        try:
+                            payload3 = resp3.json() or {}
+                        except Exception:
+                            payload3 = {}
+                        try:
+                            px3 = float((payload3 or {}).get('price') or 0)
+                        except Exception:
+                            px3 = 0.0
+                        if px3 > 0:
+                            self.last_ok_time = datetime.now()
+                            self.last_latency_ms = int((time.time() - start) * 1000)
+                            self.last_error = None
+                            self.consecutive_failures = 0
+
+                            self.prices_cache[symbol] = {
+                                'price': px3,
+                                'timestamp': datetime.now()
+                            }
+                            try:
+                                self._adaptive_note(True, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                            except Exception:
+                                pass
+                            return px3
+                except Exception:
+                    pass
+
+                self.total_failures += 1
+                self.consecutive_failures += 1
+                self.last_error_time = datetime.now()
+                self.last_latency_ms = int((time.time() - start) * 1000)
+                try:
+                    keys = sorted(list(data.keys()))[:12]
+                    self.last_error = f"NO_PRICE_FIELDS keys={','.join([str(x) for x in keys])}"[:120]
+                except Exception:
+                    self.last_error = 'NO_PRICE_FIELDS'
+                try:
+                    self._adaptive_note(False, status_code=200, latency_ms=int((time.time() - start) * 1000))
+                except Exception:
+                    pass
+
+                cached = self.prices_cache.get(symbol)
+                if cached and isinstance(cached, dict):
+                    try:
+                        age = (datetime.now() - cached.get('timestamp')).total_seconds()
+                        if age <= 30 and cached.get('price'):
+                            return float(cached.get('price'))
+                    except Exception:
+                        pass
+                return None
+
             if response.status_code in (400, 404):
                 self.unsupported_symbols.add(mexc_symbol)
 
@@ -1013,7 +1226,6 @@ class MexcFuturesDataFeed:
             self.last_error_time = datetime.now()
             self.last_latency_ms = int((time.time() - start) * 1000)
             self.last_error = f"HTTP_{response.status_code}"
-
             self._adaptive_note(False, status_code=int(response.status_code), latency_ms=int((time.time() - start) * 1000))
 
             cached = self.prices_cache.get(symbol)
