@@ -10,6 +10,7 @@ import time
 import warnings
 import urllib3
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 import random
 import sys
@@ -723,6 +724,31 @@ class MexcFuturesDataFeed:
         self._adaptive_max_delay_s = 2.5
         self._adaptive_next_ts = 0.0
         self._adaptive_last_reason = None
+
+        try:
+            if not hasattr(self, '_normalize_contract_symbol'):
+                def _compat_normalize_contract_symbol(sym: str) -> str:
+                    try:
+                        s = str(sym).strip().upper()
+                        if not s:
+                            return ''
+                        s = s.replace(' ', '')
+                        s2 = s.replace('-', '_').replace('/', '_')
+                        while '__' in s2:
+                            s2 = s2.replace('__', '_')
+                        if '_' in s2:
+                            return s2
+                        compact = s.replace('-', '').replace('/', '').replace('_', '').replace(' ', '')
+                        for quote in ('USDT', 'USDC', 'USD'):
+                            if compact.endswith(quote) and len(compact) > len(quote):
+                                return f"{compact[:-len(quote)]}_{quote}"
+                        return compact
+                    except Exception:
+                        return str(sym)
+
+                self._normalize_contract_symbol = _compat_normalize_contract_symbol
+        except Exception:
+            pass
 
         try:
             loop = asyncio.get_running_loop()
