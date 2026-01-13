@@ -751,6 +751,56 @@ class MexcFuturesDataFeed:
             pass
 
         try:
+            if not hasattr(self, '_adaptive_wait'):
+                async def _compat_adaptive_wait():
+                    try:
+                        now = time.time()
+                        next_ts = float(getattr(self, '_adaptive_next_ts', 0.0) or 0.0)
+                        if next_ts > now:
+                            await asyncio.sleep(next_ts - now)
+                    except Exception:
+                        pass
+
+                self._adaptive_wait = _compat_adaptive_wait
+        except Exception:
+            pass
+
+        try:
+            if not hasattr(self, '_adaptive_note'):
+                def _compat_adaptive_note(ok: bool, status_code: int = None, latency_ms: int = None):
+                    try:
+                        delay = float(getattr(self, '_adaptive_delay_s', 0.0) or 0.0)
+                        min_d = float(getattr(self, '_adaptive_min_delay_s', 0.05) or 0.05)
+                        max_d = float(getattr(self, '_adaptive_max_delay_s', 2.5) or 2.5)
+
+                        if ok:
+                            if latency_ms is not None and int(latency_ms) > 1200:
+                                delay = min(max_d, max(min_d, delay * 1.15 + 0.05))
+                                self._adaptive_last_reason = 'high_latency'
+                            else:
+                                delay = max(0.0, delay * 0.85 - 0.02)
+                                self._adaptive_last_reason = None
+                        else:
+                            if int(status_code or 0) == 429:
+                                delay = min(max_d, max(1.0, delay * 2.5 + 0.5))
+                                self._adaptive_last_reason = 'rate_limit_429'
+                            else:
+                                delay = min(max_d, max(min_d, delay * 1.7 + 0.10))
+                                self._adaptive_last_reason = f'error_{int(status_code or 0)}'
+
+                        self._adaptive_delay_s = float(delay)
+                        self._adaptive_next_ts = float(time.time()) + float(delay)
+                    except Exception:
+                        try:
+                            self._adaptive_next_ts = float(time.time()) + 0.1
+                        except Exception:
+                            pass
+
+                self._adaptive_note = _compat_adaptive_note
+        except Exception:
+            pass
+
+        try:
             loop = asyncio.get_running_loop()
         except Exception:
             loop = None
@@ -763,6 +813,44 @@ class MexcFuturesDataFeed:
         else:
             try:
                 asyncio.run(self._load_contracts_if_needed(force=True))
+            except Exception:
+                pass
+
+    async def _adaptive_wait(self):
+        try:
+            now = time.time()
+            next_ts = float(getattr(self, '_adaptive_next_ts', 0.0) or 0.0)
+            if next_ts > now:
+                await asyncio.sleep(next_ts - now)
+        except Exception:
+            pass
+
+    def _adaptive_note(self, ok: bool, status_code: int = None, latency_ms: int = None):
+        try:
+            delay = float(getattr(self, '_adaptive_delay_s', 0.0) or 0.0)
+            min_d = float(getattr(self, '_adaptive_min_delay_s', 0.05) or 0.05)
+            max_d = float(getattr(self, '_adaptive_max_delay_s', 2.5) or 2.5)
+
+            if ok:
+                if latency_ms is not None and int(latency_ms) > 1200:
+                    delay = min(max_d, max(min_d, delay * 1.15 + 0.05))
+                    self._adaptive_last_reason = 'high_latency'
+                else:
+                    delay = max(0.0, delay * 0.85 - 0.02)
+                    self._adaptive_last_reason = None
+            else:
+                if int(status_code or 0) == 429:
+                    delay = min(max_d, max(1.0, delay * 2.5 + 0.5))
+                    self._adaptive_last_reason = 'rate_limit_429'
+                else:
+                    delay = min(max_d, max(min_d, delay * 1.7 + 0.10))
+                    self._adaptive_last_reason = f'error_{int(status_code or 0)}'
+
+            self._adaptive_delay_s = float(delay)
+            self._adaptive_next_ts = float(time.time()) + float(delay)
+        except Exception:
+            try:
+                self._adaptive_next_ts = float(time.time()) + 0.1
             except Exception:
                 pass
 
