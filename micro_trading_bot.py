@@ -4348,10 +4348,13 @@ class LegendaryCryptoTitanBot:
                         regime = str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN')
                         vol_regime = str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL')
                         filtered = list(signals)
+                        base_min = float(getattr(self, 'min_confidence_for_trade', 0.30) or 0.30)
+                        min_req = base_min
                         if regime in ['SIDEWAYS', 'CONSOLIDATION']:
-                            filtered = [s for s in filtered if getattr(s, 'confidence', 0) >= 0.80]
+                            min_req = max(base_min, 0.55 if str(getattr(self, 'trading_mode', '') or '').upper() == 'PRECISION' else base_min)
                         elif regime in ['VOLATILE_SIDEWAYS'] or vol_regime == 'HIGH':
-                            filtered = [s for s in filtered if getattr(s, 'confidence', 0) >= 0.75]
+                            min_req = max(base_min, 0.50)
+                        filtered = [s for s in filtered if getattr(s, 'confidence', 0) >= min_req]
                         signals = filtered
                     except Exception:
                         pass
