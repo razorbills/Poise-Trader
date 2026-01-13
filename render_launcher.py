@@ -181,6 +181,11 @@ def run_bot():
         state_sync = None
         
         try:
+            try:
+                if hasattr(simple_dashboard_server, 'set_bot_startup'):
+                    simple_dashboard_server.set_bot_startup(state='starting', message='Initializing trading bot')
+            except Exception:
+                pass
             print("\n🔄 Initializing trading bot...")
 
             if SupabaseStateSync is not None:
@@ -209,6 +214,12 @@ def run_bot():
             
             # Register bot with dashboard
             set_bot_instance(bot_instance)
+
+            try:
+                if hasattr(simple_dashboard_server, 'set_bot_startup'):
+                    simple_dashboard_server.set_bot_startup(state='ready', message='Bot initialized and registered with dashboard')
+            except Exception:
+                pass
             
             print(f"✅ Bot initialized!")
             print(f"   💰 Initial Capital: ${initial_capital:.2f}")
@@ -227,6 +238,13 @@ def run_bot():
             await bot_instance.run_micro_trading_cycle(cycles=999999)
             
         except Exception as e:
+            try:
+                if hasattr(simple_dashboard_server, 'set_bot_startup'):
+                    simple_dashboard_server.set_bot_startup(state='error', message=f'Bot startup failed: {str(e)[:200]}')
+                if hasattr(simple_dashboard_server, 'set_bot_last_error'):
+                    simple_dashboard_server.set_bot_last_error(str(e))
+            except Exception:
+                pass
             print(f"❌ Bot error: {e}")
             import traceback
             traceback.print_exc()
@@ -253,6 +271,14 @@ def main():
     print("🎬 Launching bot in background thread...")
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
+
+    try:
+        if hasattr(simple_dashboard_server, 'bot_thread'):
+            simple_dashboard_server.bot_thread = bot_thread
+        if hasattr(simple_dashboard_server, 'set_bot_startup'):
+            simple_dashboard_server.set_bot_startup(state='thread_started', message='Bot thread started')
+    except Exception:
+        pass
     
     # Give bot a moment to initialize
     time.sleep(2)

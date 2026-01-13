@@ -1178,7 +1178,25 @@
                 indicator.className = 'status-indicator waiting';
                 statusText.textContent = 'Waiting for Bot';
                 botConnected = false;
-                botStatus.textContent = 'Bot: Not Connected';
+                const threadAlive = (status && typeof status.bot_thread_alive !== 'undefined') ? status.bot_thread_alive : null;
+                const startupState = (status && status.bot_startup_state) ? status.bot_startup_state : null;
+                const startupMsg = (status && status.bot_startup_message) ? status.bot_startup_message : null;
+                const lastErr = (status && status.bot_last_error) ? status.bot_last_error : null;
+
+                let parts = ['Bot: Not Connected'];
+                if (threadAlive !== null) {
+                    parts.push(`Thread: ${threadAlive ? 'Alive' : 'Dead'}`);
+                }
+                if (startupState) {
+                    parts.push(`Startup: ${startupState}`);
+                }
+                if (startupMsg) {
+                    parts.push(`${startupMsg}`);
+                }
+                if (lastErr) {
+                    parts.push(`Error: ${String(lastErr).slice(0, 180)}`);
+                }
+                botStatus.textContent = parts.join(' | ');
             }
             
             isTrading = (status && status.running) || false;

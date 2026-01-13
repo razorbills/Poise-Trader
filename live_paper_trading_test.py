@@ -724,7 +724,41 @@ class MexcFuturesDataFeed:
         self._adaptive_next_ts = 0.0
         self._adaptive_last_reason = None
 
-        asyncio.run(self._load_contracts_if_needed(force=True))
+        try:
+            loop = asyncio.get_running_loop()
+        except Exception:
+            loop = None
+
+        if loop is not None and getattr(loop, 'is_running', lambda: False)():
+            try:
+                loop.create_task(self._load_contracts_if_needed(force=True))
+            except Exception:
+                pass
+        else:
+            try:
+                asyncio.run(self._load_contracts_if_needed(force=True))
+            except Exception:
+                pass
+
+    def _kick_contracts_load(self, force: bool = False):
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+            except Exception:
+                loop = None
+
+            if loop is not None and getattr(loop, 'is_running', lambda: False)():
+                try:
+                    loop.create_task(self._load_contracts_if_needed(force=bool(force)))
+                except Exception:
+                    pass
+            else:
+                try:
+                    asyncio.run(self._load_contracts_if_needed(force=bool(force)))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     async def _refresh_contracts(self):
         try:
@@ -786,7 +820,7 @@ class MexcFuturesDataFeed:
 
     def is_symbol_supported(self, symbol: str) -> bool:
         try:
-            self._load_contracts_if_needed(force=False)
+            self._kick_contracts_load(force=False)
             sym = self._normalize_contract_symbol(symbol)
             if not sym:
                 return False
@@ -799,7 +833,7 @@ class MexcFuturesDataFeed:
             return True
 
     def get_contract_meta(self, symbol: str) -> Dict[str, Any]:
-        self._load_contracts_if_needed(force=False)
+        self._kick_contracts_load(force=False)
         sym = self._normalize_contract_symbol(symbol)
         return dict(self.contract_cache.get(sym) or {})
 

@@ -25,6 +25,12 @@ pnl_history = []
 max_history_points = 50
 start_time = time.time()
 
+bot_thread = None
+bot_startup_state = 'unknown'
+bot_startup_message = None
+bot_last_error = None
+bot_last_error_ts = None
+
 try:
     DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
 except Exception:
@@ -49,8 +55,25 @@ def health_check():
         'timestamp': datetime.now().isoformat(),
         'bot_connected': bot_instance is not None,
         'bot_running': False,
+        'bot_thread_alive': False,
+        'bot_startup_state': bot_startup_state,
+        'bot_startup_message': bot_startup_message,
+        'bot_last_error': (str(bot_last_error)[:800] if bot_last_error else None),
+        'bot_last_error_ts': bot_last_error_ts,
         'uptime': time.time() - start_time if 'start_time' in globals() else 0
     }
+
+    try:
+        if bot_thread is not None and hasattr(bot_thread, 'is_alive'):
+            health['bot_thread_alive'] = bool(bot_thread.is_alive())
+    except Exception:
+        pass
+
+    try:
+        if (bot_instance is None) and (bot_thread is None):
+            health['hint'] = 'Bot not started. Ensure Render Start Command is: python render_launcher.py'
+    except Exception:
+        pass
     
     if bot_instance:
         health['bot_running'] = getattr(bot_instance, 'bot_running', False)
@@ -80,8 +103,25 @@ def get_status():
     status = {
         'connected': bot_instance is not None,
         'running': False,
-        'mode': current_mode
+        'mode': current_mode,
+        'bot_thread_alive': False,
+        'bot_startup_state': bot_startup_state,
+        'bot_startup_message': bot_startup_message,
+        'bot_last_error': (str(bot_last_error)[:800] if bot_last_error else None),
+        'bot_last_error_ts': bot_last_error_ts,
     }
+
+    try:
+        if bot_thread is not None and hasattr(bot_thread, 'is_alive'):
+            status['bot_thread_alive'] = bool(bot_thread.is_alive())
+    except Exception:
+        pass
+
+    try:
+        if (bot_instance is None) and (bot_thread is None):
+            status['hint'] = 'Bot not started. Ensure Render Start Command is: python render_launcher.py'
+    except Exception:
+        pass
     
     if bot_instance:
         status['running'] = getattr(bot_instance, 'bot_running', False)
@@ -819,6 +859,26 @@ def attach_bot(bot):
     global bot_instance
     bot_instance = bot
     print("✅ Bot attached to simple dashboard")
+
+
+def set_bot_startup(state: str = None, message: str = None):
+    global bot_startup_state, bot_startup_message
+    try:
+        if state is not None:
+            bot_startup_state = str(state)
+        if message is not None:
+            bot_startup_message = str(message)[:500]
+    except Exception:
+        pass
+
+
+def set_bot_last_error(err: str = None):
+    global bot_last_error, bot_last_error_ts
+    try:
+        bot_last_error = (str(err) if err is not None else None)
+        bot_last_error_ts = datetime.now().isoformat()
+    except Exception:
+        pass
 
 def run_server(host='0.0.0.0', port=5000):
     """Run the server"""
