@@ -1489,6 +1489,12 @@ class LivePaperTradingManager:
         self._ccxt_public_exchange = None
         self.last_real_order_error = None
         self.last_real_order = None
+        self._paper_market_meta_cache = {}
+        self._paper_market_meta_cache_ts = {}
+        self._paper_funding_rate_cache = {}
+        self._paper_funding_rate_cache_ts = {}
+        self._paper_mark_cache = {}
+        self._paper_mark_cache_ts = {}
         
         print(f"🔥 LIVE Paper Trading Manager active")
         print(f"   💰 Current Balance: ${self.cash_balance:.2f}")
@@ -1597,7 +1603,150 @@ class LivePaperTradingManager:
                     }
         except Exception:
             return None
+
+    async def _get_mark_price(self, symbol: str, fallback_price: float, orderbook_limit: int = 20) -> Dict[str, Any]:
+        try:
+            px = float(fallback_price or 0)
+        except Exception:
+            px = 0.0
+
+        if not bool(getattr(self, 'paper_exchange_sim', False)):
+            return {'mark_price': px if px > 0 else 0.0, 'ob_imbalance': 0.0, 'orderbook': None}
+
+        now = float(time.time())
+        k = str(symbol or '')
+        ts = float(self._paper_mark_cache_ts.get(k, 0) or 0)
+        if (now - ts) < 8.0 and k in self._paper_mark_cache:
+            cached = self._paper_mark_cache.get(k)
+            if isinstance(cached, dict) and float(cached.get('mark_price', 0) or 0) > 0:
+                return cached
+
+        ob = None
+        try:
+            ob = await self._get_execution_orderbook(symbol, limit=int(orderbook_limit or 20))
+        except Exception:
+            ob = None
+
+        mark = px
+        imb = 0.0
+        try:
+            if isinstance(ob, dict) and ob.get('bids') and ob.get('asks'):
+                bid0 = float(ob.get('bids')[0][0] or 0)
+                ask0 = float(ob.get('asks')[0][0] or 0)
+                if bid0 > 0 and ask0 > 0:
+                    mark = (bid0 + ask0) / 2.0
+                bids = ob.get('bids') or []
+                asks = ob.get('asks') or []
+                bid_v = sum(float(x[1] or 0) for x in bids[:5] if isinstance(x, (list, tuple)) and len(x) > 1)
+                ask_v = sum(float(x[1] or 0) for x in asks[:5] if isinstance(x, (list, tuple)) and len(x) > 1)
+                if (bid_v + ask_v) > 0:
+                    imb = (bid_v - ask_v) / (bid_v + ask_v)
+        except Exception:
+            pass
+
+        res = {'mark_price': float(mark or 0.0), 'ob_imbalance': float(imb or 0.0), 'orderbook': ob}
+        self._paper_mark_cache[k] = res
+        self._paper_mark_cache_ts[k] = now
+        return res
+
+
+    async def _get_ccxt_market_meta(self, symbol: str) -> Optional[Dict[str, Any]]:
+        try:
+            if not bool(getattr(self, 'paper_exchange_sim', False)):
+                return None
+            if ccxt is None:
+                return None
+            now = float(time.time())
+            k = str(symbol or '')
+            ts = float(self._paper_market_meta_cache_ts.get(k, 0) or 0)
+            if (now - ts) < 600 and k in self._paper_market_meta_cache:
+                mm = self._paper_market_meta_cache.get(k)
+                return mm if isinstance(mm, dict) else None
+
+            ex = await self._get_ccxt_public_exchange()
+            if ex is None:
+                return None
+            if str(getattr(self, 'market_type', 'futures') or 'futures').lower() == 'futures':
+                ccxt_symbol = self._to_ccxt_swap_symbol(symbol)
+            else:
+                ccxt_symbol = str(symbol or '')
+
+            m = None
+            try:
+                m = (getattr(ex, 'markets', None) or {}).get(ccxt_symbol)
+            except Exception:
+                m = None
+
+            if isinstance(m, dict):
+                self._paper_market_meta_cache[k] = m
+                self._paper_market_meta_cache_ts[k] = now
+                return m
+        except Exception:
+            return None
         return None
+
+    async def _get_live_funding_rate(self, symbol: str, orderbook: Optional[Dict[str, Any]] = None) -> Optional[float]:
+        try:
+            if not bool(getattr(self, 'paper_exchange_sim', False)):
+                return None
+            if str(getattr(self, 'market_type', 'futures') or 'futures').lower() != 'futures':
+                return None
+            if ccxt is None:
+                return None
+
+            now = float(time.time())
+            k = str(symbol or '')
+            ts = float(self._paper_funding_rate_cache_ts.get(k, 0) or 0)
+            if (now - ts) < 300 and k in self._paper_funding_rate_cache:
+                try:
+                    return float(self._paper_funding_rate_cache.get(k))
+                except Exception:
+                    pass
+
+            rate = None
+            ex = await self._get_ccxt_public_exchange()
+            if ex is not None:
+                try:
+                    if hasattr(ex, 'fetch_funding_rate'):
+                        ccxt_symbol = self._to_ccxt_swap_symbol(symbol)
+                        fr = await ex.fetch_funding_rate(ccxt_symbol)
+                        if isinstance(fr, dict):
+                            if fr.get('fundingRate') is not None:
+                                rate = float(fr.get('fundingRate'))
+                            elif fr.get('rate') is not None:
+                                rate = float(fr.get('rate'))
+                except Exception:
+                    rate = None
+
+            if rate is None:
+                base_rate = float(getattr(self, 'paper_funding_rate', 0.0) or 0.0)
+                imb = 0.0
+                try:
+                    ob = orderbook or {}
+                    bids = ob.get('bids') or []
+                    asks = ob.get('asks') or []
+                    bid_v = sum(float(x[1] or 0) for x in bids[:5] if isinstance(x, (list, tuple)) and len(x) > 1)
+                    ask_v = sum(float(x[1] or 0) for x in asks[:5] if isinstance(x, (list, tuple)) and len(x) > 1)
+                    if (bid_v + ask_v) > 0:
+                        imb = (bid_v - ask_v) / (bid_v + ask_v)
+                except Exception:
+                    imb = 0.0
+                try:
+                    jitter = random.gauss(0.0, abs(base_rate) * 0.35 + 0.00002)
+                except Exception:
+                    jitter = 0.0
+                rate = base_rate * (1.0 + 0.6 * imb) + jitter
+
+            try:
+                rate = float(rate)
+            except Exception:
+                return None
+            rate = max(-0.01, min(0.01, rate))
+            self._paper_funding_rate_cache[k] = float(rate)
+            self._paper_funding_rate_cache_ts[k] = now
+            return float(rate)
+        except Exception:
+            return None
 
     def _simulate_vwap_fill(self, orderbook: Optional[Dict[str, Any]], side: str, desired_qty: float) -> Dict[str, Any]:
         qty = float(desired_qty or 0.0)
@@ -1619,6 +1768,13 @@ class LivePaperTradingManager:
         cost = 0.0
         filled = 0.0
 
+        queue_base = 1.0
+        try:
+            if bool(getattr(self, 'paper_exchange_sim', False)):
+                queue_base = random.uniform(0.55, 0.95)
+        except Exception:
+            queue_base = 1.0
+
         for lvl in levels:
             try:
                 p = float(lvl[0] if isinstance(lvl, (list, tuple)) and len(lvl) > 0 else 0)
@@ -1630,6 +1786,12 @@ class LivePaperTradingManager:
             if p <= 0 or q <= 0:
                 continue
 
+            try:
+                if bool(getattr(self, 'paper_exchange_sim', False)):
+                    q = q * queue_base * random.uniform(0.75, 1.05)
+            except Exception:
+                pass
+
             take = q if q < remaining else remaining
             if take <= 0:
                 continue
@@ -1638,6 +1800,34 @@ class LivePaperTradingManager:
             remaining -= take
             if remaining <= 0:
                 break
+
+        if remaining > 0 and filled > 0:
+            try:
+                if bool(getattr(self, 'paper_exchange_sim', False)):
+                    last_price = 0.0
+                    try:
+                        last_lvl = levels[-1]
+                        last_price = float(last_lvl[0] if isinstance(last_lvl, (list, tuple)) and len(last_lvl) > 0 else 0)
+                    except Exception:
+                        last_price = 0.0
+                    if last_price <= 0:
+                        last_price = float(levels[0][0] if isinstance(levels[0], (list, tuple)) and len(levels[0]) > 0 else 0)
+                    if last_price > 0:
+                        slices = 6
+                        sgn = 1.0 if s == 'BUY' else -1.0
+                        base_impact = max(0.0005, float(getattr(self, 'paper_slippage_bps', 2.0) or 2.0) / 10000.0)
+                        for i in range(1, slices + 1):
+                            if remaining <= 0:
+                                break
+                            take = remaining / float(slices - i + 1)
+                            impact = base_impact * (1.0 + 2.0 * (float(i) / float(slices)))
+                            impact = min(0.05, max(0.0, impact))
+                            p = last_price * (1.0 + sgn * impact)
+                            cost += take * p
+                            filled += take
+                            remaining -= take
+            except Exception:
+                pass
 
         if filled <= 0:
             return {'filled_qty': 0.0, 'avg_price': 0.0, 'fill_ratio': 0.0}
@@ -1655,15 +1845,27 @@ class LivePaperTradingManager:
             if rps <= 0:
                 return None
             now = float(time.time())
-            window_s = 1.0
-            ts = getattr(self, '_paper_exec_ts', None)
-            if not isinstance(ts, list):
-                ts = []
-                self._paper_exec_ts = ts
-            self._paper_exec_ts = [t for t in ts if (now - float(t or 0)) <= window_s]
-            if len(self._paper_exec_ts) >= int(rps):
+            cap = float(max(1.0, min(20.0, (2.5 * rps))))
+            tokens = getattr(self, '_paper_exec_bucket_tokens', None)
+            last = getattr(self, '_paper_exec_bucket_ts', None)
+            if tokens is None or last is None:
+                tokens = cap
+                last = now
+            dt = max(0.0, now - float(last or now))
+            tokens = min(cap, float(tokens) + dt * rps)
+            if tokens < 1.0:
+                self._paper_exec_bucket_tokens = float(tokens)
+                self._paper_exec_bucket_ts = float(now)
                 return 'rate_limit_429'
-            self._paper_exec_ts.append(now)
+            tokens -= 1.0
+            self._paper_exec_bucket_tokens = float(tokens)
+            self._paper_exec_bucket_ts = float(now)
+
+            try:
+                if random.random() < min(0.15, 0.02 * rps):
+                    return 'rate_limit_429'
+            except Exception:
+                pass
         except Exception:
             return None
         return None
@@ -1688,6 +1890,12 @@ class LivePaperTradingManager:
             if px <= 0 or qty <= 0:
                 return
 
+            try:
+                position['mark_price'] = float(px)
+                position['last_mark_ts'] = float(now)
+            except Exception:
+                pass
+
             notional = qty * px
             unreal = (px - avg_px) * qty if side == 'BUY' else (avg_px - px) * qty
 
@@ -1697,7 +1905,26 @@ class LivePaperTradingManager:
                     next_ts = now + float(getattr(self, 'paper_funding_interval_s', 8 * 3600) or (8 * 3600))
                     position['next_funding_ts'] = float(next_ts)
                 interval = float(getattr(self, 'paper_funding_interval_s', 8 * 3600) or (8 * 3600))
-                rate = float(getattr(self, 'paper_funding_rate', 0.0) or 0.0)
+                rate = None
+                try:
+                    rate = position.get('funding_rate')
+                    if rate is not None:
+                        rate = float(rate)
+                except Exception:
+                    rate = None
+                if rate is None:
+                    try:
+                        base_rate = float(getattr(self, 'paper_funding_rate', 0.0) or 0.0)
+                        imb = float(position.get('ob_imbalance', 0.0) or 0.0)
+                        jitter = random.gauss(0.0, abs(base_rate) * 0.35 + 0.00002)
+                        rate = base_rate * (1.0 + 0.6 * imb) + jitter
+                        rate = max(-0.01, min(0.01, float(rate)))
+                    except Exception:
+                        rate = float(getattr(self, 'paper_funding_rate', 0.0) or 0.0)
+                try:
+                    position['funding_rate'] = float(rate)
+                except Exception:
+                    pass
 
                 paid_total = float(position.get('funding_paid', 0.0) or 0.0)
                 while now >= next_ts and interval > 0:
@@ -1725,7 +1952,10 @@ class LivePaperTradingManager:
                 commission = close_notional * fee_rate
                 liq_fee = close_notional * float(getattr(self, 'paper_liq_fee_rate', 0.0) or 0.0)
                 pnl = (liq_px - avg_px) * qty if side == 'BUY' else (avg_px - liq_px) * qty
-                self.cash_balance += margin + pnl - commission - liq_fee
+                realized = float(margin + pnl - commission - liq_fee)
+                if realized < 0:
+                    realized = 0.0
+                self.cash_balance += float(realized)
 
                 self.positions[symbol] = {
                     'quantity': 0,
@@ -2191,14 +2421,38 @@ class LivePaperTradingManager:
             if ALLOW_SIMULATED_FEATURES:
                 slippage_pct = random.uniform(-0.0002, 0.0002)
 
+        try:
+            if self.paper_execution_model == 'exchange' and bool(getattr(self, 'paper_exchange_sim', False)) and latency_ms and latency_ms > 0:
+                base = max(0.0003, float(spread_pct or 0.0), float(getattr(self, 'paper_slippage_bps', 2.0) or 2.0) / 10000.0)
+                drift_scale = min(0.02, base * (1.0 + float(latency_ms) / 160.0))
+                sgn = 1.0 if str(action).upper() == 'BUY' else -1.0
+                drift = abs(random.gauss(0.0, drift_scale / 2.0)) * sgn
+                if random.random() < 0.05:
+                    drift *= 2.5
+                current_price = float(current_price) * (1.0 + drift)
+        except Exception:
+            pass
+
         action_u = str(action).upper()
         if action_u not in ['BUY', 'SELL']:
             return {"success": False, "error": f"Invalid action: {action}"}
 
         orderbook = None
+        mark_price = float(current_price or 0)
+        ob_imbalance = 0.0
+        dynamic_funding = None
+        meta_min_cost = None
         try:
             if bool(getattr(self, 'paper_exchange_sim', False)):
-                orderbook = await self._get_execution_orderbook(symbol, limit=int(getattr(self, 'paper_orderbook_limit', 20) or 20))
+                mark = await self._get_mark_price(symbol, float(current_price or 0), orderbook_limit=int(getattr(self, 'paper_orderbook_limit', 20) or 20))
+                if isinstance(mark, dict):
+                    mark_price = float(mark.get('mark_price', current_price) or current_price)
+                    ob_imbalance = float(mark.get('ob_imbalance', 0.0) or 0.0)
+                    orderbook = mark.get('orderbook')
+
+                if float(mark_price or 0) > 0:
+                    current_price = float(mark_price)
+
                 if isinstance(orderbook, dict) and orderbook.get('bids') and orderbook.get('asks'):
                     bid0 = float(orderbook.get('bids')[0][0] or 0)
                     ask0 = float(orderbook.get('asks')[0][0] or 0)
@@ -2206,6 +2460,30 @@ class LivePaperTradingManager:
                         mid = (bid0 + ask0) / 2.0
                         if mid > 0:
                             spread_pct = max(float(spread_pct or 0.0), (ask0 - bid0) / mid)
+
+                try:
+                    if self.paper_execution_model == 'exchange':
+                        if random.random() < 0.06:
+                            spread_pct = float(spread_pct or 0.0) * random.uniform(1.6, 3.2)
+                        if abs(float(ob_imbalance or 0.0)) > 0.25 and random.random() < 0.25:
+                            spread_pct = float(spread_pct or 0.0) * random.uniform(1.2, 2.0)
+                except Exception:
+                    pass
+
+                try:
+                    dynamic_funding = await self._get_live_funding_rate(symbol, orderbook=orderbook)
+                except Exception:
+                    dynamic_funding = None
+
+                try:
+                    meta = await self._get_ccxt_market_meta(symbol)
+                    if isinstance(meta, dict):
+                        lim = meta.get('limits') or {}
+                        cost = lim.get('cost') if isinstance(lim, dict) else None
+                        if isinstance(cost, dict) and cost.get('min') is not None:
+                            meta_min_cost = float(cost.get('min'))
+                except Exception:
+                    meta_min_cost = None
         except Exception:
             orderbook = None
 
@@ -2365,7 +2643,13 @@ class LivePaperTradingManager:
 
                 try:
                     if bool(getattr(self, 'paper_exchange_sim', False)):
-                        if float(getattr(self, 'paper_min_notional_usd', 0.0) or 0.0) > 0 and float(notional or 0) < float(getattr(self, 'paper_min_notional_usd', 0.0) or 0.0):
+                        min_req = float(getattr(self, 'paper_min_notional_usd', 0.0) or 0.0)
+                        try:
+                            if meta_min_cost is not None and float(meta_min_cost) > 0:
+                                min_req = max(min_req, float(meta_min_cost))
+                        except Exception:
+                            pass
+                        if min_req > 0 and float(notional or 0) < float(min_req or 0):
                             return {"success": False, "error": f"min_notional"}
                 except Exception:
                     pass
@@ -2413,6 +2697,15 @@ class LivePaperTradingManager:
                     "stop_loss": stop_loss if stop_loss is not None else existing_sl,
                     "action": "BUY"
                 }
+
+                try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        self.positions[symbol]['mark_price'] = float(mark_price or execution_price)
+                        self.positions[symbol]['ob_imbalance'] = float(ob_imbalance or 0.0)
+                        if dynamic_funding is not None:
+                            self.positions[symbol]['funding_rate'] = float(dynamic_funding)
+                except Exception:
+                    pass
 
                 try:
                     if bool(getattr(self, 'paper_exchange_sim', False)) and str(getattr(self, 'market_type', 'futures') or 'futures').lower() == 'futures':
@@ -2551,6 +2844,19 @@ class LivePaperTradingManager:
                 except Exception:
                     pass
 
+                try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        min_req = float(getattr(self, 'paper_min_notional_usd', 0.0) or 0.0)
+                        try:
+                            if meta_min_cost is not None and float(meta_min_cost) > 0:
+                                min_req = max(min_req, float(meta_min_cost))
+                        except Exception:
+                            pass
+                        if min_req > 0 and float(notional or 0) < float(min_req or 0):
+                            return {"success": False, "error": f"min_notional"}
+                except Exception:
+                    pass
+
                 commission = notional * effective_fee_rate
                 required = margin + commission
                 if required > self.cash_balance:
@@ -2596,6 +2902,15 @@ class LivePaperTradingManager:
                 }
 
                 try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        self.positions[symbol]['mark_price'] = float(mark_price or execution_price)
+                        self.positions[symbol]['ob_imbalance'] = float(ob_imbalance or 0.0)
+                        if dynamic_funding is not None:
+                            self.positions[symbol]['funding_rate'] = float(dynamic_funding)
+                except Exception:
+                    pass
+
+                try:
                     if bool(getattr(self, 'paper_exchange_sim', False)) and str(getattr(self, 'market_type', 'futures') or 'futures').lower() == 'futures':
                         if 'next_funding_ts' not in self.positions[symbol]:
                             self.positions[symbol]['next_funding_ts'] = float(time.time()) + float(getattr(self, 'paper_funding_interval_s', 8 * 3600) or (8 * 3600))
@@ -2608,6 +2923,32 @@ class LivePaperTradingManager:
                 realized_pnl = -commission
         
         # Record trade
+        try:
+            if bool(getattr(self, 'paper_exchange_sim', False)) and ccxt is not None:
+                ex = await self._get_ccxt_public_exchange()
+                if ex is not None:
+                    ccxt_symbol = None
+                    try:
+                        if str(getattr(self, 'market_type', 'futures') or 'futures').lower() == 'futures':
+                            ccxt_symbol = self._to_ccxt_swap_symbol(symbol)
+                        else:
+                            ccxt_symbol = str(symbol or '')
+                    except Exception:
+                        ccxt_symbol = None
+                    if ccxt_symbol:
+                        try:
+                            execution_price = float(ex.price_to_precision(ccxt_symbol, execution_price))
+                        except Exception:
+                            pass
+                        try:
+                            quantity = float(ex.amount_to_precision(ccxt_symbol, quantity))
+                        except Exception:
+                            pass
+                        if float(quantity or 0) <= 0 or float(execution_price or 0) <= 0:
+                            return {"success": False, "error": "Order size too small after precision/limits"}
+        except Exception:
+            pass
+
         trade_record = {
             "timestamp": datetime.now().isoformat(),
             "symbol": symbol,
@@ -2785,6 +3126,26 @@ class LivePaperTradingManager:
                     current_price = position.get("avg_price", 0)
 
                 try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        mk = await self._get_mark_price(symbol, float(current_price or 0), orderbook_limit=int(getattr(self, 'paper_orderbook_limit', 20) or 20))
+                        if isinstance(mk, dict) and float(mk.get('mark_price', 0) or 0) > 0:
+                            current_price = float(mk.get('mark_price') or current_price)
+                            try:
+                                position['mark_price'] = float(current_price)
+                                position['ob_imbalance'] = float(mk.get('ob_imbalance', 0.0) or 0.0)
+                            except Exception:
+                                pass
+                            try:
+                                if str(getattr(self, 'market_type', 'futures') or 'futures').lower() == 'futures' and bool(getattr(self, 'paper_funding_enabled', True)):
+                                    fr = await self._get_live_funding_rate(symbol, orderbook=mk.get('orderbook'))
+                                    if fr is not None:
+                                        position['funding_rate'] = float(fr)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                try:
                     self._paper_apply_funding_and_liquidation(symbol, position, float(current_price or 0))
                     position = self.positions.get(symbol, position)
                     if not isinstance(position, dict) or float(position.get('quantity', 0) or 0) <= 0:
@@ -2842,7 +3203,10 @@ class LivePaperTradingManager:
         
         for symbol, position in self.positions.items():
             if position.get("quantity", 0) > 0:
-                current_price = position.get('current_price', position.get("avg_price", 0))
+                if bool(getattr(self, 'paper_exchange_sim', False)) and position.get('mark_price'):
+                    current_price = position.get('mark_price', position.get('current_price', position.get("avg_price", 0)))
+                else:
+                    current_price = position.get('current_price', position.get("avg_price", 0))
 
                 try:
                     self._paper_apply_funding_and_liquidation(symbol, position, float(current_price or 0))

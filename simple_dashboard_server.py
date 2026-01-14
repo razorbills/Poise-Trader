@@ -32,9 +32,9 @@ bot_last_error = None
 bot_last_error_ts = None
 
 try:
-    DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
+    DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '20.0') or 20.0)
 except Exception:
-    DEFAULT_STARTING_CAPITAL = 5.0
+    DEFAULT_STARTING_CAPITAL = 20.0
 
 @app.route('/')
 def index():
@@ -724,7 +724,7 @@ def update_markets():
 
 @app.route('/api/reset', methods=['POST'])
 def reset_trading():
-    """Reset trading to fresh $5.00 start"""
+    """Reset trading to fresh $20.00 start"""
     global bot_instance
     
     try:
@@ -742,7 +742,19 @@ def reset_trading():
         
         # Save fresh state
         import json
-        with open('trading_state.json', 'w') as f:
+        state_file = 'trading_state.json'
+        try:
+            if bot_instance and hasattr(bot_instance, 'trader'):
+                sf = getattr(bot_instance.trader, 'state_file', None)
+                if sf:
+                    state_file = str(sf)
+        except Exception:
+            pass
+        try:
+            os.makedirs(os.path.dirname(state_file), exist_ok=True)
+        except Exception:
+            pass
+        with open(state_file, 'w') as f:
             json.dump(fresh_state, f, indent=2)
         
         # Reset bot if connected

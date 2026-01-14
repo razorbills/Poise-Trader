@@ -299,9 +299,9 @@ def reset_trading():
     
     try:
         try:
-            start_capital = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
+            start_capital = float(os.getenv('INITIAL_CAPITAL', '20.0') or 20.0)
         except Exception:
-            start_capital = 5.0
+            start_capital = 20.0
 
         # Create fresh state file
         fresh_state = {
