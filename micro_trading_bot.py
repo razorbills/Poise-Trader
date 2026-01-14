@@ -9628,6 +9628,34 @@ class LegendaryCryptoTitanBot:
                 if getattr(self, 'risk_engine', None) is not None:
                     leverage = float(getattr(getattr(self, 'trader', None), 'leverage', 1.0) or 1.0)
                     equity = float(portfolio.get('total_value', 0) or 0)
+
+                    try:
+                        if equity > 0 and leverage > 0 and hasattr(self.risk_engine, 'config'):
+                            total_notional = 0.0
+                            symbol_notional = 0.0
+                            for sym, pos in (current_positions or {}).items():
+                                if not isinstance(pos, dict):
+                                    continue
+                                cv = float(pos.get('current_value', 0) or 0)
+                                if cv <= 0:
+                                    continue
+                                total_notional += cv
+                                if str(sym) == str(signal.symbol):
+                                    symbol_notional += cv
+
+                            max_total = float(getattr(self.risk_engine.config, 'max_total_notional_multiple', 0.0) or 0.0) * equity
+                            max_sym = float(getattr(self.risk_engine.config, 'max_symbol_notional_multiple', 0.0) or 0.0) * equity
+                            remaining_total = max_total - total_notional
+                            remaining_sym = max_sym - symbol_notional
+                            remaining_notional = min(remaining_total, remaining_sym)
+                            if remaining_notional > 0:
+                                max_margin_allowed = remaining_notional / leverage
+                                if float(position_size or 0) > float(max_margin_allowed or 0):
+                                    print(f"   🛡️ {signal.symbol}: Clamping size ${float(position_size or 0):.2f} -> ${float(max_margin_allowed or 0):.2f} due to exposure caps")
+                                    position_size = float(max_margin_allowed or 0)
+                    except Exception:
+                        pass
+
                     allowed, risk_mult, reason = self.risk_engine.check_entry(
                         symbol=signal.symbol,
                         equity=equity,
@@ -9777,6 +9805,34 @@ class LegendaryCryptoTitanBot:
                 if getattr(self, 'risk_engine', None) is not None:
                     leverage = float(getattr(getattr(self, 'trader', None), 'leverage', 1.0) or 1.0)
                     equity = float(portfolio.get('total_value', 0) or 0)
+
+                    try:
+                        if equity > 0 and leverage > 0 and hasattr(self.risk_engine, 'config'):
+                            total_notional = 0.0
+                            symbol_notional = 0.0
+                            for sym, pos in (current_positions or {}).items():
+                                if not isinstance(pos, dict):
+                                    continue
+                                cv = float(pos.get('current_value', 0) or 0)
+                                if cv <= 0:
+                                    continue
+                                total_notional += cv
+                                if str(sym) == str(signal.symbol):
+                                    symbol_notional += cv
+
+                            max_total = float(getattr(self.risk_engine.config, 'max_total_notional_multiple', 0.0) or 0.0) * equity
+                            max_sym = float(getattr(self.risk_engine.config, 'max_symbol_notional_multiple', 0.0) or 0.0) * equity
+                            remaining_total = max_total - total_notional
+                            remaining_sym = max_sym - symbol_notional
+                            remaining_notional = min(remaining_total, remaining_sym)
+                            if remaining_notional > 0:
+                                max_margin_allowed = remaining_notional / leverage
+                                if float(position_size or 0) > float(max_margin_allowed or 0):
+                                    print(f"   🛡️ {signal.symbol}: Clamping size ${float(position_size or 0):.2f} -> ${float(max_margin_allowed or 0):.2f} due to exposure caps")
+                                    position_size = float(max_margin_allowed or 0)
+                    except Exception:
+                        pass
+
                     allowed, risk_mult, reason = self.risk_engine.check_entry(
                         symbol=signal.symbol,
                         equity=equity,
