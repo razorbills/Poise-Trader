@@ -323,6 +323,30 @@ def reset_trading():
             from live_paper_trading_test import LivePaperTradingManager
             bot_instance.trader = LivePaperTradingManager(start_capital)
             print(f"♻️ Trading state reset - starting fresh with ${start_capital:.2f}")
+
+            try:
+                if hasattr(bot_instance, 'risk_engine') and bot_instance.risk_engine is not None:
+                    try:
+                        from risk_engine_v2 import RiskEngineV2
+                        bot_instance.risk_engine = RiskEngineV2(initial_equity=float(start_capital or 0.0))
+                    except Exception:
+                        re = bot_instance.risk_engine
+                        try:
+                            re.initial_equity = float(start_capital or 0.0)
+                            re.daily_start_equity = float(start_capital or 0.0)
+                            re.weekly_start_equity = float(start_capital or 0.0)
+                            re.peak_equity = float(start_capital or 0.0)
+                            re.last_equity = float(start_capital or 0.0)
+                        except Exception:
+                            pass
+                        try:
+                            re.consecutive_losses = 0
+                            re.pause_until_ts = 0.0
+                            re.pause_reason = None
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         
         return jsonify({'success': True, 'message': f'Trading state reset to ${start_capital:.2f}'})
     except Exception as e:
