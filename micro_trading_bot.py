@@ -7958,9 +7958,16 @@ class LegendaryCryptoTitanBot:
             if technical_indicators['volatility'] > 0.02:
                 confidence += 0.2
         
+        sent_score = 0.5
+        try:
+            if sentiment_data is not None:
+                sent_score = 0.5 + 0.5 * float(getattr(sentiment_data, 'composite_sentiment', 0.0) or 0.0)
+        except Exception:
+            sent_score = 0.5
+
         # Sentiment boost
-        if sentiment_data and sentiment_data.confidence > 0.7:
-            if sentiment_data.composite_sentiment > 0.6:
+        if sentiment_data and float(getattr(sentiment_data, 'confidence', 0.0) or 0.0) > 0.7:
+            if sent_score > 0.6:
                 confidence += 0.1
         
         # Learn from recent lessons
@@ -7990,7 +7997,7 @@ class LegendaryCryptoTitanBot:
             strategy_name=strategy.value,
             ai_reasoning=f"Enhanced {strategy.value} signal in {regime.value} market",
             technical_score=technical_indicators.get('technical_score', 0.5),
-            sentiment_score=sentiment_data.composite_sentiment if sentiment_data else 0.5,
+            sentiment_score=sent_score,
             momentum_score=technical_indicators['momentum'],
             volatility_score=technical_indicators['volatility'],
             timestamp=datetime.now()
@@ -9555,7 +9562,15 @@ class LegendaryCryptoTitanBot:
                 valid_signals = [forced]
                 print("🎓 No qualifying signals - placing forced learning trade for AI experience")
         
-        micro_signals = sorted(valid_signals, key=lambda s: s.confidence, reverse=True)
+        micro_signals = sorted(
+            valid_signals,
+            key=lambda s: (
+                float(getattr(s, 'confidence', 0.0) or 0.0),
+                float(getattr(s, 'sentiment_score', 0.5) or 0.5),
+                float(getattr(s, 'momentum_score', 0.0) or 0.0),
+            ),
+            reverse=True
+        )
         trades_executed = 0
         
         try:
@@ -9612,7 +9627,15 @@ class LegendaryCryptoTitanBot:
         except Exception:
             pass
 
-        for signal in micro_signals[:1]:
+        target_entries = 1
+        try:
+            target_entries = int(max(1, min(len(micro_signals), int(self.max_concurrent_positions) - int(active_positions))))
+        except Exception:
+            target_entries = 1
+
+        for signal in micro_signals:
+            if trades_executed >= target_entries:
+                break
             if active_positions + trades_executed >= self.max_concurrent_positions:
                 print("   ⚡ Position limit reached")
                 break

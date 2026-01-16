@@ -31,6 +31,8 @@ import statistics
 import warnings
 warnings.filterwarnings('ignore')
 
+from real_data_apis import real_data_apis
+
 _REAL_TRADING_ENABLED = str(os.getenv('REAL_TRADING', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 _STRICT_REAL_DATA = str(os.getenv('STRICT_REAL_DATA', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
 ALLOW_SIMULATED_FEATURES = (
@@ -542,6 +544,8 @@ class AdvancedSentimentAnalyzer:
     
     def __init__(self):
         self.sentiment_history = deque(maxlen=1000)
+        self._real_fg_cache = None
+        self._real_fg_cache_ts = 0.0
         self.sentiment_sources = {
             'fear_greed': {'weight': 0.3, 'reliability': 0.8},
             'social_media': {'weight': 0.25, 'reliability': 0.6},
@@ -616,6 +620,20 @@ class AdvancedSentimentAnalyzer:
     
     async def _analyze_fear_greed(self, price_data: Dict) -> float:
         """Analyze fear and greed from price action"""
+
+        real_fg = None
+        try:
+            now = datetime.now().timestamp()
+            if (now - float(self._real_fg_cache_ts or 0.0)) > 300.0 or self._real_fg_cache is None:
+                fg = await real_data_apis.get_fear_greed_index()
+                if isinstance(fg, dict) and 'error' not in fg and float(fg.get('index', 0) or 0) > 0:
+                    self._real_fg_cache = fg
+                    self._real_fg_cache_ts = now
+            if isinstance(self._real_fg_cache, dict) and 'error' not in self._real_fg_cache:
+                idx = float(self._real_fg_cache.get('index', 50) or 50)
+                real_fg = max(-1.0, min(1.0, (idx - 50.0) / 50.0))
+        except Exception:
+            real_fg = None
         
         # Price-based fear/greed indicators
         volatility = price_data.get('volatility', 0.02)
@@ -639,10 +657,20 @@ class AdvancedSentimentAnalyzer:
         if volatility > 0.05:
             sentiment -= 0.2
         
-        return max(-1.0, min(1.0, sentiment))
+        price_fg = max(-1.0, min(1.0, sentiment))
+        if real_fg is None:
+            return price_fg
+        return max(-1.0, min(1.0, float(price_fg) * 0.60 + float(real_fg) * 0.40))
     
     async def _analyze_social_sentiment(self, symbol: str) -> float:
-        """Analyze social media sentiment (simulated)"""
+        """Analyze social media sentiment"""
+
+        try:
+            cg = await real_data_apis.get_coingecko_sentiment(symbol)
+            if isinstance(cg, dict) and 'error' not in cg:
+                return max(-1.0, min(1.0, float(cg.get('score', 0.0) or 0.0)))
+        except Exception:
+            pass
 
         if not ALLOW_SIMULATED_FEATURES:
             return 0.0
@@ -664,6 +692,13 @@ class AdvancedSentimentAnalyzer:
     
     async def _analyze_news_sentiment(self, symbol: str) -> float:
         """Analyze news sentiment impact"""
+
+        try:
+            cs = await real_data_apis.get_combined_sentiment(symbol)
+            if isinstance(cs, dict) and 'error' not in cs:
+                return max(-1.0, min(1.0, float(cs.get('score', 0.0) or 0.0) * 0.85))
+        except Exception:
+            pass
 
         if not ALLOW_SIMULATED_FEATURES:
             return 0.0
