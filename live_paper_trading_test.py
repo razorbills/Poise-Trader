@@ -13,6 +13,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import random
+import math
 import sys
 from pathlib import Path
 import requests
@@ -1495,6 +1496,13 @@ class LivePaperTradingManager:
         self._paper_funding_rate_cache_ts = {}
         self._paper_mark_cache = {}
         self._paper_mark_cache_ts = {}
+        self._paper_orderbook_cache = {}
+        self._paper_orderbook_cache_ts = {}
+        self._paper_basis_state = {}
+        self._paper_basis_state_ts = {}
+        self.open_orders = []
+        self._paper_order_id_seq = 0
+        self._paper_reserved_cash = 0.0
         
         print(f"🔥 LIVE Paper Trading Manager active")
         print(f"   💰 Current Balance: ${self.cash_balance:.2f}")
@@ -1577,6 +1585,31 @@ class LivePaperTradingManager:
             if lim > 100:
                 lim = 100
 
+            now = float(time.time())
+            k = str(symbol or '')
+            try:
+                ts = float(self._paper_orderbook_cache_ts.get(k, 0) or 0)
+                cached = self._paper_orderbook_cache.get(k)
+                if isinstance(cached, dict) and cached.get('bids') and cached.get('asks'):
+                    if random.random() < 0.08:
+                        return cached
+                    if (now - ts) < 4.0 and random.random() < 0.70:
+                        return cached
+            except Exception:
+                pass
+
+            try:
+                p_fail = 0.0
+                try:
+                    p_fail = float(getattr(self, 'paper_reject_prob', 0.0) or 0.0)
+                except Exception:
+                    p_fail = 0.0
+                p_fail = max(0.0, min(0.25, 0.02 + 0.75 * p_fail))
+                if random.random() < p_fail:
+                    return None
+            except Exception:
+                pass
+
             ex = await self._get_ccxt_public_exchange()
             if ex is not None:
                 try:
@@ -1586,10 +1619,16 @@ class LivePaperTradingManager:
                         ccxt_symbol = str(symbol or '')
                     ob = await ex.fetch_order_book(ccxt_symbol, lim)
                     if isinstance(ob, dict) and ob.get('bids') and ob.get('asks'):
-                        return {
+                        normalized = {
                             'bids': [[float(p), float(q)] for p, q in (ob.get('bids') or [])[:lim]],
                             'asks': [[float(p), float(q)] for p, q in (ob.get('asks') or [])[:lim]],
                         }
+                        try:
+                            self._paper_orderbook_cache[k] = normalized
+                            self._paper_orderbook_cache_ts[k] = now
+                        except Exception:
+                            pass
+                        return normalized
                 except Exception:
                     pass
 
@@ -1597,10 +1636,16 @@ class LivePaperTradingManager:
             if df is not None and hasattr(df, 'get_orderbook'):
                 ob = await df.get_orderbook(symbol, limit=lim)
                 if isinstance(ob, dict) and ob.get('bids') and ob.get('asks'):
-                    return {
+                    normalized = {
                         'bids': [[float(p), float(q)] for p, q in (ob.get('bids') or [])[:lim]],
                         'asks': [[float(p), float(q)] for p, q in (ob.get('asks') or [])[:lim]],
                     }
+                    try:
+                        self._paper_orderbook_cache[k] = normalized
+                        self._paper_orderbook_cache_ts[k] = now
+                    except Exception:
+                        pass
+                    return normalized
         except Exception:
             return None
 
@@ -1629,12 +1674,14 @@ class LivePaperTradingManager:
 
         mark = px
         imb = 0.0
+        index_px = px
         try:
             if isinstance(ob, dict) and ob.get('bids') and ob.get('asks'):
                 bid0 = float(ob.get('bids')[0][0] or 0)
                 ask0 = float(ob.get('asks')[0][0] or 0)
                 if bid0 > 0 and ask0 > 0:
                     mark = (bid0 + ask0) / 2.0
+                    index_px = float(mark)
                 bids = ob.get('bids') or []
                 asks = ob.get('asks') or []
                 bid_v = sum(float(x[1] or 0) for x in bids[:5] if isinstance(x, (list, tuple)) and len(x) > 1)
@@ -1644,10 +1691,607 @@ class LivePaperTradingManager:
         except Exception:
             pass
 
-        res = {'mark_price': float(mark or 0.0), 'ob_imbalance': float(imb or 0.0), 'orderbook': ob}
+        try:
+            if float(mark or 0) > 0:
+                now2 = float(time.time())
+                k2 = str(symbol or '')
+                last2 = float(self._paper_basis_state_ts.get(k2, now2) or now2)
+                dt = max(0.0, now2 - last2)
+                self._paper_basis_state_ts[k2] = now2
+
+                b = 0.0
+                try:
+                    b = float(self._paper_basis_state.get(k2, 0.0) or 0.0)
+                except Exception:
+                    b = 0.0
+
+                spread = 0.0
+                try:
+                    if isinstance(ob, dict) and ob.get('bids') and ob.get('asks'):
+                        bid0 = float(ob.get('bids')[0][0] or 0)
+                        ask0 = float(ob.get('asks')[0][0] or 0)
+                        mid0 = (bid0 + ask0) / 2.0 if bid0 > 0 and ask0 > 0 else 0.0
+                        if mid0 > 0:
+                            spread = (ask0 - bid0) / mid0
+                except Exception:
+                    spread = 0.0
+
+                kappa = 0.90
+                try:
+                    kappa = min(0.98, max(0.60, 0.90 - 0.05 * min(10.0, dt)))
+                except Exception:
+                    kappa = 0.90
+
+                shock_scale = 0.00035
+                try:
+                    shock_scale = 0.00035 + 0.35 * abs(float(spread or 0.0))
+                except Exception:
+                    shock_scale = 0.00035
+
+                drift = 0.0
+                try:
+                    drift = 0.00025 * float(imb or 0.0)
+                except Exception:
+                    drift = 0.0
+
+                try:
+                    shock = random.gauss(0.0, shock_scale)
+                except Exception:
+                    shock = 0.0
+
+                b = float(b) * float(kappa) + drift + shock
+                b = max(-0.01, min(0.01, float(b)))
+                self._paper_basis_state[k2] = float(b)
+
+                try:
+                    index_px = float(mark) * (1.0 - 0.35 * float(b))
+                except Exception:
+                    index_px = float(mark)
+                mark = float(mark) * (1.0 + float(b))
+        except Exception:
+            pass
+
+        res = {'mark_price': float(mark or 0.0), 'index_price': float(index_px or 0.0), 'ob_imbalance': float(imb or 0.0), 'orderbook': ob}
         self._paper_mark_cache[k] = res
         self._paper_mark_cache_ts[k] = now
         return res
+
+    def _paper_next_order_id(self) -> str:
+        try:
+            self._paper_order_id_seq = int(getattr(self, '_paper_order_id_seq', 0) or 0) + 1
+        except Exception:
+            self._paper_order_id_seq = 1
+        try:
+            return f"P{int(time.time() * 1000)}{int(self._paper_order_id_seq)}"
+        except Exception:
+            return str(self._paper_order_id_seq)
+
+    def _paper_compute_fee_rate(self, taker_fee_rate: float, is_maker: bool) -> float:
+        try:
+            taker = float(taker_fee_rate)
+        except Exception:
+            taker = float(getattr(self, 'fee_rate', 0.0) or 0.0)
+
+        maker = max(-0.0001, min(taker, taker * 0.6))
+
+        vol_30d = 0.0
+        try:
+            cutoff = time.time() - 30.0 * 86400.0
+            for t in (getattr(self, 'trade_history', None) or [])[-500:]:
+                if not isinstance(t, dict):
+                    continue
+                try:
+                    if str(t.get('event') or '') == 'ORDER_ACCEPTED':
+                        continue
+                except Exception:
+                    pass
+                ts = t.get('timestamp')
+                if not isinstance(ts, str):
+                    continue
+                try:
+                    if datetime.fromisoformat(ts).timestamp() < cutoff:
+                        continue
+                except Exception:
+                    continue
+                try:
+                    vol_30d += float(t.get('notional_usd', 0) or 0.0)
+                except Exception:
+                    pass
+        except Exception:
+            vol_30d = 0.0
+
+        tier_mult = 1.0
+        try:
+            if vol_30d >= 1_000_000:
+                tier_mult = 0.55
+            elif vol_30d >= 250_000:
+                tier_mult = 0.70
+            elif vol_30d >= 50_000:
+                tier_mult = 0.85
+        except Exception:
+            tier_mult = 1.0
+
+        taker = max(0.0, float(taker) * float(tier_mult))
+        maker = float(maker) * float(tier_mult)
+        if maker > taker:
+            maker = taker
+        if maker < -0.0001:
+            maker = -0.0001
+        return float(maker if bool(is_maker) else taker)
+
+    def _paper_reserve_cash(self, amount: float) -> bool:
+        try:
+            amt = float(amount or 0.0)
+        except Exception:
+            amt = 0.0
+        if amt <= 0:
+            return True
+        try:
+            if float(getattr(self, 'cash_balance', 0.0) or 0.0) + 1e-9 < amt:
+                return False
+            self.cash_balance = float(getattr(self, 'cash_balance', 0.0) or 0.0) - amt
+            self._paper_reserved_cash = float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0) + amt
+            return True
+        except Exception:
+            return False
+
+    def _paper_release_reserved_cash(self, amount: float) -> None:
+        try:
+            amt = float(amount or 0.0)
+        except Exception:
+            amt = 0.0
+        if amt <= 0:
+            return
+        try:
+            reserved = float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0)
+            take = min(reserved, amt)
+            self._paper_reserved_cash = float(reserved - take)
+            self.cash_balance = float(getattr(self, 'cash_balance', 0.0) or 0.0) + float(take)
+        except Exception:
+            return
+
+    def _paper_consume_reserved_cash(self, amount: float) -> float:
+        try:
+            amt = float(amount or 0.0)
+        except Exception:
+            amt = 0.0
+        if amt <= 0:
+            return 0.0
+        consumed = 0.0
+        try:
+            reserved = float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0)
+            take = min(reserved, amt)
+            self._paper_reserved_cash = float(reserved - take)
+            consumed += float(take)
+            rem = float(amt - take)
+            if rem > 0:
+                self.cash_balance = float(getattr(self, 'cash_balance', 0.0) or 0.0) - rem
+                consumed += float(rem)
+        except Exception:
+            pass
+        return float(consumed)
+
+    def _paper_cancel_open_orders(self, symbol: str = None) -> int:
+        try:
+            if not isinstance(getattr(self, 'open_orders', None), list) or not self.open_orders:
+                return 0
+            sym = str(symbol or '') if symbol is not None else None
+            kept = []
+            canceled = 0
+            for o in list(self.open_orders or []):
+                if not isinstance(o, dict):
+                    continue
+                if sym is not None and str(o.get('symbol') or '') != sym:
+                    kept.append(o)
+                    continue
+                if str(o.get('status') or 'open') not in ['open', 'partially_filled']:
+                    kept.append(o)
+                    continue
+                try:
+                    rem_res = float(o.get('reserved_remaining', 0.0) or 0.0)
+                except Exception:
+                    rem_res = 0.0
+                if rem_res > 0:
+                    try:
+                        self._paper_release_reserved_cash(rem_res)
+                    except Exception:
+                        pass
+                o['status'] = 'canceled'
+                try:
+                    o['reserved_remaining'] = 0.0
+                except Exception:
+                    pass
+                canceled += 1
+            self.open_orders = kept
+            return int(canceled)
+        except Exception:
+            return 0
+
+    def _paper_apply_fill_to_positions(self, symbol: str, side: str, fill_qty: float, fill_price: float, leverage_factor: float, base_taker_fee_rate: float, is_maker: bool, stop_loss: float = None, take_profit: float = None, mark_price: float = None, ob_imbalance: float = None, funding_rate: float = None) -> Dict[str, Any]:
+        res = {
+            'success': False,
+            'trade_event': None,
+            'pnl': 0.0,
+            'commission': 0.0,
+            'fee_rate': 0.0,
+            'notional_usd': 0.0,
+            'margin': 0.0,
+            'quantity': 0.0,
+            'execution_price': 0.0,
+        }
+
+        try:
+            qty = float(fill_qty or 0.0)
+            px = float(fill_price or 0.0)
+            if qty <= 0 or px <= 0:
+                return res
+
+            side_u = str(side or '').upper()
+            if side_u not in ['BUY', 'SELL']:
+                return res
+
+            notional = qty * px
+            lev = float(leverage_factor or 1.0)
+            if lev <= 0:
+                lev = 1.0
+            is_fut = str(getattr(self, 'market_type', 'futures') or 'futures').lower() == 'futures'
+            margin = notional / lev if is_fut else notional
+
+            fee_rate = float(self._paper_compute_fee_rate(float(base_taker_fee_rate or 0.0), bool(is_maker)))
+            commission = notional * fee_rate
+
+            existing = self.positions.get(symbol) if isinstance(getattr(self, 'positions', None), dict) else None
+            existing_qty = float(existing.get('quantity', 0) or 0.0) if isinstance(existing, dict) else 0.0
+            existing_side = str(existing.get('action', 'BUY') or 'BUY').upper() if isinstance(existing, dict) else ''
+
+            pnl = 0.0
+            trade_event = None
+
+            if side_u == 'BUY' and existing_qty > 0 and existing_side == 'SELL':
+                close_qty = min(existing_qty, qty)
+                entry_px = float(existing.get('avg_price', 0) or 0.0)
+                old_margin = float(existing.get('total_cost', 0) or 0.0)
+                pnl = (entry_px - px) * close_qty
+                margin_released = old_margin * (close_qty / existing_qty) if existing_qty > 0 else 0.0
+                self.cash_balance = float(getattr(self, 'cash_balance', 0.0) or 0.0) + float(margin_released + pnl - commission)
+                new_qty = existing_qty - close_qty
+                new_margin = max(0.0, old_margin - margin_released)
+                if new_qty <= 1e-9:
+                    self.positions[symbol] = {
+                        'quantity': 0,
+                        'avg_price': 0,
+                        'total_cost': 0,
+                        'take_profit': None,
+                        'stop_loss': None,
+                        'action': 'BUY'
+                    }
+                else:
+                    self.positions[symbol] = {
+                        'quantity': float(new_qty),
+                        'avg_price': float(entry_px),
+                        'total_cost': float(new_margin),
+                        'take_profit': existing.get('take_profit') if isinstance(existing, dict) else None,
+                        'stop_loss': existing.get('stop_loss') if isinstance(existing, dict) else None,
+                        'action': 'SELL'
+                    }
+                trade_event = 'COVER_SHORT'
+                qty = close_qty
+                notional = qty * px
+                margin = margin_released
+
+            elif side_u == 'SELL' and existing_qty > 0 and existing_side == 'BUY':
+                close_qty = min(existing_qty, qty)
+                entry_px = float(existing.get('avg_price', 0) or 0.0)
+                old_margin = float(existing.get('total_cost', 0) or 0.0)
+                pnl = (px - entry_px) * close_qty
+                margin_released = old_margin * (close_qty / existing_qty) if existing_qty > 0 else 0.0
+                self.cash_balance = float(getattr(self, 'cash_balance', 0.0) or 0.0) + float(margin_released + pnl - commission)
+                new_qty = existing_qty - close_qty
+                new_margin = max(0.0, old_margin - margin_released)
+                if new_qty <= 1e-9:
+                    self.positions[symbol] = {
+                        'quantity': 0,
+                        'avg_price': 0,
+                        'total_cost': 0,
+                        'take_profit': None,
+                        'stop_loss': None,
+                        'action': 'BUY'
+                    }
+                else:
+                    self.positions[symbol] = {
+                        'quantity': float(new_qty),
+                        'avg_price': float(entry_px),
+                        'total_cost': float(new_margin),
+                        'take_profit': existing.get('take_profit') if isinstance(existing, dict) else None,
+                        'stop_loss': existing.get('stop_loss') if isinstance(existing, dict) else None,
+                        'action': 'BUY'
+                    }
+                trade_event = 'CLOSE_LONG'
+                qty = close_qty
+                notional = qty * px
+                margin = margin_released
+
+            else:
+                if side_u == 'SELL' and not bool(getattr(self, 'enable_shorting', False)) and is_fut:
+                    return res
+
+                if symbol not in self.positions:
+                    self.positions[symbol] = {
+                        'quantity': 0,
+                        'avg_price': 0,
+                        'total_cost': 0,
+                        'take_profit': None,
+                        'stop_loss': None,
+                        'action': 'BUY'
+                    }
+
+                if existing_qty > 0 and existing_side == side_u:
+                    old_avg = float(existing.get('avg_price', 0) or 0.0)
+                    old_margin = float(existing.get('total_cost', 0) or 0.0)
+                    new_qty = existing_qty + qty
+                    new_avg = (old_avg * existing_qty + px * qty) / new_qty if new_qty > 0 else 0.0
+                    new_margin = old_margin + margin
+                    existing_tp = existing.get('take_profit')
+                    existing_sl = existing.get('stop_loss')
+                    trade_event = 'ADD_LONG' if side_u == 'BUY' else 'ADD_SHORT'
+                else:
+                    new_qty = qty
+                    new_avg = px
+                    new_margin = margin
+                    existing_tp = existing.get('take_profit') if isinstance(existing, dict) else None
+                    existing_sl = existing.get('stop_loss') if isinstance(existing, dict) else None
+                    trade_event = 'OPEN_LONG' if side_u == 'BUY' else 'OPEN_SHORT'
+
+                spend = float(margin) + float(commission if commission > 0 else 0.0)
+                self._paper_consume_reserved_cash(spend)
+                if commission < 0:
+                    try:
+                        self.cash_balance = float(getattr(self, 'cash_balance', 0.0) or 0.0) + float(-commission)
+                    except Exception:
+                        pass
+
+                self.positions[symbol] = {
+                    'quantity': float(new_qty),
+                    'avg_price': float(new_avg),
+                    'total_cost': float(new_margin),
+                    'take_profit': take_profit if take_profit is not None else existing_tp,
+                    'stop_loss': stop_loss if stop_loss is not None else existing_sl,
+                    'action': 'BUY' if side_u == 'BUY' else 'SELL'
+                }
+
+                try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        if mark_price is not None:
+                            self.positions[symbol]['mark_price'] = float(mark_price)
+                        if ob_imbalance is not None:
+                            self.positions[symbol]['ob_imbalance'] = float(ob_imbalance)
+                        if funding_rate is not None:
+                            self.positions[symbol]['funding_rate'] = float(funding_rate)
+                except Exception:
+                    pass
+
+            res['success'] = True
+            res['trade_event'] = trade_event
+            res['pnl'] = float(pnl - commission)
+            res['commission'] = float(commission)
+            res['fee_rate'] = float(fee_rate)
+            res['notional_usd'] = float(notional)
+            res['margin'] = float(margin)
+            res['quantity'] = float(qty)
+            res['execution_price'] = float(px)
+            return res
+        except Exception:
+            return res
+
+    async def _paper_process_open_orders(self) -> None:
+        try:
+            if not bool(getattr(self, 'paper_exchange_sim', False)):
+                return
+            if not isinstance(getattr(self, 'open_orders', None), list) or not self.open_orders:
+                return
+
+            now = float(time.time())
+            updated = []
+            for o in list(self.open_orders or []):
+                if not isinstance(o, dict):
+                    continue
+                if str(o.get('status') or 'open') not in ['open', 'partially_filled']:
+                    continue
+
+                try:
+                    nxt = float(o.get('next_try_ts', 0.0) or 0.0)
+                except Exception:
+                    nxt = 0.0
+                if nxt > now:
+                    updated.append(o)
+                    continue
+
+                symbol = str(o.get('symbol') or '')
+                side = str(o.get('side') or '').upper()
+                if not symbol or side not in ['BUY', 'SELL']:
+                    continue
+
+                try:
+                    remaining = float(o.get('remaining_qty', 0.0) or 0.0)
+                except Exception:
+                    remaining = 0.0
+                if remaining <= 0:
+                    try:
+                        rem_res = float(o.get('reserved_remaining', 0.0) or 0.0)
+                    except Exception:
+                        rem_res = 0.0
+                    if rem_res > 0:
+                        try:
+                            self._paper_release_reserved_cash(rem_res)
+                        except Exception:
+                            pass
+                    continue
+
+                try:
+                    px_fallback = await self.data_feed.get_live_price(symbol)
+                except Exception:
+                    px_fallback = None
+                if not px_fallback:
+                    try:
+                        px_fallback = float(self.positions.get(symbol, {}).get('current_price', 0) or 0)
+                    except Exception:
+                        px_fallback = 0.0
+
+                mk = await self._get_mark_price(symbol, float(px_fallback or 0.0), orderbook_limit=int(getattr(self, 'paper_orderbook_limit', 20) or 20))
+                ob = mk.get('orderbook') if isinstance(mk, dict) else None
+                imb = float(mk.get('ob_imbalance', 0.0) or 0.0) if isinstance(mk, dict) else 0.0
+                mark_px = float(mk.get('mark_price', 0.0) or 0.0) if isinstance(mk, dict) else 0.0
+
+                bid0 = 0.0
+                ask0 = 0.0
+                mid = mark_px
+                try:
+                    if isinstance(ob, dict) and ob.get('bids') and ob.get('asks'):
+                        bid0 = float(ob.get('bids')[0][0] or 0)
+                        ask0 = float(ob.get('asks')[0][0] or 0)
+                        if bid0 > 0 and ask0 > 0:
+                            mid = (bid0 + ask0) / 2.0
+                except Exception:
+                    pass
+
+                limit_px = 0.0
+                try:
+                    limit_px = float(o.get('price', 0.0) or 0.0)
+                except Exception:
+                    limit_px = 0.0
+                if limit_px <= 0:
+                    limit_px = mid if mid > 0 else mark_px
+                if limit_px <= 0:
+                    updated.append(o)
+                    continue
+
+                dist = abs(limit_px - mid) / max(1e-9, mid if mid > 0 else limit_px)
+                spread = 0.0
+                if bid0 > 0 and ask0 > 0 and mid > 0:
+                    spread = (ask0 - bid0) / mid
+
+                marketable = False
+                try:
+                    if bid0 > 0 and ask0 > 0:
+                        if side == 'BUY' and limit_px >= ask0:
+                            marketable = True
+                        if side == 'SELL' and limit_px <= bid0:
+                            marketable = True
+                except Exception:
+                    marketable = False
+
+                base = 0.03 + 0.22 * abs(float(imb))
+                base += 0.10 * min(1.0, abs(float(spread or 0.0)) * 250.0)
+                hit_prob = base * math.exp(-30.0 * float(dist))
+                if marketable:
+                    hit_prob = max(hit_prob, 0.45)
+                hit_prob = max(0.004, min(0.85, float(hit_prob)))
+
+                if random.random() > hit_prob:
+                    o['next_try_ts'] = now + random.uniform(0.6, 1.8)
+                    updated.append(o)
+                    continue
+
+                frac = random.uniform(0.08, 0.45)
+                if marketable:
+                    frac = min(0.90, frac * random.uniform(1.4, 2.6))
+                if abs(imb) > 0.30:
+                    frac = frac * 0.75
+                fill_qty = max(0.0, min(remaining, remaining * frac))
+                if fill_qty <= 0:
+                    o['next_try_ts'] = now + random.uniform(0.6, 1.8)
+                    updated.append(o)
+                    continue
+
+                fill_px = limit_px
+                if side == 'BUY' and ask0 > 0:
+                    fill_px = min(limit_px, ask0)
+                if side == 'SELL' and bid0 > 0:
+                    fill_px = max(limit_px, bid0)
+                if fill_px <= 0:
+                    fill_px = limit_px
+
+                lev = float(o.get('leverage_factor', getattr(self, 'leverage', 1.0)) or 1.0)
+                base_fee = float(o.get('base_taker_fee_rate', float(getattr(self, 'fee_rate', 0.0) or 0.0)) or 0.0)
+
+                fill_res = self._paper_apply_fill_to_positions(
+                    symbol,
+                    side,
+                    float(fill_qty),
+                    float(fill_px),
+                    float(lev),
+                    float(base_fee),
+                    True,
+                    stop_loss=o.get('stop_loss'),
+                    take_profit=o.get('take_profit'),
+                    mark_price=mark_px if mark_px > 0 else None,
+                    ob_imbalance=imb,
+                )
+
+                if not bool(fill_res.get('success')):
+                    o['next_try_ts'] = now + random.uniform(1.0, 2.5)
+                    updated.append(o)
+                    continue
+
+                o['remaining_qty'] = float(max(0.0, remaining - float(fill_res.get('quantity', fill_qty) or fill_qty)))
+                o['status'] = 'filled' if float(o.get('remaining_qty', 0.0) or 0.0) <= 0 else 'partially_filled'
+
+                try:
+                    rem_res = float(o.get('reserved_remaining', 0.0) or 0.0)
+                except Exception:
+                    rem_res = 0.0
+                try:
+                    spent = float(fill_res.get('margin', 0.0) or 0.0) + float((fill_res.get('commission', 0.0) or 0.0) if float(fill_res.get('commission', 0.0) or 0.0) > 0 else 0.0)
+                except Exception:
+                    spent = 0.0
+                if spent > 0 and rem_res > 0:
+                    o['reserved_remaining'] = max(0.0, float(rem_res) - float(spent))
+
+                trade_record = {
+                    'timestamp': datetime.now().isoformat(),
+                    'symbol': symbol,
+                    'action': side,
+                    'amount_usd': 0.0,
+                    'notional_usd': float(fill_res.get('notional_usd', 0.0) or 0.0),
+                    'quantity': float(fill_res.get('quantity', 0.0) or 0.0),
+                    'live_price': float(mark_px or 0.0),
+                    'execution_price': float(fill_res.get('execution_price', 0.0) or 0.0),
+                    'slippage_pct': 0.0,
+                    'spread_bps': 0.0,
+                    'latency_ms': 0,
+                    'fill_ratio': 1.0,
+                    'fee_rate': float(fill_res.get('fee_rate', 0.0) or 0.0),
+                    'commission': float(fill_res.get('commission', 0.0) or 0.0),
+                    'pnl': float(fill_res.get('pnl', 0.0) or 0.0),
+                    'event': str(fill_res.get('trade_event') or 'ORDER_FILL'),
+                    'strategy': str(o.get('strategy') or 'ORDER_FILL'),
+                    'success': True,
+                }
+                try:
+                    if isinstance(getattr(self, 'trade_history', None), list):
+                        self.trade_history.append(trade_record)
+                        self.total_trades = int(getattr(self, 'total_trades', 0) or 0) + 1
+                except Exception:
+                    pass
+
+                if str(o.get('status')) == 'filled':
+                    try:
+                        rem_res2 = float(o.get('reserved_remaining', 0.0) or 0.0)
+                    except Exception:
+                        rem_res2 = 0.0
+                    if rem_res2 > 0:
+                        try:
+                            self._paper_release_reserved_cash(rem_res2)
+                        except Exception:
+                            pass
+                    continue
+
+                o['next_try_ts'] = now + random.uniform(0.6, 1.8)
+                updated.append(o)
+
+            self.open_orders = updated
+        except Exception:
+            return
 
 
     async def _get_ccxt_market_meta(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -1948,7 +2592,7 @@ class LivePaperTradingManager:
                 if liq_px <= 0:
                     liq_px = px
                 close_notional = qty * liq_px
-                fee_rate = float(getattr(self, 'fee_rate', 0.0) or 0.0)
+                fee_rate = float(self._paper_compute_fee_rate(float(getattr(self, 'fee_rate', 0.0) or 0.0), False))
                 commission = close_notional * fee_rate
                 liq_fee = close_notional * float(getattr(self, 'paper_liq_fee_rate', 0.0) or 0.0)
                 pnl = (liq_px - avg_px) * qty if side == 'BUY' else (avg_px - liq_px) * qty
@@ -2520,9 +3164,185 @@ class LivePaperTradingManager:
         existing_qty = float(existing.get('quantity', 0) or 0) if isinstance(existing, dict) else 0.0
         existing_side = str(existing.get('action', 'BUY') or 'BUY').upper() if isinstance(existing, dict) else ''
 
+        try:
+            if bool(getattr(self, 'paper_exchange_sim', False)) and self.paper_execution_model == 'exchange':
+                if existing_qty > 0:
+                    if action_u == 'SELL' and existing_side == 'BUY':
+                        self._paper_cancel_open_orders(symbol)
+                    elif action_u == 'BUY' and existing_side == 'SELL':
+                        self._paper_cancel_open_orders(symbol)
+        except Exception:
+            pass
+
         trade_event = None
         realized_pnl = None
         notional_usd = None
+
+        try:
+            if bool(getattr(self, 'paper_exchange_sim', False)) and self.paper_execution_model == 'exchange':
+                is_close = False
+                try:
+                    if existing_qty > 0:
+                        if action_u == 'SELL' and existing_side == 'BUY':
+                            is_close = True
+                        elif action_u == 'BUY' and existing_side == 'SELL':
+                            is_close = True
+                except Exception:
+                    is_close = False
+
+                if not is_close:
+                    leverage_factor = float(self.leverage or 1.0) if str(getattr(self, 'market_type', 'futures') or 'futures').lower() == 'futures' else 1.0
+                    if leverage_factor <= 0:
+                        leverage_factor = 1.0
+
+                    margin_req = float(amount_usd or 0.0)
+                    if margin_req <= 0:
+                        return {"success": False, "error": "Amount must be > 0"}
+
+                    notional_est = margin_req * leverage_factor
+                    qty_est = notional_est / float(execution_price or 0.0) if float(execution_price or 0.0) > 0 else 0.0
+                    if qty_est <= 0:
+                        return {"success": False, "error": "Order size too small"}
+
+                    try:
+                        if bool(getattr(self, 'paper_exchange_sim', False)):
+                            min_req = float(getattr(self, 'paper_min_notional_usd', 0.0) or 0.0)
+                            try:
+                                if meta_min_cost is not None and float(meta_min_cost) > 0:
+                                    min_req = max(min_req, float(meta_min_cost))
+                            except Exception:
+                                pass
+                            if min_req > 0 and float(notional_est) < float(min_req or 0.0):
+                                return {"success": False, "error": "min_notional"}
+                    except Exception:
+                        pass
+
+                    fee_rate_taker = float(self._paper_compute_fee_rate(float(effective_fee_rate or 0.0), False))
+                    reserve_amt = float(margin_req) + float(notional_est * max(0.0, fee_rate_taker))
+                    if not self._paper_reserve_cash(reserve_amt):
+                        return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
+
+                    immediate_frac = 0.0
+                    try:
+                        immediate_frac = 0.10
+                        if abs(float(ob_imbalance or 0.0)) > 0.25:
+                            immediate_frac = 0.06
+                        if random.random() < 0.35:
+                            immediate_frac = max(0.02, immediate_frac * 0.35)
+                        if immediate_frac < 0.02:
+                            immediate_frac = 0.02
+                    except Exception:
+                        immediate_frac = 0.0
+
+                    filled_qty = 0.0
+                    filled_px = 0.0
+                    if immediate_frac > 0:
+                        try:
+                            taker_qty = float(qty_est) * float(immediate_frac)
+                            if taker_qty > 0 and isinstance(orderbook, dict):
+                                v = self._simulate_vwap_fill(orderbook, action_u, float(taker_qty))
+                                if float(v.get('avg_price') or 0) > 0 and float(v.get('filled_qty') or 0) > 0:
+                                    filled_qty = float(v.get('filled_qty') or 0)
+                                    filled_px = float(v.get('avg_price') or 0)
+                            if taker_qty > 0 and (filled_qty <= 0 or filled_px <= 0):
+                                filled_qty = float(taker_qty)
+                                filled_px = float(execution_price or 0.0)
+                        except Exception:
+                            pass
+
+                    if filled_qty > 0 and filled_px > 0:
+                        fill_notional = filled_qty * filled_px
+                        fill_margin = fill_notional / leverage_factor
+                        self._paper_apply_fill_to_positions(
+                            symbol,
+                            action_u,
+                            float(filled_qty),
+                            float(filled_px),
+                            float(leverage_factor),
+                            float(effective_fee_rate or 0.0),
+                            False,
+                            stop_loss=stop_loss,
+                            take_profit=take_profit,
+                            mark_price=float(mark_price or filled_px),
+                            ob_imbalance=float(ob_imbalance or 0.0),
+                            funding_rate=float(dynamic_funding) if dynamic_funding is not None else None,
+                        )
+                        try:
+                            reserve_amt -= float(fill_margin) + float(fill_notional * max(0.0, fee_rate_taker))
+                            if reserve_amt < 0:
+                                reserve_amt = 0.0
+                        except Exception:
+                            pass
+
+                    remaining_qty = max(0.0, float(qty_est) - float(filled_qty))
+                    if remaining_qty > 0:
+                        limit_px = float(execution_price or 0.0)
+                        try:
+                            if isinstance(orderbook, dict) and orderbook.get('bids') and orderbook.get('asks'):
+                                bid0 = float(orderbook.get('bids')[0][0] or 0)
+                                ask0 = float(orderbook.get('asks')[0][0] or 0)
+                                if bid0 > 0 and ask0 > 0:
+                                    if action_u == 'BUY':
+                                        limit_px = min(limit_px, bid0)
+                                    else:
+                                        limit_px = max(limit_px, ask0)
+                        except Exception:
+                            pass
+
+                        oid = self._paper_next_order_id()
+                        self.open_orders.append({
+                            'id': oid,
+                            'symbol': symbol,
+                            'side': action_u,
+                            'price': float(limit_px),
+                            'remaining_qty': float(remaining_qty),
+                            'status': 'open',
+                            'created_ts': float(time.time()),
+                            'next_try_ts': float(time.time()) + random.uniform(0.3, 1.0),
+                            'reserved_remaining': float(reserve_amt),
+                            'leverage_factor': float(leverage_factor),
+                            'base_taker_fee_rate': float(effective_fee_rate or 0.0),
+                            'stop_loss': stop_loss,
+                            'take_profit': take_profit,
+                            'strategy': str(strategy or 'exchange_order'),
+                        })
+                    else:
+                        if reserve_amt > 0:
+                            self._paper_release_reserved_cash(reserve_amt)
+
+                    trade_record = {
+                        'timestamp': datetime.now().isoformat(),
+                        'symbol': symbol,
+                        'action': action_u,
+                        'amount_usd': float(amount_usd or 0.0),
+                        'notional_usd': float(notional_est or 0.0),
+                        'quantity': float(qty_est or 0.0),
+                        'live_price': float(current_price or 0.0),
+                        'execution_price': float(execution_price or 0.0),
+                        'slippage_pct': float(slippage_pct or 0.0) * 100,
+                        'spread_bps': float(spread_pct or 0.0) * 10000,
+                        'latency_ms': int(latency_ms or 0),
+                        'fill_ratio': float(immediate_frac if immediate_frac > 0 else 0.0),
+                        'fee_rate': float(effective_fee_rate or 0.0),
+                        'commission': 0.0,
+                        'pnl': 0.0,
+                        'event': 'ORDER_ACCEPTED',
+                        'strategy': strategy,
+                        'success': True
+                    }
+                    try:
+                        self.trade_history.append(trade_record)
+                    except Exception:
+                        pass
+
+                    try:
+                        self._save_state()
+                    except Exception:
+                        pass
+
+                    return {"success": True, "trade": trade_record}
+        except Exception:
+            pass
         
         if action_u == 'BUY':
             if existing_qty > 0 and existing_side == 'SELL':
@@ -2566,7 +3386,14 @@ class LivePaperTradingManager:
                             close_notional = quantity * execution_price
                     except Exception:
                         pass
-                commission = close_notional * effective_fee_rate
+                fee_rate_used = float(effective_fee_rate or 0.0)
+                try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        fee_rate_used = float(self._paper_compute_fee_rate(float(effective_fee_rate or 0.0), False))
+                except Exception:
+                    pass
+                commission = close_notional * fee_rate_used
+                effective_fee_rate = fee_rate_used
 
                 entry_px = float(existing.get('avg_price', 0) or 0)
                 pnl = (entry_px - execution_price) * quantity
@@ -2654,7 +3481,14 @@ class LivePaperTradingManager:
                 except Exception:
                     pass
 
-                commission = notional * effective_fee_rate
+                fee_rate_used = float(effective_fee_rate or 0.0)
+                try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        fee_rate_used = float(self._paper_compute_fee_rate(float(effective_fee_rate or 0.0), False))
+                except Exception:
+                    pass
+                commission = notional * fee_rate_used
+                effective_fee_rate = fee_rate_used
                 required = margin + commission
                 if required > self.cash_balance:
                     return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
@@ -2762,7 +3596,14 @@ class LivePaperTradingManager:
                             notional_usd = close_notional
                     except Exception:
                         pass
-                commission = close_notional * effective_fee_rate
+                fee_rate_used = float(effective_fee_rate or 0.0)
+                try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        fee_rate_used = float(self._paper_compute_fee_rate(float(effective_fee_rate or 0.0), False))
+                except Exception:
+                    pass
+                commission = close_notional * fee_rate_used
+                effective_fee_rate = fee_rate_used
 
                 entry_px = float(existing.get('avg_price', 0) or 0)
                 pnl = (execution_price - entry_px) * quantity
@@ -2857,7 +3698,14 @@ class LivePaperTradingManager:
                 except Exception:
                     pass
 
-                commission = notional * effective_fee_rate
+                fee_rate_used = float(effective_fee_rate or 0.0)
+                try:
+                    if bool(getattr(self, 'paper_exchange_sim', False)):
+                        fee_rate_used = float(self._paper_compute_fee_rate(float(effective_fee_rate or 0.0), False))
+                except Exception:
+                    pass
+                commission = notional * fee_rate_used
+                effective_fee_rate = fee_rate_used
                 required = margin + commission
                 if required > self.cash_balance:
                     return {"success": False, "error": f"Insufficient funds: ${self.cash_balance:.2f}"}
@@ -3105,8 +3953,14 @@ class LivePaperTradingManager:
     async def get_portfolio_value(self):
         """Calculate total portfolio value using live prices"""
         
-        portfolio_value = self.cash_balance
+        portfolio_value = self.cash_balance + float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0)
         position_values = {}
+
+        try:
+            if bool(getattr(self, 'paper_exchange_sim', False)):
+                await self._paper_process_open_orders()
+        except Exception:
+            pass
         
         # Get live prices for all positions
         symbols_with_positions = [symbol for symbol, pos in self.positions.items() if pos["quantity"] > 0]
@@ -3191,6 +4045,7 @@ class LivePaperTradingManager:
         return {
             "total_value": portfolio_value,
             "cash": self.cash_balance,
+            "reserved_cash": float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0),
             "positions": position_values,
             "total_return": (portfolio_value - self.initial_capital) / self.initial_capital,
             "total_pnl": portfolio_value - self.initial_capital
@@ -3198,7 +4053,7 @@ class LivePaperTradingManager:
     
     def get_portfolio_value_sync(self):
         """SYNC version for dashboard - uses last known/avg prices instead of live lookup"""
-        portfolio_value = self.cash_balance
+        portfolio_value = self.cash_balance + float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0)
         position_values = {}
         
         for symbol, position in self.positions.items():
@@ -3243,6 +4098,7 @@ class LivePaperTradingManager:
         return {
             "total_value": portfolio_value,
             "cash": self.cash_balance,
+            "reserved_cash": float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0),
             "positions": position_values,
             "total_return": (portfolio_value - self.initial_capital) / self.initial_capital if self.initial_capital > 0 else 0,
             "total_pnl": portfolio_value - self.initial_capital
@@ -3253,7 +4109,9 @@ class LivePaperTradingManager:
         try:
             state = {
                 "cash_balance": self.cash_balance,
+                "reserved_cash": float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0),
                 "positions": self.positions,
+                "open_orders": getattr(self, 'open_orders', None),
                 "trade_history": self.trade_history[-100:],  # Keep last 100 trades
                 "total_trades": self.total_trades,
                 "winning_trades": self.winning_trades,
@@ -3321,7 +4179,19 @@ class LivePaperTradingManager:
                 
                 # Data looks good - load it
                 self.cash_balance = state.get("cash_balance", self.initial_capital)
+                try:
+                    self._paper_reserved_cash = float(state.get('reserved_cash', getattr(self, '_paper_reserved_cash', 0.0) or 0.0) or 0.0)
+                except Exception:
+                    self._paper_reserved_cash = float(getattr(self, '_paper_reserved_cash', 0.0) or 0.0)
                 self.positions = state.get("positions", {})
+                try:
+                    oo = state.get('open_orders')
+                    if isinstance(oo, list):
+                        self.open_orders = oo
+                    else:
+                        self.open_orders = []
+                except Exception:
+                    self.open_orders = []
                 self.trade_history = state.get("trade_history", [])
                 self.total_trades = state.get("total_trades", 0)
                 self.winning_trades = state.get("winning_trades", 0)
