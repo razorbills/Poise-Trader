@@ -3629,6 +3629,118 @@ class LegendaryCryptoTitanBot:
         print("🎯 MISSION: LEARN FROM 1000 TRADES TO BECOME UNDEFEATABLE!")
         
         return signal
+
+    async def _get_execution_quality_snapshot(self, symbol: str, mid_price: float, notional_usd: float) -> Dict:
+        try:
+            import time as _t
+            now = float(_t.time())
+        except Exception:
+            now = 0.0
+
+        try:
+            if not hasattr(self, '_exec_quality_cache') or not isinstance(getattr(self, '_exec_quality_cache', None), dict):
+                self._exec_quality_cache = {}
+        except Exception:
+            self._exec_quality_cache = {}
+
+        ttl = 3.0
+        cache_key = str(symbol)
+        try:
+            cached = self._exec_quality_cache.get(cache_key)
+            if isinstance(cached, dict):
+                ts = float(cached.get('ts', 0.0) or 0.0)
+                if now > 0 and now - ts <= ttl:
+                    data = cached.get('data')
+                    if isinstance(data, dict):
+                        return data
+        except Exception:
+            pass
+
+        snapshot = {
+            'spread_bps': None,
+            'liquidity_score': 0.5,
+            'expected_slippage_bps': None,
+            'book_depth_usd': None,
+        }
+
+        active_feed = getattr(self, 'data_feed', None)
+        try:
+            if hasattr(self, 'trader') and self.trader and getattr(self.trader, 'data_feed', None):
+                active_feed = self.trader.data_feed
+        except Exception:
+            pass
+
+        ob = None
+        try:
+            if active_feed is not None and hasattr(active_feed, 'get_orderbook'):
+                ob = await active_feed.get_orderbook(symbol)
+        except Exception:
+            ob = None
+
+        try:
+            bids = (ob or {}).get('bids') if isinstance(ob, dict) else None
+            asks = (ob or {}).get('asks') if isinstance(ob, dict) else None
+            if isinstance(bids, list) and isinstance(asks, list) and bids and asks:
+                try:
+                    best_bid = float(bids[0][0])
+                    best_ask = float(asks[0][0])
+                except Exception:
+                    best_bid = 0.0
+                    best_ask = 0.0
+
+                mid = float(mid_price or 0.0)
+                if mid <= 0 and best_bid > 0 and best_ask > 0:
+                    mid = (best_bid + best_ask) / 2.0
+
+                if best_bid > 0 and best_ask > 0 and mid > 0:
+                    spread_bps = (best_ask - best_bid) / mid * 10000.0
+                    snapshot['spread_bps'] = max(0.0, float(spread_bps))
+
+                    bps_band = 20.0
+                    band = (bps_band / 10000.0) * mid
+                    min_bid = mid - band
+                    max_ask = mid + band
+
+                    depth_usd = 0.0
+                    for p, q in bids[:25]:
+                        try:
+                            px = float(p)
+                            qty = float(q)
+                        except Exception:
+                            continue
+                        if px < min_bid:
+                            break
+                        depth_usd += px * max(0.0, qty)
+
+                    for p, q in asks[:25]:
+                        try:
+                            px = float(p)
+                            qty = float(q)
+                        except Exception:
+                            continue
+                        if px > max_ask:
+                            break
+                        depth_usd += px * max(0.0, qty)
+
+                    snapshot['book_depth_usd'] = float(depth_usd or 0.0)
+
+                    notional = max(0.0, float(notional_usd or 0.0))
+                    denom = max(1.0, float(depth_usd or 0.0))
+                    depth_ratio = min(5.0, notional / denom)
+                    liquidity_score = max(0.0, min(1.0, 1.0 - depth_ratio))
+                    snapshot['liquidity_score'] = float(liquidity_score)
+
+                    slip_bps = (snapshot['spread_bps'] or 0.0) * 0.5 + depth_ratio * 60.0
+                    snapshot['expected_slippage_bps'] = float(max(0.0, slip_bps))
+        except Exception:
+            pass
+
+        try:
+            self._exec_quality_cache[cache_key] = {'ts': now, 'data': snapshot}
+        except Exception:
+            pass
+
+        return snapshot
     
     def _calculate_trade_quality_score(self, signal: 'AITradingSignal', market_data: Dict = None) -> float:
         """🎯 Calculate comprehensive trade quality score (0-100) for 90% win rate filtering"""
@@ -3681,22 +3793,82 @@ class LegendaryCryptoTitanBot:
             # 3. Market Condition Score (20% weight) - Favor clear trends
             market_score = 0.0
             regime = market_data.get('regime', 'unknown')
-            if regime == 'trending':
+            regime_u = str(regime or 'unknown').upper()
+            if regime_u in ['TRENDING', 'BULL', 'BEAR', 'BULLISH', 'BEARISH']:
                 market_score += 15  # Trends are best for profits
-            elif regime == 'ranging':
+            elif regime_u in ['RANGING', 'SIDEWAYS', 'CONSOLIDATION', 'VOLATILE_SIDEWAYS']:
                 market_score += 5   # Risky in ranges
             else:
                 market_score += 10  # Unknown = moderate
             
             volatility = market_data.get('volatility', 'normal')
-            if volatility == 'normal':
+            vol_u = str(volatility or 'normal').upper()
+            if vol_u in ['NORMAL', 'MEDIUM']:
                 market_score += 5   # Stable conditions
-            elif volatility == 'low':
+            elif vol_u in ['LOW']:
                 market_score += 3   # Less opportunity
             else:
                 market_score += 0   # High vol = risky
             score += market_score
-            
+
+            exec_penalty = 0.0
+            try:
+                spread_bps = market_data.get('spread_bps', None)
+                if spread_bps is not None:
+                    sb = float(spread_bps or 0.0)
+                    if sb > 80:
+                        exec_penalty += 18.0
+                    elif sb > 50:
+                        exec_penalty += 12.0
+                    elif sb > 30:
+                        exec_penalty += 7.0
+                    elif sb > 20:
+                        exec_penalty += 4.0
+            except Exception:
+                pass
+
+            try:
+                liq = float(market_data.get('liquidity_score', 0.5) or 0.5)
+                if liq < 0.20:
+                    exec_penalty += 12.0
+                elif liq < 0.35:
+                    exec_penalty += 7.0
+                elif liq < 0.50:
+                    exec_penalty += 3.0
+            except Exception:
+                pass
+
+            try:
+                slp = market_data.get('expected_slippage_bps', None)
+                if slp is not None:
+                    sb = float(slp or 0.0)
+                    if sb > 120:
+                        exec_penalty += 10.0
+                    elif sb > 80:
+                        exec_penalty += 6.0
+                    elif sb > 50:
+                        exec_penalty += 3.0
+            except Exception:
+                pass
+
+            try:
+                strat = str(getattr(signal, 'strategy_name', '') or '')
+                if regime_u in ['SIDEWAYS', 'CONSOLIDATION', 'RANGING', 'VOLATILE_SIDEWAYS']:
+                    if any(k in strat.upper() for k in ['TREND', 'BREAKOUT']):
+                        exec_penalty += 6.0
+                if regime_u in ['TRENDING', 'BULL', 'BEAR', 'BULLISH', 'BEARISH']:
+                    if 'MEAN' in strat.upper() and 'REVERSION' in strat.upper():
+                        exec_penalty += 4.0
+            except Exception:
+                pass
+
+            try:
+                vreg = str(market_data.get('volatility_regime', '') or '').upper()
+                if vreg == 'HIGH' and float(getattr(signal, 'confidence', 0.0) or 0.0) < 0.60:
+                    exec_penalty += 4.0
+            except Exception:
+                pass
+
             # 4. Technical Score (15% weight)
             technical_score = 0.0
             # Check if signal has technical indicators
@@ -3729,6 +3901,22 @@ class LegendaryCryptoTitanBot:
             else:
                 timing_score = 5.0
             score += timing_score
+
+            try:
+                sent = float(getattr(signal, 'sentiment_score', 0.5) or 0.5)
+                if sent > 0.65:
+                    score += 2.0
+                elif sent < 0.35:
+                    score -= 1.0
+            except Exception:
+                pass
+
+            try:
+                mom = float(getattr(signal, 'momentum_score', 0.0) or 0.0)
+                if abs(mom) > 0.03:
+                    score += 2.0
+            except Exception:
+                pass
             
             # Bonus for winning streaks - momentum is real
             if self.current_win_streak >= 3:
@@ -3742,6 +3930,8 @@ class LegendaryCryptoTitanBot:
             elif self.current_loss_streak >= 2:
                 score -= 8.0   # Moderate penalty - be more careful
             
+            score = float(score) - float(exec_penalty or 0.0)
+
             # Cap score at 100
             score = min(100.0, max(0.0, score))
             
@@ -9699,7 +9889,27 @@ class LegendaryCryptoTitanBot:
             
             # 🎯 90% WIN RATE QUALITY FILTER
             if getattr(self, 'win_rate_optimizer_enabled', True) and getattr(signal, 'strategy_name', '') != 'FORCED_LEARNING':
-                quality_score = self._calculate_trade_quality_score(signal, {'price': signal.entry_price})
+                md = {
+                    'price': getattr(signal, 'entry_price', None),
+                    'regime': str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN'),
+                    'volatility_regime': str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL'),
+                    'volatility': str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL'),
+                }
+                try:
+                    eq = await self._get_execution_quality_snapshot(
+                        signal.symbol,
+                        float(getattr(signal, 'entry_price', 0.0) or 0.0),
+                        float(position_size or 0.0),
+                    )
+                    if isinstance(eq, dict):
+                        md['spread_bps'] = eq.get('spread_bps')
+                        md['liquidity_score'] = eq.get('liquidity_score')
+                        md['expected_slippage_bps'] = eq.get('expected_slippage_bps')
+                        md['book_depth_usd'] = eq.get('book_depth_usd')
+                except Exception:
+                    pass
+
+                quality_score = self._calculate_trade_quality_score(signal, md)
                 should_take, reason = self._should_take_trade(quality_score, signal.confidence)
                 
                 if not should_take:

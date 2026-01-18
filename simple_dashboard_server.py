@@ -7,11 +7,15 @@ Minimal backend for the simple control panel
 from flask import Flask, jsonify, request, send_file, Response
 from flask_socketio import SocketIO
 import os
+import json
+import re
+import uuid
 import threading
 import time
 from datetime import datetime
 import csv
 import io
+import urllib.request
 
 # Flask app setup
 app = Flask(__name__)
@@ -30,6 +34,15 @@ bot_startup_state = 'unknown'
 bot_startup_message = None
 bot_last_error = None
 bot_last_error_ts = None
+
+assistant_pending_actions = {}
+
+ASSISTANT_MEMORY_PATH = os.path.join('data', 'assistant_memory.jsonl')
+ASSISTANT_MEMORY_MAX_BYTES = 900_000
+ASSISTANT_MEMORY_KEEP_LINES = 300
+
+ASSISTANT_STATE_PATH = os.path.join('data', 'assistant_state.json')
+ASSISTANT_STATE_MAX_BYTES = 200_000
 
 try:
     DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '20.0') or 20.0)
@@ -86,6 +99,975 @@ def ping():
     """Simple ping endpoint"""
     return jsonify({'status': 'alive', 'timestamp': datetime.now().isoformat()})
 
+
+def _assistant_ensure_storage():
+    try:
+        os.makedirs(os.path.dirname(ASSISTANT_MEMORY_PATH), exist_ok=True)
+    except Exception:
+        pass
+
+
+def _assistant_load_state():
+    _assistant_ensure_storage()
+    try:
+        if not os.path.exists(ASSISTANT_STATE_PATH):
+            return {'sessions': {}}
+        with open(ASSISTANT_STATE_PATH, 'r', encoding='utf-8') as f:
+            obj = json.load(f)
+        if not isinstance(obj, dict):
+            return {'sessions': {}}
+        if 'sessions' not in obj or not isinstance(obj.get('sessions'), dict):
+            obj['sessions'] = {}
+        return obj
+    except Exception:
+        return {'sessions': {}}
+
+
+def _assistant_save_state(state: dict):
+    try:
+        _assistant_ensure_storage()
+        tmp = ASSISTANT_STATE_PATH + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(state or {'sessions': {}}, f, ensure_ascii=False)
+        os.replace(tmp, ASSISTANT_STATE_PATH)
+    except Exception:
+        pass
+
+
+def _assistant_compact_state_if_needed():
+    try:
+        if not os.path.exists(ASSISTANT_STATE_PATH):
+            return
+        if os.path.getsize(ASSISTANT_STATE_PATH) <= int(ASSISTANT_STATE_MAX_BYTES):
+            return
+    except Exception:
+        return
+
+    try:
+        st = _assistant_load_state()
+        sessions = st.get('sessions') or {}
+        if not isinstance(sessions, dict):
+            return
+        items = []
+        for sid, s in sessions.items():
+            try:
+                ts = float((s or {}).get('updated_ts', 0) or 0)
+            except Exception:
+                ts = 0
+            items.append((ts, sid))
+        items.sort(reverse=True)
+        keep = {}
+        for _, sid in items[:10]:
+            obj = sessions.get(sid)
+            if isinstance(obj, dict):
+                try:
+                    if 'summary' in obj:
+                        obj['summary'] = str(obj.get('summary', '') or '')[-6000:]
+                except Exception:
+                    pass
+            keep[sid] = obj
+        st['sessions'] = keep
+        _assistant_save_state(st)
+    except Exception:
+        pass
+
+
+def _assistant_merge_summary(prev: str, new: str):
+    p = str(prev or '').strip()
+    n = str(new or '').strip()
+    if not n:
+        return p
+    if not p:
+        return n[:6000]
+    merged = (p + "\n\n" + n).strip()
+    return merged[-6000:]
+
+
+def _assistant_summarize_session_update(session_id: str, new_text: str):
+    sid = str(session_id or '').strip()
+    nt = str(new_text or '').strip()
+    if not sid or not nt:
+        return nt[-6000:]
+
+    try:
+        st = _assistant_load_state()
+        existing = ''
+        sess = (st.get('sessions') or {}).get(sid)
+        if isinstance(sess, dict):
+            existing = str(sess.get('summary', '') or '').strip()
+    except Exception:
+        existing = ''
+
+    # Try to use OpenAI to compress into a stable long-term memory summary (if configured)
+    try:
+        if str(os.getenv('OPENAI_API_KEY', '') or '').strip():
+            prompt = [
+                {
+                    'role': 'system',
+                    'content': (
+                        'You are a memory compressor for a trading dashboard assistant. '
+                        'Update the long-term memory summary with new conversation excerpts. '
+                        'Keep it concise and information-dense. Preserve: user preferences, constraints, '
+                        'important decisions, and any persistent facts. Avoid quoting long logs.'
+                    )
+                },
+                {
+                    'role': 'user',
+                    'content': (
+                        'Existing summary (may be empty):\n'
+                        + (existing or '')
+                        + '\n\nNew excerpts to incorporate:\n'
+                        + nt[-8000:]
+                        + '\n\nReturn an updated summary as bullet points.'
+                    )
+                }
+            ]
+            out = _assistant_openai_chat(prompt)
+            if out:
+                return str(out).strip()[-6000:]
+    except Exception:
+        pass
+
+    merged = _assistant_merge_summary(existing, nt)
+    return str(merged or '')[-6000:]
+
+
+def _assistant_extract_facts_from_text(text: str):
+    t = str(text or '')
+    facts = {}
+    try:
+        if re.search(r'\brender\b', t, flags=re.IGNORECASE):
+            facts['hosting'] = 'render'
+        if re.search(r'\b512\s*mb\b', t, flags=re.IGNORECASE):
+            facts['storage_limit'] = '512MB'
+        if re.search(r'\bopenai\b', t, flags=re.IGNORECASE):
+            facts['uses_openai'] = True
+    except Exception:
+        return {}
+    return facts
+
+
+def _assistant_update_session_state(session_id: str, summary_append: str = None, facts_update: dict = None):
+    sid = str(session_id or '').strip()
+    if not sid:
+        return
+    st = _assistant_load_state()
+    sessions = st.get('sessions')
+    if not isinstance(sessions, dict):
+        st['sessions'] = {}
+        sessions = st['sessions']
+
+    cur = sessions.get(sid) if isinstance(sessions.get(sid), dict) else {}
+    if summary_append:
+        cur['summary'] = _assistant_merge_summary(cur.get('summary', ''), summary_append)
+    if isinstance(facts_update, dict) and facts_update:
+        cur_f = cur.get('facts') if isinstance(cur.get('facts'), dict) else {}
+        cur_f.update(facts_update)
+        cur['facts'] = cur_f
+    cur['updated_ts'] = time.time()
+    sessions[sid] = cur
+    st['sessions'] = sessions
+    _assistant_save_state(st)
+    _assistant_compact_state_if_needed()
+
+
+def _assistant_compact_memory_if_needed():
+    try:
+        _assistant_ensure_storage()
+        if not os.path.exists(ASSISTANT_MEMORY_PATH):
+            return
+        if os.path.getsize(ASSISTANT_MEMORY_PATH) <= int(ASSISTANT_MEMORY_MAX_BYTES):
+            return
+    except Exception:
+        return
+
+    try:
+        with open(ASSISTANT_MEMORY_PATH, 'r', encoding='utf-8') as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return
+
+    keep = lines[-int(ASSISTANT_MEMORY_KEEP_LINES):] if len(lines) > int(ASSISTANT_MEMORY_KEEP_LINES) else lines
+
+    summaries_by_session = {}
+    try:
+        dropped = lines[:-int(ASSISTANT_MEMORY_KEEP_LINES)] if len(lines) > int(ASSISTANT_MEMORY_KEEP_LINES) else []
+        if dropped:
+            for ln in dropped[-2000:]:
+                try:
+                    obj = json.loads(ln)
+                except Exception:
+                    continue
+                sid = str(obj.get('session_id', '') or '')
+                role = str(obj.get('role', '') or '')
+                content = str(obj.get('content', '') or '')
+                if not sid or not content:
+                    continue
+                summaries_by_session.setdefault(sid, []).append(f"{role}: {content}")
+    except Exception:
+        summaries_by_session = {}
+
+    out_lines = []
+    try:
+        for sid, items in summaries_by_session.items():
+            joined = "\n".join(items)
+            summary_text = _assistant_summarize_session_update(sid, joined)
+            if summary_text:
+                facts = _assistant_extract_facts_from_text(summary_text)
+                _assistant_update_session_state(sid, summary_append=summary_text, facts_update=facts)
+                out_lines.append(json.dumps({
+                    'ts': datetime.now().isoformat(),
+                    'session_id': sid,
+                    'role': 'system',
+                    'type': 'memory_summary',
+                    'content': summary_text,
+                }, ensure_ascii=False))
+    except Exception:
+        pass
+    out_lines.extend(keep)
+
+    try:
+        tmp = ASSISTANT_MEMORY_PATH + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write("\n".join(out_lines) + ("\n" if out_lines else ""))
+        os.replace(tmp, ASSISTANT_MEMORY_PATH)
+    except Exception:
+        pass
+
+
+def _assistant_append_memory(session_id: str, role: str, content: str, meta: dict = None):
+    _assistant_ensure_storage()
+    rec = {
+        'ts': datetime.now().isoformat(),
+        'session_id': str(session_id or ''),
+        'role': str(role or ''),
+        'content': str(content or '')[:8000],
+    }
+    if isinstance(meta, dict) and meta:
+        try:
+            rec['meta'] = meta
+        except Exception:
+            pass
+    try:
+        with open(ASSISTANT_MEMORY_PATH, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    _assistant_compact_memory_if_needed()
+    try:
+        if str(role or '') == 'user':
+            facts = _assistant_extract_facts_from_text(content)
+            if facts:
+                _assistant_update_session_state(session_id, facts_update=facts)
+    except Exception:
+        pass
+
+
+def _assistant_read_recent_memory(session_id: str, limit: int = 18):
+    try:
+        if not os.path.exists(ASSISTANT_MEMORY_PATH):
+            return []
+        with open(ASSISTANT_MEMORY_PATH, 'r', encoding='utf-8') as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return []
+
+    out = []
+    sid = str(session_id or '')
+
+    try:
+        st = _assistant_load_state()
+        sess = (st.get('sessions') or {}).get(sid) if sid else None
+        if isinstance(sess, dict):
+            summary = str(sess.get('summary', '') or '').strip()
+            facts = sess.get('facts') if isinstance(sess.get('facts'), dict) else {}
+            header_parts = []
+            if summary:
+                header_parts.append("Long-term memory summary:\n" + summary)
+            if facts:
+                header_parts.append("Facts:" + json.dumps(facts, ensure_ascii=False))
+            if header_parts:
+                out.append({'role': 'system', 'content': "\n\n".join(header_parts)[:6000]})
+    except Exception:
+        pass
+
+    for ln in reversed(lines):
+        try:
+            obj = json.loads(ln)
+        except Exception:
+            continue
+        if obj.get('type') == 'memory_summary':
+            if sid and str(obj.get('session_id', '') or '') not in ['', sid]:
+                continue
+            out.append({'role': 'system', 'content': str(obj.get('content', '') or '')[:6000]})
+            if len(out) >= int(limit):
+                break
+            continue
+        if sid and obj.get('session_id') != sid:
+            continue
+        role = str(obj.get('role', '') or '')
+        content = str(obj.get('content', '') or '')
+        if role and content:
+            out.append({'role': role, 'content': content})
+        if len(out) >= int(limit):
+            break
+    return list(reversed(out))
+
+
+def _assistant_get_bot_snapshot():
+    global bot_instance
+    snap = {
+        'connected': bool(bot_instance is not None),
+    }
+    if not bot_instance:
+        return snap
+
+    try:
+        snap['bot_running'] = bool(getattr(bot_instance, 'bot_running', False))
+        snap['trading_mode'] = str(getattr(bot_instance, 'trading_mode', 'UNKNOWN') or 'UNKNOWN')
+        snap['current_capital'] = float(getattr(bot_instance, 'current_capital', 0.0) or 0.0)
+        snap['initial_capital'] = float(getattr(bot_instance, 'initial_capital', 0.0) or 0.0)
+        snap['win_rate'] = float(getattr(bot_instance, 'win_rate', 0.0) or 0.0)
+        snap['total_completed_trades'] = int(getattr(bot_instance, 'total_completed_trades', 0) or 0)
+        snap['winning_trades'] = int(getattr(bot_instance, 'winning_trades', 0) or 0)
+        snap['current_market_regime'] = str(getattr(bot_instance, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN')
+        snap['volatility_regime'] = str(getattr(bot_instance, 'volatility_regime', 'NORMAL') or 'NORMAL')
+    except Exception:
+        pass
+
+    try:
+        tr = getattr(bot_instance, 'trader', None)
+        if tr is not None:
+            snap['leverage'] = float(getattr(tr, 'leverage', 1.0) or 1.0)
+            snap['fee_rate'] = float(getattr(tr, 'fee_rate', 0.0) or 0.0)
+            snap['paper_spread_bps'] = getattr(tr, 'paper_spread_bps', None)
+            snap['paper_slippage_bps'] = getattr(tr, 'paper_slippage_bps', None)
+
+            positions = {}
+            if hasattr(tr, 'get_portfolio_value_sync'):
+                try:
+                    pf = tr.get_portfolio_value_sync() or {}
+                    for sym, p in (pf.get('positions') or {}).items():
+                        if isinstance(p, dict) and float(p.get('quantity', 0) or 0) > 0:
+                            positions[str(sym)] = dict(p)
+                except Exception:
+                    positions = {}
+
+            if not positions and hasattr(tr, 'positions') and isinstance(getattr(tr, 'positions', None), dict):
+                try:
+                    for sym, p in (tr.positions or {}).items():
+                        if isinstance(p, dict) and float(p.get('quantity', 0) or 0) > 0:
+                            positions[str(sym)] = dict(p)
+                except Exception:
+                    positions = {}
+
+            snap['positions'] = positions
+    except Exception:
+        pass
+
+    return snap
+
+
+def _assistant_symbol_from_text(text: str):
+    t = str(text or '')
+    m = re.search(r'\b([A-Za-z0-9]{2,12})\s*/\s*([A-Za-z0-9]{2,12})\b', t)
+    if m:
+        return f"{m.group(1).upper()}/{m.group(2).upper()}"
+    m = re.search(r'\b([A-Za-z0-9]{2,12})\b\s*(?:usdt|usd)\b', t, flags=re.IGNORECASE)
+    if m:
+        return f"{m.group(1).upper()}/USDT"
+    return None
+
+
+def _assistant_format_positions(snap: dict):
+    positions = (snap or {}).get('positions') or {}
+    if not positions:
+        return "No open positions right now."
+
+    lines = []
+    for sym, p in positions.items():
+        try:
+            qty = float(p.get('quantity', 0) or 0)
+            ep = float(p.get('entry_price', p.get('avg_price', 0)) or 0)
+            cp = float(p.get('current_price', 0) or 0)
+            side = str(p.get('action', p.get('side', 'BUY')) or 'BUY').upper()
+            tp = p.get('take_profit', None)
+            sl = p.get('stop_loss', None)
+            upnl = p.get('unrealized_pnl', None)
+            if upnl is None and cp > 0 and ep > 0 and qty > 0:
+                upnl = (cp - ep) * qty if side == 'BUY' else (ep - cp) * qty
+            upnl = float(upnl or 0.0)
+            lines.append(f"{sym} {side} qty={qty:.6g} entry={ep:.6g} current={cp:.6g} uPnL={upnl:.4f} TP={tp} SL={sl}")
+        except Exception:
+            continue
+    return "\n".join(lines) if lines else "No open positions right now."
+
+
+def _assistant_openai_chat(messages):
+    key = str(os.getenv('OPENAI_API_KEY', '') or '').strip()
+    if not key:
+        return None
+    payload = {
+        'model': 'gpt-3.5-turbo',
+        'messages': messages,
+        'temperature': 0.2,
+        'max_tokens': 350,
+    }
+    try:
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            'https://api.openai.com/v1/chat/completions',
+            data=data,
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f"Bearer {key}",
+            },
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            raw = resp.read().decode('utf-8', errors='ignore')
+        obj = json.loads(raw)
+        return str((((obj.get('choices') or [])[0] or {}).get('message') or {}).get('content') or '').strip() or None
+    except Exception:
+        return None
+
+
+def _assistant_execute_close(symbol: str):
+    global bot_instance
+
+    sym = str(symbol or '').strip()
+    if not sym:
+        return False, 'Symbol required to close a position.'
+    if not bot_instance:
+        return False, 'No bot connected.'
+
+    try:
+        if not hasattr(bot_instance, 'trader') or bot_instance.trader is None:
+            return False, 'Trading system not available.'
+        tr = bot_instance.trader
+        if not hasattr(tr, 'positions') or not isinstance(getattr(tr, 'positions', None), dict):
+            return False, 'No positions store available.'
+        if sym not in tr.positions:
+            return False, f'Position not found: {sym}'
+        position = tr.positions.get(sym) or {}
+        qty = float(position.get('quantity', 0) or 0)
+        if qty <= 0:
+            return False, f'No open quantity for {sym}.'
+
+        current_price = float(position.get('current_price', position.get('avg_price', 0)) or 0)
+        side = str(position.get('action', 'BUY') or 'BUY').upper()
+        avg_price = float(position.get('avg_price', current_price) or current_price)
+        margin = float(position.get('total_cost', 0) or 0)
+        notional = float(qty) * float(current_price or 0)
+        pnl = (current_price - avg_price) * qty if side == 'BUY' else (avg_price - current_price) * qty
+        fee_rate = float(getattr(tr, 'fee_rate', 0.0002) or 0.0002)
+        fee = notional * fee_rate
+        realized_value = margin + pnl - fee
+
+        if hasattr(bot_instance, '_close_micro_position'):
+            import asyncio
+            pos_for_close = dict(position)
+            pos_for_close['current_value'] = notional
+            pos_for_close['unrealized_pnl'] = pnl
+            pos_for_close['cost_basis'] = margin
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(bot_instance._close_micro_position(sym, pos_for_close, 'MANUAL_DASHBOARD_ASSISTANT_CLOSE'))
+            finally:
+                try:
+                    loop.close()
+                except Exception:
+                    pass
+
+            try:
+                updated = tr.positions.get(sym)
+                still_open = bool(updated and float(updated.get('quantity', 0) or 0) > 0)
+            except Exception:
+                still_open = False
+
+            if still_open:
+                return False, f'Close submitted but {sym} still open.'
+
+            return True, f'Closed {sym}. Realized value≈${realized_value:.4f} (fees included).'
+
+        try:
+            if hasattr(tr, 'cash_balance'):
+                tr.cash_balance = float(getattr(tr, 'cash_balance', 0.0) or 0.0) + float(realized_value or 0.0)
+            tr.positions.pop(sym, None)
+            try:
+                if hasattr(tr, '_save_state'):
+                    tr._save_state()
+            except Exception:
+                pass
+            return True, f'Closed {sym}. Realized value≈${realized_value:.4f} (fees included).'
+        except Exception as e:
+            return False, f'Failed to close {sym}: {str(e)[:200]}'
+    except Exception as e:
+        return False, f'Close error: {str(e)[:200]}'
+
+
+def _assistant_execute_set_running(should_run: bool):
+    global bot_instance
+    if not bot_instance:
+        return False, 'No bot connected.'
+    try:
+        bot_instance.bot_running = bool(should_run)
+        if bool(should_run):
+            return True, 'Trading started.'
+        return True, 'Trading stopped.'
+    except Exception as e:
+        return False, f'Failed to update trading state: {str(e)[:200]}'
+
+
+def _assistant_execute_update_position(symbol: str, take_profit, stop_loss):
+    global bot_instance
+    sym = str(symbol or '').strip()
+    if not sym:
+        return False, 'Symbol required.'
+    if not bot_instance:
+        return False, 'No bot connected.'
+    try:
+        if not hasattr(bot_instance, 'trader') or bot_instance.trader is None:
+            return False, 'Trading system not available.'
+        tr = bot_instance.trader
+        if not hasattr(tr, 'positions') or not isinstance(getattr(tr, 'positions', None), dict):
+            return False, 'No positions store available.'
+        if sym not in tr.positions:
+            return False, f'Position not found: {sym}'
+        position = tr.positions.get(sym) or {}
+
+        tp_val = None
+        sl_val = None
+        if take_profit is not None and str(take_profit) != '':
+            tp_val = float(take_profit)
+            position['take_profit'] = tp_val
+        if stop_loss is not None and str(stop_loss) != '':
+            sl_val = float(stop_loss)
+            position['stop_loss'] = sl_val
+
+        try:
+            if hasattr(tr, '_save_state'):
+                tr._save_state()
+        except Exception:
+            pass
+
+        parts = [f'Updated {sym}.']
+        if tp_val is not None:
+            parts.append(f'TP=${tp_val:.6g}')
+        if sl_val is not None:
+            parts.append(f'SL=${sl_val:.6g}')
+        return True, ' '.join(parts)
+    except Exception as e:
+        return False, f'Failed to update position: {str(e)[:200]}'
+
+
+def _assistant_execute_set_mode(mode: str):
+    global bot_instance, current_mode
+    m = str(mode or '').upper().strip()
+    if m == 'NORMAL':
+        m = 'PRECISION'
+    if m not in ['AGGRESSIVE', 'PRECISION']:
+        return False, 'Invalid mode. Use AGGRESSIVE or PRECISION.'
+    current_mode = m
+    if not bot_instance:
+        return True, f'Mode set to {m} (bot not connected yet).'
+    try:
+        bot_instance.trading_mode = m
+
+        if hasattr(bot_instance, 'mode_config'):
+            cfg = (bot_instance.mode_config or {}).get(m, {})
+            bot_instance.target_accuracy = cfg.get('target_accuracy', 0.6)
+            bot_instance.min_confidence_for_trade = cfg.get('min_confidence', 0.3)
+            bot_instance.ensemble_threshold = cfg.get('ensemble_threshold', 2)
+            bot_instance.confidence_threshold = cfg.get('min_confidence', 0.3)
+            bot_instance.base_confidence_threshold = cfg.get('min_confidence', 0.3)
+
+        if m == 'AGGRESSIVE':
+            bot_instance.fast_mode_enabled = True
+            bot_instance.precision_mode_enabled = False
+            bot_instance.min_price_history = 5
+            bot_instance.confidence_adjustment_factor = 0.05
+            bot_instance.aggressive_trade_guarantee = True
+            bot_instance.aggressive_trade_interval = 60.0
+            bot_instance.cycle_sleep_override = 10.0
+            bot_instance.win_rate_optimizer_enabled = False
+            bot_instance.min_trade_quality_score = 10.0
+            bot_instance.min_confidence_for_trade = 0.10
+        else:
+            bot_instance.fast_mode_enabled = False
+            bot_instance.precision_mode_enabled = True
+            bot_instance.min_price_history = 10
+            bot_instance.confidence_adjustment_factor = 0.01
+            bot_instance.aggressive_trade_guarantee = False
+            bot_instance.cycle_sleep_override = None
+            bot_instance.win_rate_optimizer_enabled = False
+            bot_instance.min_trade_quality_score = 25.0
+            bot_instance.min_confidence_for_trade = 0.30
+        return True, f'Mode switched to {m}.'
+    except Exception as e:
+        return False, f'Failed to switch mode: {str(e)[:200]}'
+
+
+def _assistant_analyze_symbol(symbol: str, snap: dict):
+    sym = str(symbol or '').strip()
+    if not sym:
+        return 'Symbol required.'
+    if not (snap or {}).get('connected'):
+        return 'Bot is not connected right now.'
+    positions = (snap.get('positions') or {})
+    if sym not in positions:
+        return f'No open position found for {sym}.'
+    p = positions.get(sym) or {}
+
+    try:
+        qty = float(p.get('quantity', 0) or 0)
+    except Exception:
+        qty = 0.0
+    try:
+        ep = float(p.get('entry_price', p.get('avg_price', 0)) or 0)
+    except Exception:
+        ep = 0.0
+    try:
+        cp = float(p.get('current_price', 0) or 0)
+    except Exception:
+        cp = 0.0
+    side = str(p.get('action', p.get('side', 'BUY')) or 'BUY').upper()
+    tp = p.get('take_profit', None)
+    sl = p.get('stop_loss', None)
+
+    try:
+        upnl = p.get('unrealized_pnl', None)
+        if upnl is None and cp > 0 and ep > 0 and qty > 0:
+            upnl = (cp - ep) * qty if side == 'BUY' else (ep - cp) * qty
+        upnl = float(upnl or 0.0)
+    except Exception:
+        upnl = 0.0
+
+    try:
+        notional_entry = float(ep) * float(qty)
+        upnl_pct = (upnl / notional_entry * 100.0) if notional_entry > 0 else 0.0
+    except Exception:
+        upnl_pct = 0.0
+
+    lines = []
+    lines.append(f'{sym} {side} qty={qty:.6g}')
+    lines.append(f'Entry=${ep:.6g} Current=${cp:.6g}')
+    lines.append(f'uPnL=${upnl:.4f} ({upnl_pct:.2f}%)')
+
+    try:
+        if tp is not None and str(tp) != '' and cp > 0:
+            tpv = float(tp)
+            dist = (tpv - cp) if side == 'BUY' else (cp - tpv)
+            dist_pct = (dist / cp * 100.0) if cp > 0 else 0.0
+            lines.append(f'TP=${tpv:.6g} distance={dist:.6g} ({dist_pct:.2f}%)')
+        else:
+            lines.append('TP=None')
+    except Exception:
+        lines.append('TP=None')
+
+    try:
+        if sl is not None and str(sl) != '' and cp > 0:
+            slv = float(sl)
+            dist = (cp - slv) if side == 'BUY' else (slv - cp)
+            dist_pct = (dist / cp * 100.0) if cp > 0 else 0.0
+            lines.append(f'SL=${slv:.6g} buffer={dist:.6g} ({dist_pct:.2f}%)')
+        else:
+            lines.append('SL=None')
+    except Exception:
+        lines.append('SL=None')
+
+    regime = str((snap or {}).get('current_market_regime', 'UNKNOWN') or 'UNKNOWN')
+    vreg = str((snap or {}).get('volatility_regime', 'NORMAL') or 'NORMAL')
+    lines.append(f'Market regime={regime} Volatility={vreg}')
+
+    risk_notes = []
+    try:
+        if str(vreg).upper() == 'HIGH':
+            risk_notes.append('High volatility: consider wider SL or smaller size.')
+    except Exception:
+        pass
+    try:
+        if any(k in str(regime).upper() for k in ['SIDEWAYS', 'RANGING', 'CONSOLIDATION']):
+            risk_notes.append('Sideways regime: breakouts can fake-out; be conservative.')
+    except Exception:
+        pass
+    try:
+        sb = (snap or {}).get('paper_spread_bps', None)
+        if sb is not None and float(sb or 0.0) > 50:
+            risk_notes.append('Wide spread: execution quality risk is high.')
+    except Exception:
+        pass
+
+    if risk_notes:
+        lines.append('Risk notes:')
+        lines.extend([f'- {r}' for r in risk_notes])
+
+    return "\n".join(lines)
+
+
+def _assistant_handle_user_message(session_id: str, message: str):
+    snap = _assistant_get_bot_snapshot()
+    text = str(message or '').strip()
+    lower = text.lower()
+
+    if lower in ['cancel', 'no', 'stop']:
+        try:
+            if str(session_id) in assistant_pending_actions:
+                assistant_pending_actions.pop(str(session_id), None)
+                return {'reply': 'Cancelled.', 'pending_action': None}
+        except Exception:
+            pass
+
+    if lower in ['confirm', 'yes', 'do it']:
+        try:
+            pending = assistant_pending_actions.get(str(session_id))
+            if isinstance(pending, dict) and str(pending.get('type', '') or '') == 'close_position':
+                symbol = str(pending.get('symbol', '') or '')
+                ok, msg = _assistant_execute_close(symbol)
+                assistant_pending_actions.pop(str(session_id), None)
+                return {'reply': msg, 'pending_action': None}
+            if isinstance(pending, dict) and str(pending.get('type', '') or '') == 'set_bot_running':
+                should_run = bool(pending.get('should_run', False))
+                ok, msg = _assistant_execute_set_running(should_run)
+                assistant_pending_actions.pop(str(session_id), None)
+                return {'reply': msg, 'pending_action': None}
+            if isinstance(pending, dict) and str(pending.get('type', '') or '') == 'update_position_targets':
+                symbol = str(pending.get('symbol', '') or '')
+                tp = pending.get('take_profit', None)
+                sl = pending.get('stop_loss', None)
+                ok, msg = _assistant_execute_update_position(symbol, tp, sl)
+                assistant_pending_actions.pop(str(session_id), None)
+                return {'reply': msg, 'pending_action': None}
+            if isinstance(pending, dict) and str(pending.get('type', '') or '') == 'set_trading_mode':
+                mode = str(pending.get('mode', '') or '')
+                ok, msg = _assistant_execute_set_mode(mode)
+                assistant_pending_actions.pop(str(session_id), None)
+                return {'reply': msg, 'pending_action': None}
+        except Exception:
+            pass
+
+    if any(k in lower for k in ['current entries', 'current entry', 'open positions', 'open trades', 'positions', 'entries']):
+        return {
+            'reply': _assistant_format_positions(snap),
+            'pending_action': None,
+        }
+
+    if any(k in lower for k in ['switch mode', 'set mode', 'change mode']):
+        m = None
+        try:
+            if re.search(r'\baggressive\b', lower):
+                m = 'AGGRESSIVE'
+            elif re.search(r'\bprecision\b', lower) or re.search(r'\bnormal\b', lower):
+                m = 'PRECISION'
+        except Exception:
+            m = None
+        if not m:
+            return {'reply': 'Which mode? Say: switch mode to AGGRESSIVE or PRECISION.', 'pending_action': None}
+        action_id = str(uuid.uuid4())
+        assistant_pending_actions[str(session_id)] = {
+            'id': action_id,
+            'type': 'set_trading_mode',
+            'mode': m,
+            'ts': time.time(),
+        }
+        return {
+            'reply': f'I can switch mode to {m}. Reply with CONFIRM to execute, or CANCEL to ignore.',
+            'pending_action': {
+                'id': action_id,
+                'type': 'set_trading_mode',
+                'mode': m,
+            }
+        }
+
+    if any(k in lower for k in ['set tp', 'set sl', 'update tp', 'update sl', 'tp ', 'sl '] ) and any(k in lower for k in ['tp', 'sl']):
+        symbol = _assistant_symbol_from_text(text)
+        if not symbol:
+            return {'reply': 'Which symbol? Example: set tp 67000 sl 64500 for BTC/USDT', 'pending_action': None}
+        tp = None
+        sl = None
+        try:
+            m = re.search(r'\btp\b\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)', lower)
+            if m:
+                tp = float(m.group(1))
+        except Exception:
+            tp = None
+        try:
+            m = re.search(r'\bsl\b\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)', lower)
+            if m:
+                sl = float(m.group(1))
+        except Exception:
+            sl = None
+        if tp is None and sl is None:
+            return {'reply': 'I could not parse TP/SL. Example: set tp 67000 sl 64500 for BTC/USDT', 'pending_action': None}
+
+        action_id = str(uuid.uuid4())
+        assistant_pending_actions[str(session_id)] = {
+            'id': action_id,
+            'type': 'update_position_targets',
+            'symbol': symbol,
+            'take_profit': tp,
+            'stop_loss': sl,
+            'ts': time.time(),
+        }
+        parts = [f'I can update {symbol}.']
+        if tp is not None:
+            parts.append(f'TP=${tp:.6g}.')
+        if sl is not None:
+            parts.append(f'SL=${sl:.6g}.')
+        parts.append('Reply with CONFIRM to execute, or CANCEL to ignore.')
+        return {
+            'reply': ' '.join(parts),
+            'pending_action': {
+                'id': action_id,
+                'type': 'update_position_targets',
+                'symbol': symbol,
+                'take_profit': tp,
+                'stop_loss': sl,
+            }
+        }
+
+    if any(k in lower for k in ['analyze', 'analysis', 'distance to tp', 'distance to sl', 'risk notes']):
+        symbol = _assistant_symbol_from_text(text)
+        if not symbol:
+            return {'reply': 'Which symbol? Example: analyze BTC/USDT', 'pending_action': None}
+        return {'reply': _assistant_analyze_symbol(symbol, snap), 'pending_action': None}
+
+    if any(k in lower for k in ['leverage', 'fee', 'fees', 'slippage', 'spread']):
+        parts = []
+        if not snap.get('connected'):
+            parts.append('Bot is not connected right now.')
+        else:
+            parts.append(f"Mode: {snap.get('trading_mode')}")
+            parts.append(f"Leverage: {snap.get('leverage', 1.0)}")
+            parts.append(f"Fee rate: {snap.get('fee_rate', None)}")
+            parts.append(f"Paper spread bps: {snap.get('paper_spread_bps', None)}")
+            parts.append(f"Paper slippage bps: {snap.get('paper_slippage_bps', None)}")
+        return {'reply': "\n".join(parts), 'pending_action': None}
+
+    if any(k in lower for k in ['win rate', 'total trades', 'profitable trades', 'winning trades', 'pnl', 'profit']):
+        if not snap.get('connected'):
+            return {'reply': 'Bot is not connected right now.', 'pending_action': None}
+        pnl = float(snap.get('current_capital', 0.0) or 0.0) - float(snap.get('initial_capital', 0.0) or 0.0)
+        total = int(snap.get('total_completed_trades', 0) or 0)
+        wins = int(snap.get('winning_trades', 0) or 0)
+        wr = float(snap.get('win_rate', 0.0) or 0.0)
+        return {
+            'reply': "\n".join([
+                f"PnL: {pnl:.4f}",
+                f"Total completed trades: {total}",
+                f"Winning trades: {wins}",
+                f"Win rate: {wr:.2%}",
+                f"Market regime: {snap.get('current_market_regime')}",
+                f"Volatility regime: {snap.get('volatility_regime')}",
+            ]),
+            'pending_action': None,
+        }
+
+    if any(k in lower for k in ['close', 'exit', 'sell now', 'close trade', 'close position']):
+        symbol = _assistant_symbol_from_text(text)
+        if not symbol:
+            return {
+                'reply': 'Tell me which symbol to close (example: "close BTC/USDT").',
+                'pending_action': None,
+            }
+        action_id = str(uuid.uuid4())
+        assistant_pending_actions[str(session_id)] = {
+            'id': action_id,
+            'type': 'close_position',
+            'symbol': symbol,
+            'ts': time.time(),
+        }
+        return {
+            'reply': f"I can close {symbol}. Reply with CONFIRM to execute, or CANCEL to ignore.",
+            'pending_action': {
+                'id': action_id,
+                'type': 'close_position',
+                'symbol': symbol,
+            }
+        }
+
+    if any(k in lower for k in ['start trading', 'resume trading', 'start bot', 'resume bot', 'start the bot', 'resume the bot']):
+        action_id = str(uuid.uuid4())
+        assistant_pending_actions[str(session_id)] = {
+            'id': action_id,
+            'type': 'set_bot_running',
+            'should_run': True,
+            'ts': time.time(),
+        }
+        return {
+            'reply': 'I can START trading. Reply with CONFIRM to execute, or CANCEL to ignore.',
+            'pending_action': {
+                'id': action_id,
+                'type': 'set_bot_running',
+                'should_run': True,
+            }
+        }
+
+    if any(k in lower for k in ['stop trading', 'pause trading', 'stop bot', 'pause bot', 'stop the bot', 'pause the bot']):
+        action_id = str(uuid.uuid4())
+        assistant_pending_actions[str(session_id)] = {
+            'id': action_id,
+            'type': 'set_bot_running',
+            'should_run': False,
+            'ts': time.time(),
+        }
+        return {
+            'reply': 'I can STOP trading. Reply with CONFIRM to execute, or CANCEL to ignore.',
+            'pending_action': {
+                'id': action_id,
+                'type': 'set_bot_running',
+                'should_run': False,
+            }
+        }
+
+    if any(k in lower for k in ['will it be profitable', 'will it be profit', 'is it profitable', 'should i hold', 'should we hold']):
+        if not snap.get('connected'):
+            return {'reply': 'Bot is not connected right now.', 'pending_action': None}
+        positions = (snap.get('positions') or {})
+        if not positions:
+            return {'reply': 'There are no open positions right now.', 'pending_action': None}
+        lines = []
+        for sym, p in positions.items():
+            try:
+                qty = float(p.get('quantity', 0) or 0)
+                ep = float(p.get('entry_price', p.get('avg_price', 0)) or 0)
+                cp = float(p.get('current_price', 0) or 0)
+                side = str(p.get('action', p.get('side', 'BUY')) or 'BUY').upper()
+                tp = p.get('take_profit', None)
+                sl = p.get('stop_loss', None)
+                upnl = p.get('unrealized_pnl', None)
+                if upnl is None and cp > 0 and ep > 0 and qty > 0:
+                    upnl = (cp - ep) * qty if side == 'BUY' else (ep - cp) * qty
+                upnl = float(upnl or 0.0)
+                hint = 'profitable now' if upnl > 0 else 'not profitable yet'
+                lines.append(f"{sym}: {hint}, uPnL={upnl:.4f}, entry={ep:.6g}, current={cp:.6g}, TP={tp}, SL={sl}")
+            except Exception:
+                continue
+        lines.append('I cannot guarantee future profit, but I can tell you current uPnL and distance to TP/SL. If you want, ask: "analyze BTC/USDT".')
+        return {'reply': "\n".join(lines), 'pending_action': None}
+
+    recent = _assistant_read_recent_memory(session_id, limit=18)
+    sys_prompt = "You are the Poise Trader dashboard assistant. Answer using the provided bot snapshot when relevant. If you do not know, say so. Do not claim certainty about future price. Keep answers concise."
+    messages = [{'role': 'system', 'content': sys_prompt}]
+    try:
+        messages.append({'role': 'system', 'content': f"BOT_SNAPSHOT: {json.dumps(snap, ensure_ascii=False)[:6000]}"})
+    except Exception:
+        pass
+    for m in recent:
+        if isinstance(m, dict) and m.get('role') in ['user', 'assistant', 'system']:
+            messages.append({'role': m['role'], 'content': str(m.get('content', '') or '')[:2000]})
+    messages.append({'role': 'user', 'content': text})
+
+    llm = _assistant_openai_chat(messages)
+    if llm:
+        return {'reply': llm, 'pending_action': None}
+
+    return {
+        'reply': 'I can answer dashboard/bot questions (positions, PnL, leverage, TP/SL) right now. For full “real AI” answers about trading concepts, set an OpenAI key in Render (OPENAI_API_KEY).',
+        'pending_action': None,
+    }
+
 @app.route('/keep-alive')
 def keep_alive_endpoint():
     """Keep-alive endpoint"""
@@ -94,6 +1076,68 @@ def keep_alive_endpoint():
         'message': 'Service is running 24/7',
         'timestamp': datetime.now().isoformat()
     })
+
+
+@app.route('/api/assistant/chat', methods=['POST'])
+def assistant_chat():
+    global assistant_pending_actions
+
+    data = request.get_json() or {}
+    session_id = str(data.get('session_id', '') or '').strip()
+    if not session_id:
+        session_id = 'default'
+
+    confirm_id = str(data.get('confirm_action_id', '') or '').strip()
+    message = str(data.get('message', '') or '').strip()
+
+    if confirm_id:
+        pending = assistant_pending_actions.get(session_id)
+        if isinstance(pending, dict) and str(pending.get('id', '')) == confirm_id:
+            if str(pending.get('type', '') or '') == 'close_position':
+                symbol = str(pending.get('symbol', '') or '')
+                ok, msg = _assistant_execute_close(symbol)
+                assistant_pending_actions.pop(session_id, None)
+                _assistant_append_memory(session_id, 'user', f"CONFIRM action={confirm_id}")
+                _assistant_append_memory(session_id, 'assistant', msg)
+                return jsonify({'reply': msg, 'executed': ok, 'pending_action': None})
+
+            if str(pending.get('type', '') or '') == 'set_bot_running':
+                should_run = bool(pending.get('should_run', False))
+                ok, msg = _assistant_execute_set_running(should_run)
+                assistant_pending_actions.pop(session_id, None)
+                _assistant_append_memory(session_id, 'user', f"CONFIRM action={confirm_id}")
+                _assistant_append_memory(session_id, 'assistant', msg)
+                return jsonify({'reply': msg, 'executed': ok, 'pending_action': None})
+
+            if str(pending.get('type', '') or '') == 'update_position_targets':
+                symbol = str(pending.get('symbol', '') or '')
+                tp = pending.get('take_profit', None)
+                sl = pending.get('stop_loss', None)
+                ok, msg = _assistant_execute_update_position(symbol, tp, sl)
+                assistant_pending_actions.pop(session_id, None)
+                _assistant_append_memory(session_id, 'user', f"CONFIRM action={confirm_id}")
+                _assistant_append_memory(session_id, 'assistant', msg)
+                return jsonify({'reply': msg, 'executed': ok, 'pending_action': None})
+
+            if str(pending.get('type', '') or '') == 'set_trading_mode':
+                mode = str(pending.get('mode', '') or '')
+                ok, msg = _assistant_execute_set_mode(mode)
+                assistant_pending_actions.pop(session_id, None)
+                _assistant_append_memory(session_id, 'user', f"CONFIRM action={confirm_id}")
+                _assistant_append_memory(session_id, 'assistant', msg)
+                return jsonify({'reply': msg, 'executed': ok, 'pending_action': None})
+
+        return jsonify({'reply': 'No pending action to confirm.', 'executed': False, 'pending_action': None})
+
+    if message:
+        _assistant_append_memory(session_id, 'user', message)
+        out = _assistant_handle_user_message(session_id, message)
+        reply = str((out or {}).get('reply', '') or '')
+        pending_action = (out or {}).get('pending_action', None)
+        _assistant_append_memory(session_id, 'assistant', reply, meta={'pending_action': pending_action} if pending_action else None)
+        return jsonify({'reply': reply, 'pending_action': pending_action})
+
+    return jsonify({'reply': 'Send a message.', 'pending_action': None})
 
 @app.route('/api/status')
 def get_status():

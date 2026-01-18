@@ -792,6 +792,124 @@
             font-weight: 600;
             color: #667eea;
         }
+
+        .assistant-card {
+            margin-top: 20px;
+        }
+
+        .assistant-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .assistant-messages {
+            height: 260px;
+            overflow-y: auto;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            border-radius: 12px;
+        }
+
+        .assistant-msg {
+            margin-bottom: 10px;
+            display: flex;
+        }
+
+        .assistant-msg.user {
+            justify-content: flex-end;
+        }
+
+        .assistant-bubble {
+            max-width: 85%;
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-size: 13px;
+            line-height: 1.35;
+            white-space: pre-wrap;
+        }
+
+        .assistant-msg.user .assistant-bubble {
+            background: rgba(102, 126, 234, 0.25);
+            border: 1px solid rgba(102, 126, 234, 0.35);
+            color: #fff;
+        }
+
+        .assistant-msg.assistant .assistant-bubble {
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #fff;
+        }
+
+        .assistant-input-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .assistant-input {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            font-size: 13px;
+        }
+
+        .assistant-input:focus {
+            outline: none;
+            border-color: rgba(102, 126, 234, 0.5);
+            background: rgba(255, 255, 255, 0.10);
+        }
+
+        .assistant-send {
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(102, 126, 234, 0.35);
+            background: rgba(102, 126, 234, 0.20);
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .assistant-send:hover {
+            background: rgba(102, 126, 234, 0.28);
+        }
+
+        .assistant-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .assistant-action-btn {
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .assistant-action-btn.confirm {
+            border-color: rgba(56, 239, 125, 0.35);
+            background: rgba(56, 239, 125, 0.14);
+        }
+
+        .assistant-action-btn.cancel {
+            border-color: rgba(244, 67, 54, 0.35);
+            background: rgba(244, 67, 54, 0.14);
+        }
+
+        .assistant-hint {
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -916,6 +1034,21 @@
         </div>
     </div>
 
+    <div class="card assistant-card">
+        <div class="card-title">🤖 Dashboard AI Assistant</div>
+        <div style="padding: 20px; background: linear-gradient(135deg, #1e2336 0%, #2a2d45 100%); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
+            <div class="assistant-wrap">
+                <div class="assistant-hint" id="assistantHint">Ask: "current entries", "PnL", "leverage", "close BTC/USDT". Actions require confirmation.</div>
+                <div class="assistant-messages" id="assistantMessages"></div>
+                <div class="assistant-actions" id="assistantActions" style="display:none;"></div>
+                <div class="assistant-input-row">
+                    <input class="assistant-input" id="assistantInput" placeholder="Ask anything about the trader..." />
+                    <button class="assistant-send" id="assistantSendBtn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Message Container -->
     <div id="message" class="message"></div>
     
@@ -974,6 +1107,174 @@
         let pnlHistory = [];
         let positions = {};
         let recentTrades = [];
+
+        let assistantSessionId = null;
+        let assistantPendingAction = null;
+        let assistantTranscriptKey = null;
+
+        function initAssistant() {
+            try {
+                assistantSessionId = localStorage.getItem('poise_assistant_session') || '';
+                if (!assistantSessionId) {
+                    assistantSessionId = 'sess_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+                    localStorage.setItem('poise_assistant_session', assistantSessionId);
+                }
+            } catch (e) {
+                assistantSessionId = 'default';
+            }
+
+            assistantTranscriptKey = 'poise_assistant_transcript_' + assistantSessionId;
+            assistantRestoreTranscript();
+
+            const sendBtn = document.getElementById('assistantSendBtn');
+            const input = document.getElementById('assistantInput');
+            if (sendBtn) {
+                sendBtn.addEventListener('click', () => assistantSend());
+            }
+            if (input) {
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        assistantSend();
+                    }
+                });
+            }
+
+            if (!document.getElementById('assistantMessages') || document.getElementById('assistantMessages').children.length === 0) {
+                assistantAppend('assistant', 'Hi! I can answer from your live bot state and help manage positions safely.');
+            }
+        }
+
+        function assistantRestoreTranscript() {
+            try {
+                const raw = localStorage.getItem(assistantTranscriptKey) || '';
+                if (!raw) return;
+                const arr = JSON.parse(raw);
+                if (!Array.isArray(arr)) return;
+                for (const item of arr) {
+                    if (!item) continue;
+                    const role = item.role === 'user' ? 'user' : 'assistant';
+                    const text = String(item.text || '');
+                    assistantAppend(role, text, false);
+                }
+            } catch (e) {}
+        }
+
+        function assistantPersist(role, text) {
+            try {
+                if (!assistantTranscriptKey) return;
+                const raw = localStorage.getItem(assistantTranscriptKey) || '[]';
+                let arr = [];
+                try {
+                    arr = JSON.parse(raw);
+                } catch (e) {
+                    arr = [];
+                }
+                if (!Array.isArray(arr)) arr = [];
+                arr.push({ ts: Date.now(), role: role, text: String(text || '') });
+                localStorage.setItem(assistantTranscriptKey, JSON.stringify(arr));
+            } catch (e) {}
+        }
+
+        function assistantAppend(role, text, persist = true) {
+            const box = document.getElementById('assistantMessages');
+            if (!box) return;
+            const wrap = document.createElement('div');
+            wrap.className = 'assistant-msg ' + (role === 'user' ? 'user' : 'assistant');
+            const bubble = document.createElement('div');
+            bubble.className = 'assistant-bubble';
+            bubble.textContent = String(text || '');
+            wrap.appendChild(bubble);
+            box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+
+            if (persist) {
+                assistantPersist(role === 'user' ? 'user' : 'assistant', text);
+            }
+        }
+
+        function assistantRenderActions(pendingAction) {
+            const actions = document.getElementById('assistantActions');
+            if (!actions) return;
+            actions.innerHTML = '';
+
+            if (!pendingAction || !pendingAction.id) {
+                actions.style.display = 'none';
+                assistantPendingAction = null;
+                return;
+            }
+
+            assistantPendingAction = pendingAction;
+            actions.style.display = 'flex';
+
+            const confirmBtn = document.createElement('button');
+            confirmBtn.className = 'assistant-action-btn confirm';
+            confirmBtn.textContent = 'CONFIRM';
+            confirmBtn.onclick = () => assistantConfirm();
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'assistant-action-btn cancel';
+            cancelBtn.textContent = 'CANCEL';
+            cancelBtn.onclick = () => assistantCancel();
+
+            actions.appendChild(cancelBtn);
+            actions.appendChild(confirmBtn);
+        }
+
+        async function assistantSend() {
+            const input = document.getElementById('assistantInput');
+            if (!input) return;
+            const msg = String(input.value || '').trim();
+            if (!msg) return;
+            input.value = '';
+            assistantAppend('user', msg);
+
+            try {
+                const response = await fetch(`${API_URL}/api/assistant/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: assistantSessionId, message: msg })
+                });
+                const data = await response.json();
+                assistantAppend('assistant', (data && data.reply) ? data.reply : 'No reply');
+                assistantRenderActions(data ? data.pending_action : null);
+            } catch (e) {
+                assistantAppend('assistant', 'Assistant request failed.');
+            }
+        }
+
+        async function assistantConfirm() {
+            if (!assistantPendingAction || !assistantPendingAction.id) return;
+            assistantAppend('user', 'CONFIRM');
+            try {
+                const response = await fetch(`${API_URL}/api/assistant/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: assistantSessionId, confirm_action_id: assistantPendingAction.id })
+                });
+                const data = await response.json();
+                assistantAppend('assistant', (data && data.reply) ? data.reply : 'Done');
+            } catch (e) {
+                assistantAppend('assistant', 'Confirmation failed.');
+            }
+            assistantRenderActions(null);
+        }
+
+        function assistantCancel() {
+            assistantAppend('user', 'CANCEL');
+            try {
+                fetch(`${API_URL}/api/assistant/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: assistantSessionId, message: 'CANCEL' })
+                }).then(r => r.json()).then(data => {
+                    if (data && data.reply) {
+                        assistantAppend('assistant', data.reply);
+                    }
+                }).catch(() => {});
+            } catch (e) {}
+            assistantRenderActions(null);
+        }
 
         // Initialize P&L Chart
         function initChart() {
@@ -1913,6 +2214,7 @@
             });
             
             initChart();
+            initAssistant();
             loadAvailableMarkets();
             
             // Immediately fetch data on load
