@@ -16,6 +16,7 @@ from datetime import datetime
 import csv
 import io
 import urllib.request
+import urllib.error
 
 # Flask app setup
 app = Flask(__name__)
@@ -504,32 +505,61 @@ def _assistant_format_positions(snap: dict):
 
 
 def _assistant_openai_chat(messages):
-    key = str(os.getenv('OPENAI_API_KEY', '') or '').strip()
+    out, _ = _assistant_openai_chat_ex(messages)
+    return out
+
+
+def _assistant_openai_chat_ex(messages):
+    key = (
+        str(os.getenv('OPENAI_API_KEY', '') or '').strip()
+        or str(os.getenv('OPENAI_SECRET_KEY', '') or '').strip()
+        or str(os.getenv('OPENAI_KEY', '') or '').strip()
+    )
     if not key:
-        return None
-    payload = {
-        'model': 'gpt-3.5-turbo',
-        'messages': messages,
-        'temperature': 0.2,
-        'max_tokens': 350,
-    }
-    try:
-        data = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(
-            'https://api.openai.com/v1/chat/completions',
-            data=data,
-            headers={
-                'Content-Type': 'application/json',
-                'Authorization': f"Bearer {key}",
-            },
-            method='POST'
-        )
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            raw = resp.read().decode('utf-8', errors='ignore')
-        obj = json.loads(raw)
-        return str((((obj.get('choices') or [])[0] or {}).get('message') or {}).get('content') or '').strip() or None
-    except Exception:
-        return None
+        return None, 'OpenAI key not found in env. Set OPENAI_API_KEY on Render.'
+
+    last_err = None
+    for model in ['gpt-4o-mini', 'gpt-3.5-turbo']:
+        payload = {
+            'model': model,
+            'messages': messages,
+            'temperature': 0.2,
+            'max_tokens': 450,
+        }
+        try:
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                'https://api.openai.com/v1/chat/completions',
+                data=data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f"Bearer {key}",
+                },
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                raw = resp.read().decode('utf-8', errors='ignore')
+            obj = json.loads(raw)
+            content = str((((obj.get('choices') or [])[0] or {}).get('message') or {}).get('content') or '').strip())
+            if content:
+                return content, None
+            last_err = f'OpenAI returned empty response for model {model}.'
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode('utf-8', errors='ignore')
+            except Exception:
+                body = ''
+            msg = None
+            try:
+                j = json.loads(body)
+                msg = ((j.get('error') or {}) if isinstance(j, dict) else {}).get('message')
+            except Exception:
+                msg = None
+            last_err = f'OpenAI HTTP {getattr(e, "code", "")} for model {model}: {str(msg or body or e)[:300]}'
+        except Exception as e:
+            last_err = f'OpenAI error for model {model}: {str(e)[:300]}'
+
+    return None, (last_err or 'OpenAI request failed.')
 
 
 def _assistant_execute_close(symbol: str):
@@ -811,6 +841,66 @@ def _assistant_handle_user_message(session_id: str, message: str):
     text = str(message or '').strip()
     lower = text.lower()
 
+    if (
+        ('why' in lower or 'reason' in lower)
+        and any(k in lower for k in ['no trades', 'not placing', 'not taking', 'not trading', 'not opening', 'not placing any trades'])
+    ):
+        if not snap.get('connected'):
+            return {'reply': 'Bot is not connected right now, so it cannot place trades.', 'pending_action': None}
+
+        running = bool(snap.get('bot_running', False))
+        mode = str(snap.get('trading_mode', 'UNKNOWN') or 'UNKNOWN')
+        positions = (snap.get('positions') or {})
+        active = len(list(positions.keys()))
+
+        if not running:
+            action_id = str(uuid.uuid4())
+            assistant_pending_actions[str(session_id)] = {
+                'id': action_id,
+                'type': 'set_bot_running',
+                'should_run': True,
+                'ts': time.time(),
+            }
+            return {
+                'reply': f'Trading is currently STOPPED (mode={mode}). Do you want me to start it?',
+                'pending_action': {
+                    'id': action_id,
+                    'type': 'set_bot_running',
+                    'should_run': True,
+                }
+            }
+
+        try:
+            max_pos = None
+            if bot_instance is not None:
+                max_pos = getattr(bot_instance, 'max_concurrent_positions', None)
+                if max_pos is None:
+                    max_pos = getattr(bot_instance, 'max_positions', None)
+            max_pos_i = int(max_pos) if max_pos is not None else None
+        except Exception:
+            max_pos_i = None
+
+        if active > 0 and (max_pos_i is not None) and active >= max_pos_i:
+            return {
+                'reply': (
+                    f'Bot is RUNNING (mode={mode}) but it is already at max positions ({active}/{max_pos_i}). '
+                    'It will wait for exits (TP/SL/close) before opening new trades.'
+                ),
+                'pending_action': None,
+            }
+
+        regime = str(snap.get('current_market_regime', 'UNKNOWN') or 'UNKNOWN')
+        vreg = str(snap.get('volatility_regime', 'NORMAL') or 'NORMAL')
+        return {
+            'reply': (
+                f'Bot is RUNNING (mode={mode}). Right now it has {active} open position(s). '\
+                f'It is scanning markets and only places trades when signals pass its filters. '\
+                f'Current regime={regime}, volatility={vreg}. '\
+                'If you want more trades, you can ask: "switch mode to AGGRESSIVE" (I will ask for confirmation).'
+            ),
+            'pending_action': None,
+        }
+
     if lower in ['cancel', 'no', 'stop']:
         try:
             if str(session_id) in assistant_pending_actions:
@@ -1059,12 +1149,30 @@ def _assistant_handle_user_message(session_id: str, message: str):
             messages.append({'role': m['role'], 'content': str(m.get('content', '') or '')[:2000]})
     messages.append({'role': 'user', 'content': text})
 
-    llm = _assistant_openai_chat(messages)
+    llm, llm_err = _assistant_openai_chat_ex(messages)
     if llm:
         return {'reply': llm, 'pending_action': None}
 
+    key_present = bool(
+        str(os.getenv('OPENAI_API_KEY', '') or '').strip()
+        or str(os.getenv('OPENAI_SECRET_KEY', '') or '').strip()
+        or str(os.getenv('OPENAI_KEY', '') or '').strip()
+    )
+    if key_present:
+        return {
+            'reply': (
+                'OpenAI is configured but the request failed. Most common causes: '
+                'Render service not restarted after setting env vars, invalid key, or model access issue. '
+                f'Error: {str(llm_err or "unknown")[:350]}'
+            ),
+            'pending_action': None,
+        }
+
     return {
-        'reply': 'I can answer dashboard/bot questions (positions, PnL, leverage, TP/SL) right now. For full “real AI” answers about trading concepts, set an OpenAI key in Render (OPENAI_API_KEY).',
+        'reply': (
+            'OpenAI key is not detected by the server process. Set OPENAI_API_KEY in Render env vars and restart the service. '
+            'Meanwhile I can still answer bot-state questions (positions, PnL, leverage, TP/SL) and perform safe actions.'
+        ),
         'pending_action': None,
     }
 
