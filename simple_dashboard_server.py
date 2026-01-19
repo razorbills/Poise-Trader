@@ -199,9 +199,9 @@ def _assistant_summarize_session_update(session_id: str, new_text: str):
     except Exception:
         existing = ''
 
-    # Try to use OpenAI to compress into a stable long-term memory summary (if configured)
+    # Try to use an LLM to compress into a stable long-term memory summary (if configured)
     try:
-        if str(os.getenv('OPENAI_API_KEY', '') or '').strip():
+        if _assistant_any_llm_key_present():
             prompt = [
                 {
                     'role': 'system',
@@ -223,7 +223,7 @@ def _assistant_summarize_session_update(session_id: str, new_text: str):
                     )
                 }
             ]
-            out = _assistant_openai_chat(prompt)
+            out = _assistant_llm_chat(prompt)
             if out:
                 return str(out).strip()[-6000:]
     except Exception:
@@ -506,6 +506,90 @@ def _assistant_format_positions(snap: dict):
 
 def _assistant_openai_chat(messages):
     out, _ = _assistant_openai_chat_ex(messages)
+    return out
+
+
+def _assistant_any_llm_key_present():
+    try:
+        if str(os.getenv('GROQ_API_KEY', '') or '').strip():
+            return True
+    except Exception:
+        pass
+    try:
+        if (
+            str(os.getenv('OPENAI_API_KEY', '') or '').strip()
+            or str(os.getenv('OPENAI_SECRET_KEY', '') or '').strip()
+            or str(os.getenv('OPENAI_KEY', '') or '').strip()
+        ):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _assistant_groq_chat_ex(messages):
+    key = str(os.getenv('GROQ_API_KEY', '') or '').strip()
+    if not key:
+        return None, 'Groq key not found in env. Set GROQ_API_KEY.'
+
+    last_err = None
+    for model in ['llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768']:
+        payload = {
+            'model': model,
+            'messages': messages,
+            'temperature': 0.2,
+            'max_tokens': 450,
+        }
+        try:
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                'https://api.groq.com/openai/v1/chat/completions',
+                data=data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f"Bearer {key}",
+                },
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                raw = resp.read().decode('utf-8', errors='ignore')
+            obj = json.loads(raw)
+            choices = obj.get('choices') or []
+            first = (choices[0] if isinstance(choices, list) and len(choices) > 0 else {}) or {}
+            msg = first.get('message') or {}
+            content = str((msg.get('content') or '')).strip()
+            if content:
+                return content, None
+            last_err = f'Groq returned empty response for model {model}.'
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode('utf-8', errors='ignore')
+            except Exception:
+                body = ''
+            msg = None
+            try:
+                j = json.loads(body)
+                msg = ((j.get('error') or {}) if isinstance(j, dict) else {}).get('message')
+            except Exception:
+                msg = None
+            last_err = f'Groq HTTP {getattr(e, "code", "")} for model {model}: {str(msg or body or e)[:300]}'
+        except Exception as e:
+            last_err = f'Groq error for model {model}: {str(e)[:300]}'
+
+    return None, (last_err or 'Groq request failed.')
+
+
+def _assistant_llm_chat_ex(messages):
+    try:
+        if str(os.getenv('GROQ_API_KEY', '') or '').strip():
+            return _assistant_groq_chat_ex(messages)
+    except Exception:
+        pass
+    return _assistant_openai_chat_ex(messages)
+
+
+def _assistant_llm_chat(messages):
+    out, _ = _assistant_llm_chat_ex(messages)
     return out
 
 
@@ -1152,20 +1236,15 @@ def _assistant_handle_user_message(session_id: str, message: str):
             messages.append({'role': m['role'], 'content': str(m.get('content', '') or '')[:2000]})
     messages.append({'role': 'user', 'content': text})
 
-    llm, llm_err = _assistant_openai_chat_ex(messages)
+    llm, llm_err = _assistant_llm_chat_ex(messages)
     if llm:
         return {'reply': llm, 'pending_action': None}
 
-    key_present = bool(
-        str(os.getenv('OPENAI_API_KEY', '') or '').strip()
-        or str(os.getenv('OPENAI_SECRET_KEY', '') or '').strip()
-        or str(os.getenv('OPENAI_KEY', '') or '').strip()
-    )
-    if key_present:
+    if _assistant_any_llm_key_present():
         return {
             'reply': (
-                'OpenAI is configured but the request failed. Most common causes: '
-                'Render service not restarted after setting env vars, invalid key, or model access issue. '
+                'AI provider is configured but the request failed. Most common causes: '
+                'service not restarted after setting env vars, invalid key, provider/model access issue, or rate limits. '
                 f'Error: {str(llm_err or "unknown")[:350]}'
             ),
             'pending_action': None,
@@ -1173,7 +1252,7 @@ def _assistant_handle_user_message(session_id: str, message: str):
 
     return {
         'reply': (
-            'OpenAI key is not detected by the server process. Set OPENAI_API_KEY in Render env vars and restart the service. '
+            'No AI provider key is detected by the server process. If you want free AI replies, set GROQ_API_KEY in Render env vars and restart the service. '
             'Meanwhile I can still answer bot-state questions (positions, PnL, leverage, TP/SL) and perform safe actions.'
         ),
         'pending_action': None,
