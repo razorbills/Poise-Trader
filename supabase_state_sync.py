@@ -84,6 +84,11 @@ class SupabaseStateSync:
     def _local_path_for_key(self, key: str) -> str:
         if "/" in key or "\\" in key:
             return key
+        try:
+            if os.path.isdir('/var/data'):
+                return os.path.join('/var/data', 'data', key)
+        except Exception:
+            pass
         return os.path.join("data", key)
 
     def _read_local_b64(self, key: str) -> Optional[str]:
@@ -99,7 +104,11 @@ class SupabaseStateSync:
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        os.makedirs("data", exist_ok=True)
+        try:
+            if not os.path.isabs(path):
+                os.makedirs("data", exist_ok=True)
+        except Exception:
+            pass
         raw = base64.b64decode(content_base64.encode("ascii"))
         with open(path, "wb") as f:
             f.write(raw)

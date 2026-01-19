@@ -1797,7 +1797,18 @@ def update_position():
                         "initial_capital": bot_instance.trader.initial_capital,
                         "last_save_time": datetime.now().isoformat()
                     }
-                    with open('trading_state.json', 'w') as f:
+                    state_file = os.path.join('data', 'trading_state.json')
+                    try:
+                        sf = getattr(bot_instance.trader, 'state_file', None)
+                        if sf:
+                            state_file = str(sf)
+                    except Exception:
+                        pass
+                    try:
+                        os.makedirs(os.path.dirname(state_file), exist_ok=True)
+                    except Exception:
+                        pass
+                    with open(state_file, 'w') as f:
                         json.dump(state, f, indent=2, default=str)
                 
                 print(f"📝 ✅ UPDATE SUCCESSFUL for {symbol}")

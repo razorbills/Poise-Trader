@@ -1272,9 +1272,40 @@ class LivePaperTradingManager:
     """Paper trading manager using LIVE market prices"""
     
     def __init__(self, initial_capital: float = 5.0):
-        state_dir = Path("data")
-        state_dir.mkdir(parents=True, exist_ok=True)
+        base_dir = None
+        try:
+            # Render persistent disks are typically mounted at /var/data
+            if os.path.isdir('/var/data'):
+                base_dir = Path('/var/data')
+        except Exception:
+            base_dir = None
+
+        state_dir = None
+        if base_dir is not None:
+            try:
+                state_dir = base_dir / 'data'
+                state_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                state_dir = None
+
+        if state_dir is None:
+            state_dir = Path("data")
+            state_dir.mkdir(parents=True, exist_ok=True)
+
         self.state_file = str(state_dir / "trading_state.json")
+
+        # If we switched to a persistent dir, migrate an existing local state once
+        try:
+            if base_dir is not None:
+                legacy = Path('data') / 'trading_state.json'
+                if legacy.exists() and (not Path(self.state_file).exists()):
+                    try:
+                        state_dir.mkdir(parents=True, exist_ok=True)
+                        Path(self.state_file).write_bytes(legacy.read_bytes())
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         self.initial_capital = initial_capital
         
         # Try to load existing state
@@ -4141,7 +4172,7 @@ class LivePaperTradingManager:
                         last_save = datetime.fromisoformat(last_save_time)
                         age_minutes = (datetime.now() - last_save).total_seconds() / 60
                         
-                        max_age_minutes = float(os.getenv('PAPER_STATE_MAX_AGE_MINUTES', '10080') or 10080)
+                        max_age_minutes = float(os.getenv('PAPER_STATE_MAX_AGE_MINUTES', '525600') or 525600)
                         if max_age_minutes > 0 and age_minutes > max_age_minutes:
                             is_stale = True
                             print(f"⚠️ State is {age_minutes:.1f} minutes old - STALE DATA DETECTED")
