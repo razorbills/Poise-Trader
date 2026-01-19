@@ -540,7 +540,10 @@ def _assistant_openai_chat_ex(messages):
             with urllib.request.urlopen(req, timeout=25) as resp:
                 raw = resp.read().decode('utf-8', errors='ignore')
             obj = json.loads(raw)
-            content = str((((obj.get('choices') or [])[0] or {}).get('message') or {}).get('content') or '').strip())
+            choices = obj.get('choices') or []
+            first = (choices[0] if isinstance(choices, list) and len(choices) > 0 else {}) or {}
+            msg = first.get('message') or {}
+            content = str((msg.get('content') or '')).strip()
             if content:
                 return content, None
             last_err = f'OpenAI returned empty response for model {model}.'
