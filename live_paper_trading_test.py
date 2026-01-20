@@ -1297,13 +1297,25 @@ class LivePaperTradingManager:
         # If we switched to a persistent dir, migrate an existing local state once
         try:
             if base_dir is not None:
-                legacy = Path('data') / 'trading_state.json'
-                if legacy.exists() and (not Path(self.state_file).exists()):
-                    try:
-                        state_dir.mkdir(parents=True, exist_ok=True)
-                        Path(self.state_file).write_bytes(legacy.read_bytes())
-                    except Exception:
-                        pass
+                legacy_candidates = [
+                    Path('data') / 'trading_state.json',
+                    base_dir / 'trading_state.json',
+                ]
+                if not Path(self.state_file).exists():
+                    for legacy in legacy_candidates:
+                        try:
+                            if legacy.exists():
+                                try:
+                                    state_dir.mkdir(parents=True, exist_ok=True)
+                                except Exception:
+                                    pass
+                                try:
+                                    Path(self.state_file).write_bytes(legacy.read_bytes())
+                                except Exception:
+                                    pass
+                                break
+                        except Exception:
+                            continue
         except Exception:
             pass
         self.initial_capital = initial_capital

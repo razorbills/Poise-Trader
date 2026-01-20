@@ -1127,7 +1127,11 @@
             }
 
             assistantTranscriptKey = 'poise_assistant_transcript_' + assistantSessionId;
-            assistantKVKey = 'poise_assistant_transcript_' + assistantSessionId;
+            try {
+                assistantKVKey = 'poise_assistant_transcript_' + String((window.location && window.location.host) ? window.location.host : 'default');
+            } catch (e) {
+                assistantKVKey = 'poise_assistant_transcript_default';
+            }
             assistantRestoreTranscript();
             assistantKVRestoreTranscript();
 

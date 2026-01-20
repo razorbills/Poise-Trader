@@ -1370,6 +1370,41 @@ def get_status():
         status['win_rate'] = getattr(bot_instance, 'win_rate', 0) * 100
 
         try:
+            storage = {
+                'var_data_exists': bool(os.path.isdir('/var/data')),
+                'render_external_url': os.getenv('RENDER_EXTERNAL_URL'),
+                'render_service_name': os.getenv('RENDER_SERVICE_NAME'),
+                'assistant_memory_path': ASSISTANT_MEMORY_PATH,
+                'assistant_state_path': ASSISTANT_STATE_PATH,
+            }
+
+            try:
+                storage['assistant_memory_exists'] = bool(os.path.exists(ASSISTANT_MEMORY_PATH))
+                storage['assistant_state_exists'] = bool(os.path.exists(ASSISTANT_STATE_PATH))
+            except Exception:
+                pass
+
+            try:
+                tr = getattr(bot_instance, 'trader', None)
+                sf = getattr(tr, 'state_file', None) if tr is not None else None
+                if sf:
+                    storage['paper_state_file'] = str(sf)
+                    try:
+                        storage['paper_state_exists'] = bool(os.path.exists(sf))
+                        if storage['paper_state_exists']:
+                            st = os.stat(sf)
+                            storage['paper_state_bytes'] = int(getattr(st, 'st_size', 0) or 0)
+                            storage['paper_state_mtime'] = float(getattr(st, 'st_mtime', 0.0) or 0.0)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            status['storage'] = storage
+        except Exception:
+            pass
+
+        try:
             status['market_regime'] = getattr(bot_instance, 'current_market_regime', None)
             status['volatility_regime'] = getattr(bot_instance, 'volatility_regime', None)
         except Exception:
