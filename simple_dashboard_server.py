@@ -17,6 +17,7 @@ import csv
 import io
 import urllib.request
 import urllib.error
+import requests
 
 # Flask app setup
 app = Flask(__name__)
@@ -541,19 +542,37 @@ def _assistant_groq_chat_ex(messages):
             'max_tokens': 450,
         }
         try:
-            data = json.dumps(payload).encode('utf-8')
-            req = urllib.request.Request(
+            r = requests.post(
                 'https://api.groq.com/openai/v1/chat/completions',
-                data=data,
                 headers={
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'Authorization': f"Bearer {key}",
+                    # Some CDNs/WAFs block default python clients; use an explicit UA.
+                    'User-Agent': 'PoiseTrader/1.0 (+https://render.com)'
                 },
-                method='POST'
+                json=payload,
+                timeout=25,
             )
-            with urllib.request.urlopen(req, timeout=25) as resp:
-                raw = resp.read().decode('utf-8', errors='ignore')
-            obj = json.loads(raw)
+
+            if int(getattr(r, 'status_code', 0) or 0) >= 400:
+                body = ''
+                try:
+                    body = str(r.text or '')
+                except Exception:
+                    body = ''
+
+                msg = None
+                try:
+                    j = r.json()
+                    msg = ((j.get('error') or {}) if isinstance(j, dict) else {}).get('message')
+                except Exception:
+                    msg = None
+
+                last_err = f'Groq HTTP {r.status_code} for model {model}: {str(msg or body or "")[:300]}'
+                continue
+
+            obj = r.json()
             choices = obj.get('choices') or []
             first = (choices[0] if isinstance(choices, list) and len(choices) > 0 else {}) or {}
             msg = first.get('message') or {}
@@ -561,18 +580,6 @@ def _assistant_groq_chat_ex(messages):
             if content:
                 return content, None
             last_err = f'Groq returned empty response for model {model}.'
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode('utf-8', errors='ignore')
-            except Exception:
-                body = ''
-            msg = None
-            try:
-                j = json.loads(body)
-                msg = ((j.get('error') or {}) if isinstance(j, dict) else {}).get('message')
-            except Exception:
-                msg = None
-            last_err = f'Groq HTTP {getattr(e, "code", "")} for model {model}: {str(msg or body or e)[:300]}'
         except Exception as e:
             last_err = f'Groq error for model {model}: {str(e)[:300]}'
 

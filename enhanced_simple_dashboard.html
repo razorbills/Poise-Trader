@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poise Trader - Enhanced Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://js.puter.com/v2/"></script>
     <style>
         * {
             margin: 0;
@@ -1221,6 +1222,68 @@
             actions.appendChild(confirmBtn);
         }
 
+        function assistantShouldUsePuterFallback(serverReply) {
+            const t = String(serverReply || '').toLowerCase();
+            if (!t) return false;
+            if (t.includes('no ai provider key')) return true;
+            if (t.includes('openai is configured but the request failed')) return true;
+            if (t.includes('ai provider is configured but the request failed')) return true;
+            if (t.includes('set groq_api_key')) return true;
+            if (t.includes('set openai_api_key')) return true;
+            return false;
+        }
+
+        function assistantGetRecentTranscript(limit = 10) {
+            try {
+                if (!assistantTranscriptKey) return [];
+                const raw = localStorage.getItem(assistantTranscriptKey) || '[]';
+                const arr = JSON.parse(raw);
+                if (!Array.isArray(arr)) return [];
+                const out = [];
+                for (let i = Math.max(0, arr.length - limit); i < arr.length; i++) {
+                    const it = arr[i];
+                    if (!it) continue;
+                    const role = it.role === 'user' ? 'user' : 'assistant';
+                    const text = String(it.text || '');
+                    if (!text) continue;
+                    out.push({ role, content: text.slice(0, 2000) });
+                }
+                return out;
+            } catch (e) {
+                return [];
+            }
+        }
+
+        async function assistantAskPuterAI(userMsg) {
+            if (!(window.puter && puter.ai && typeof puter.ai.chat === 'function')) {
+                throw new Error('Puter AI is not available in this browser session.');
+            }
+
+            const sys = 'You are the Poise Trader dashboard assistant. Use the provided bot snapshot if relevant. Do not claim certainty about future price. Keep answers concise.';
+            const snapshot = {
+                connected: !!botConnected,
+                bot_running: !!isTrading,
+                trading_mode: String(currentMode || 'UNKNOWN'),
+                positions: positions || {},
+                recent_trades_count: Array.isArray(recentTrades) ? recentTrades.length : 0,
+            };
+
+            const msgs = [];
+            msgs.push({ role: 'system', content: sys });
+            try {
+                msgs.push({ role: 'system', content: 'BOT_SNAPSHOT: ' + JSON.stringify(snapshot).slice(0, 6000) });
+            } catch (e) {}
+            const recent = assistantGetRecentTranscript(12);
+            for (const m of recent) {
+                if (!m || !m.role || !m.content) continue;
+                msgs.push(m);
+            }
+            msgs.push({ role: 'user', content: String(userMsg || '').slice(0, 4000) });
+
+            const out = await puter.ai.chat(msgs);
+            return String(out || '').trim();
+        }
+
         async function assistantSend() {
             const input = document.getElementById('assistantInput');
             if (!input) return;
@@ -1236,8 +1299,28 @@
                     body: JSON.stringify({ session_id: assistantSessionId, message: msg })
                 });
                 const data = await response.json();
-                assistantAppend('assistant', (data && data.reply) ? data.reply : 'No reply');
-                assistantRenderActions(data ? data.pending_action : null);
+
+                const serverReply = (data && data.reply) ? String(data.reply) : 'No reply';
+                const pending = data ? data.pending_action : null;
+
+                if (!pending && assistantShouldUsePuterFallback(serverReply)) {
+                    try {
+                        const ai = await assistantAskPuterAI(msg);
+                        if (ai) {
+                            assistantAppend('assistant', ai);
+                            assistantRenderActions(null);
+                            return;
+                        }
+                    } catch (e) {
+                        assistantAppend('assistant', serverReply);
+                        assistantAppend('assistant', 'Puter AI failed in this browser session.');
+                        assistantRenderActions(null);
+                        return;
+                    }
+                }
+
+                assistantAppend('assistant', serverReply);
+                assistantRenderActions(pending);
             } catch (e) {
                 assistantAppend('assistant', 'Assistant request failed.');
             }
