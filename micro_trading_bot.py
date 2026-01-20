@@ -2088,6 +2088,8 @@ class LegendaryCryptoTitanBot:
         else:
             self.max_daily_drawdown = 0.05  # 5% for larger accounts
         self.active_signals = {}
+        self.last_signal_candidates = []
+        self.last_signal_candidates_ts = 0.0
         self.price_history = {}
         self.trade_history = []
         self.position_tracker = {}
@@ -9761,6 +9763,59 @@ class LegendaryCryptoTitanBot:
             ),
             reverse=True
         )
+
+        try:
+            import time as _t
+            now_ts = float(_t.time())
+            self.last_signal_candidates_ts = now_ts
+            cand = []
+            md_base = {
+                'regime': str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN'),
+                'volatility_regime': str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL'),
+                'volatility': str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL'),
+            }
+            for s in (micro_signals or [])[:20]:
+                try:
+                    sym = str(getattr(s, 'symbol', '') or '')
+                    conf = float(getattr(s, 'confidence', 0.0) or 0.0)
+                    entry_price = float(getattr(s, 'entry_price', 0.0) or 0.0)
+                except Exception:
+                    continue
+
+                md = dict(md_base)
+                md['price'] = entry_price
+                quality_score = None
+                take = None
+                reason = None
+                try:
+                    quality_score = float(self._calculate_trade_quality_score(s, md) or 0.0)
+                    take, reason = self._should_take_trade(quality_score, conf)
+                except Exception:
+                    pass
+
+                try:
+                    cand.append({
+                        'symbol': sym,
+                        'action': str(getattr(s, 'action', '') or ''),
+                        'confidence': conf,
+                        'expected_return': float(getattr(s, 'expected_return', 0.0) or 0.0),
+                        'strategy_name': str(getattr(s, 'strategy_name', '') or ''),
+                        'entry_price': entry_price,
+                        'stop_loss': float(getattr(s, 'stop_loss', 0.0) or 0.0) if getattr(s, 'stop_loss', None) is not None else None,
+                        'take_profit': float(getattr(s, 'take_profit', 0.0) or 0.0) if getattr(s, 'take_profit', None) is not None else None,
+                        'technical_score': float(getattr(s, 'technical_score', 0.0) or 0.0),
+                        'sentiment_score': float(getattr(s, 'sentiment_score', 0.5) or 0.5),
+                        'momentum_score': float(getattr(s, 'momentum_score', 0.0) or 0.0),
+                        'volatility_score': float(getattr(s, 'volatility_score', 0.0) or 0.0),
+                        'quality_score': quality_score,
+                        'would_take': bool(take) if take is not None else None,
+                        'why': str(reason or '') if reason is not None else None,
+                    })
+                except Exception:
+                    continue
+            self.last_signal_candidates = cand
+        except Exception:
+            pass
         trades_executed = 0
         
         try:

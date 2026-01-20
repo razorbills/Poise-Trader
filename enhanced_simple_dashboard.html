@@ -1112,6 +1112,8 @@
         let assistantSessionId = null;
         let assistantPendingAction = null;
         let assistantTranscriptKey = null;
+        let assistantKVKey = null;
+        let assistantKVSaveTimer = null;
 
         function initAssistant() {
             try {
@@ -1125,7 +1127,9 @@
             }
 
             assistantTranscriptKey = 'poise_assistant_transcript_' + assistantSessionId;
+            assistantKVKey = 'poise_assistant_transcript_' + assistantSessionId;
             assistantRestoreTranscript();
+            assistantKVRestoreTranscript();
 
             const sendBtn = document.getElementById('assistantSendBtn');
             const input = document.getElementById('assistantInput');
@@ -1144,6 +1148,60 @@
             if (!document.getElementById('assistantMessages') || document.getElementById('assistantMessages').children.length === 0) {
                 assistantAppend('assistant', 'Hi! I can answer from your live bot state and help manage positions safely.');
             }
+        }
+
+        async function assistantKVRestoreTranscript() {
+            try {
+                if (!(window.puter && puter.kv && typeof puter.kv.get === 'function')) return;
+                if (!assistantKVKey) return;
+                const localRaw = localStorage.getItem(assistantTranscriptKey) || '';
+                if (localRaw) return;
+                const v = await puter.kv.get(assistantKVKey);
+                if (!v) return;
+                const arr = JSON.parse(String(v || ''));
+                if (!Array.isArray(arr)) return;
+                for (const item of arr) {
+                    if (!item) continue;
+                    const role = item.role === 'user' ? 'user' : 'assistant';
+                    const text = String(item.text || '');
+                    assistantAppend(role, text, false);
+                }
+                localStorage.setItem(assistantTranscriptKey, JSON.stringify(arr));
+            } catch (e) {}
+        }
+
+        function assistantTrimTranscript(arr) {
+            try {
+                if (!Array.isArray(arr)) return [];
+                const keep = 220;
+                const sliced = arr.length > keep ? arr.slice(arr.length - keep) : arr;
+                return sliced;
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function assistantKVSaveDebounced() {
+            try {
+                if (!(window.puter && puter.kv && typeof puter.kv.set === 'function')) return;
+                if (!assistantKVKey) return;
+                if (assistantKVSaveTimer) {
+                    clearTimeout(assistantKVSaveTimer);
+                }
+                assistantKVSaveTimer = setTimeout(async () => {
+                    try {
+                        const raw = localStorage.getItem(assistantTranscriptKey) || '[]';
+                        let arr = [];
+                        try {
+                            arr = JSON.parse(raw);
+                        } catch (e) {
+                            arr = [];
+                        }
+                        arr = assistantTrimTranscript(arr);
+                        await puter.kv.set(assistantKVKey, JSON.stringify(arr));
+                    } catch (e) {}
+                }, 1500);
+            } catch (e) {}
         }
 
         function assistantRestoreTranscript() {
@@ -1173,7 +1231,9 @@
                 }
                 if (!Array.isArray(arr)) arr = [];
                 arr.push({ ts: Date.now(), role: role, text: String(text || '') });
+                arr = assistantTrimTranscript(arr);
                 localStorage.setItem(assistantTranscriptKey, JSON.stringify(arr));
+                assistantKVSaveDebounced();
             } catch (e) {}
         }
 
@@ -1192,6 +1252,20 @@
             if (persist) {
                 assistantPersist(role === 'user' ? 'user' : 'assistant', text);
             }
+        }
+
+        function assistantAppendStreaming(role, initialText = '') {
+            const box = document.getElementById('assistantMessages');
+            if (!box) return null;
+            const wrap = document.createElement('div');
+            wrap.className = 'assistant-msg ' + (role === 'user' ? 'user' : 'assistant');
+            const bubble = document.createElement('div');
+            bubble.className = 'assistant-bubble';
+            bubble.textContent = String(initialText || '');
+            wrap.appendChild(bubble);
+            box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+            return bubble;
         }
 
         function assistantRenderActions(pendingAction) {
@@ -1222,14 +1296,16 @@
             actions.appendChild(confirmBtn);
         }
 
-        function assistantShouldUsePuterFallback(serverReply) {
-            const t = String(serverReply || '').toLowerCase();
+        function assistantIsActionCommand(text) {
+            const t = String(text || '').toLowerCase();
             if (!t) return false;
-            if (t.includes('no ai provider key')) return true;
-            if (t.includes('openai is configured but the request failed')) return true;
-            if (t.includes('ai provider is configured but the request failed')) return true;
-            if (t.includes('set groq_api_key')) return true;
-            if (t.includes('set openai_api_key')) return true;
+            if (t === 'confirm' || t === 'cancel') return true;
+            if (t.includes('close ') || t.includes('close_position') || t.includes('close position')) return true;
+            if (t.includes('start trading') || t.includes('start bot') || t === 'start') return true;
+            if (t.includes('stop trading') || t.includes('stop bot') || t === 'stop') return true;
+            if (t.includes('switch mode') || t.includes('mode to')) return true;
+            if (t.includes('set tp') || t.includes('set sl') || t.includes('take profit') || t.includes('stop loss')) return true;
+            if (t.includes('analyze ') || (t.includes('analyze') && t.includes('/'))) return true;
             return false;
         }
 
@@ -1254,34 +1330,189 @@
             }
         }
 
-        async function assistantAskPuterAI(userMsg) {
+        async function assistantToolFetchJson(path, params = null) {
+            const url = new URL(String(path || ''), API_URL);
+            if (params && typeof params === 'object') {
+                for (const k of Object.keys(params)) {
+                    if (params[k] === undefined || params[k] === null) continue;
+                    url.searchParams.set(k, String(params[k]));
+                }
+            }
+            const r = await fetch(url.toString(), { method: 'GET' });
+            const j = await r.json();
+            return JSON.stringify(j).slice(0, 12000);
+        }
+
+        function assistantBuildBotSnapshotString() {
+            try {
+                const snapshot = {
+                    connected: !!botConnected,
+                    bot_running: !!isTrading,
+                    trading_mode: String(currentMode || 'UNKNOWN'),
+                    positions: positions || {},
+                    recent_trades_count: Array.isArray(recentTrades) ? recentTrades.length : 0,
+                };
+                return 'BOT_SNAPSHOT: ' + JSON.stringify(snapshot).slice(0, 6000);
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function assistantBuildContextPrompt(userMsg) {
+            const sys = [
+                'You are the Poise Trader dashboard assistant.',
+                'You can call tools to fetch live bot data (status/portfolio/metrics/trades/candidates).',
+                'If you are asked what trade will be placed next, use candidates tool.',
+                'If you are asked about bugs, use status and health tools and explain likely root cause based on errors.',
+                'Do not claim certainty about future price. Keep answers concise and actionable.'
+            ].join('\n');
+
+            const snap = assistantBuildBotSnapshotString();
+            const recent = assistantGetRecentTranscript(10);
+            let convo = '';
+            for (const m of recent) {
+                if (!m || !m.role || !m.content) continue;
+                convo += `${m.role.toUpperCase()}: ${m.content}\n`;
+            }
+            const prompt = `${sys}\n\n${snap}\n\nRECENT_CONVERSATION:\n${convo}\nUSER: ${String(userMsg || '').slice(0, 2500)}`;
+            return prompt;
+        }
+
+        function assistantPuterTools() {
+            return [
+                {
+                    type: 'function',
+                    function: {
+                        name: 'get_status',
+                        description: 'Get bot status, mode, last error, and safety pause info.',
+                        parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                        strict: true
+                    }
+                },
+                {
+                    type: 'function',
+                    function: {
+                        name: 'get_metrics',
+                        description: 'Get bot metrics such as win rate, total pnl, active positions, and recent trades summary.',
+                        parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                        strict: true
+                    }
+                },
+                {
+                    type: 'function',
+                    function: {
+                        name: 'get_portfolio',
+                        description: 'Get current positions with entry price, current price, TP/SL, and PnL.',
+                        parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                        strict: true
+                    }
+                },
+                {
+                    type: 'function',
+                    function: {
+                        name: 'get_trades',
+                        description: 'Get recent trades list. Provide limit to reduce size.',
+                        parameters: { type: 'object', properties: { limit: { type: 'integer' } }, required: [], additionalProperties: false },
+                        strict: true
+                    }
+                },
+                {
+                    type: 'function',
+                    function: {
+                        name: 'get_candidates',
+                        description: 'Get latest ranked signal candidates and their would_take/why to answer what trade might be placed next.',
+                        parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                        strict: true
+                    }
+                },
+                {
+                    type: 'function',
+                    function: {
+                        name: 'get_health',
+                        description: 'Get service health and whether bot is connected.',
+                        parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                        strict: true
+                    }
+                }
+            ];
+        }
+
+        async function assistantPuterRun(promptText) {
             if (!(window.puter && puter.ai && typeof puter.ai.chat === 'function')) {
                 throw new Error('Puter AI is not available in this browser session.');
             }
 
-            const sys = 'You are the Poise Trader dashboard assistant. Use the provided bot snapshot if relevant. Do not claim certainty about future price. Keep answers concise.';
-            const snapshot = {
-                connected: !!botConnected,
-                bot_running: !!isTrading,
-                trading_mode: String(currentMode || 'UNKNOWN'),
-                positions: positions || {},
-                recent_trades_count: Array.isArray(recentTrades) ? recentTrades.length : 0,
-            };
-
-            const msgs = [];
-            msgs.push({ role: 'system', content: sys });
+            const tools = assistantPuterTools();
+            let completion = null;
             try {
-                msgs.push({ role: 'system', content: 'BOT_SNAPSHOT: ' + JSON.stringify(snapshot).slice(0, 6000) });
-            } catch (e) {}
-            const recent = assistantGetRecentTranscript(12);
-            for (const m of recent) {
-                if (!m || !m.role || !m.content) continue;
-                msgs.push(m);
+                completion = await puter.ai.chat(promptText, { tools });
+            } catch (e) {
+                completion = null;
             }
-            msgs.push({ role: 'user', content: String(userMsg || '').slice(0, 4000) });
 
-            const out = await puter.ai.chat(msgs);
-            return String(out || '').trim();
+            const completionMsg = (completion && typeof completion === 'object' && completion.message) ? completion.message : null;
+            const toolCalls = completionMsg && Array.isArray(completionMsg.tool_calls) ? completionMsg.tool_calls : [];
+
+            if (toolCalls && toolCalls.length > 0) {
+                const toolResults = [];
+                for (const tc of toolCalls) {
+                    try {
+                        const fn = tc && tc.function ? tc.function : null;
+                        const name = fn ? String(fn.name || '') : '';
+                        let args = {};
+                        try {
+                            args = fn && fn.arguments ? JSON.parse(String(fn.arguments || '{}')) : {};
+                        } catch (e) {
+                            args = {};
+                        }
+
+                        let content = '';
+                        if (name === 'get_status') content = await assistantToolFetchJson('/api/status');
+                        else if (name === 'get_metrics') content = await assistantToolFetchJson('/api/metrics');
+                        else if (name === 'get_portfolio') content = await assistantToolFetchJson('/api/portfolio');
+                        else if (name === 'get_trades') content = await assistantToolFetchJson('/api/trades', { limit: args.limit || 30 });
+                        else if (name === 'get_candidates') content = await assistantToolFetchJson('/api/candidates');
+                        else if (name === 'get_health') content = await assistantToolFetchJson('/health');
+                        else content = JSON.stringify({ error: 'Unknown tool: ' + name });
+
+                        toolResults.push({
+                            role: 'tool',
+                            tool_call_id: tc.id,
+                            content: String(content || '').slice(0, 12000)
+                        });
+                    } catch (e) {
+                        continue;
+                    }
+                }
+
+                const msgs = [];
+                msgs.push({ role: 'user', content: String(promptText || '').slice(0, 7000) });
+                msgs.push(completionMsg);
+                for (const tr of toolResults) msgs.push(tr);
+
+                const bubble = assistantAppendStreaming('assistant', '');
+                let full = '';
+                const stream = await puter.ai.chat(msgs, { stream: true });
+                for await (const part of stream) {
+                    const delta = part && part.text ? String(part.text) : '';
+                    if (!delta) continue;
+                    full += delta;
+                    if (bubble) bubble.textContent = full;
+                }
+                assistantPersist('assistant', full);
+                return;
+            }
+
+            const bubble = assistantAppendStreaming('assistant', '');
+            let full = '';
+            const stream = await puter.ai.chat(promptText, { stream: true });
+            for await (const part of stream) {
+                const delta = part && part.text ? String(part.text) : '';
+                if (!delta) continue;
+                full += delta;
+                if (bubble) bubble.textContent = full;
+            }
+            assistantPersist('assistant', full);
         }
 
         async function assistantSend() {
@@ -1292,37 +1523,30 @@
             input.value = '';
             assistantAppend('user', msg);
 
-            try {
-                const response = await fetch(`${API_URL}/api/assistant/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: assistantSessionId, message: msg })
-                });
-                const data = await response.json();
-
-                const serverReply = (data && data.reply) ? String(data.reply) : 'No reply';
-                const pending = data ? data.pending_action : null;
-
-                if (!pending && assistantShouldUsePuterFallback(serverReply)) {
-                    try {
-                        const ai = await assistantAskPuterAI(msg);
-                        if (ai) {
-                            assistantAppend('assistant', ai);
-                            assistantRenderActions(null);
-                            return;
-                        }
-                    } catch (e) {
-                        assistantAppend('assistant', serverReply);
-                        assistantAppend('assistant', 'Puter AI failed in this browser session.');
-                        assistantRenderActions(null);
-                        return;
-                    }
+            if (assistantIsActionCommand(msg)) {
+                try {
+                    const response = await fetch(`${API_URL}/api/assistant/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: assistantSessionId, message: msg })
+                    });
+                    const data = await response.json();
+                    const serverReply = (data && data.reply) ? String(data.reply) : 'No reply';
+                    assistantAppend('assistant', serverReply);
+                    assistantRenderActions(data ? data.pending_action : null);
+                    return;
+                } catch (e) {
+                    assistantAppend('assistant', 'Assistant request failed.');
+                    return;
                 }
+            }
 
-                assistantAppend('assistant', serverReply);
-                assistantRenderActions(pending);
+            assistantRenderActions(null);
+            const prompt = assistantBuildContextPrompt(msg);
+            try {
+                await assistantPuterRun(prompt);
             } catch (e) {
-                assistantAppend('assistant', 'Assistant request failed.');
+                assistantAppend('assistant', 'Puter AI failed in this browser session.');
             }
         }
 

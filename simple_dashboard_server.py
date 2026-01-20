@@ -548,7 +548,6 @@ def _assistant_groq_chat_ex(messages):
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'Authorization': f"Bearer {key}",
-                    # Some CDNs/WAFs block default python clients; use an explicit UA.
                     'User-Agent': 'PoiseTrader/1.0 (+https://render.com)'
                 },
                 json=payload,
@@ -1570,6 +1569,31 @@ def get_recent_trades():
         trades_out = list(reversed(normalized))[:limit]
 
     return jsonify({'trades': trades_out, 'total': len(trades or []), 'returned': len(trades_out)})
+
+
+@app.route('/api/candidates')
+def get_candidates():
+    global bot_instance
+    if not bot_instance:
+        return jsonify({'candidates': [], 'ts': None, 'connected': False})
+    try:
+        c = getattr(bot_instance, 'last_signal_candidates', [])
+    except Exception:
+        c = []
+    try:
+        ts = getattr(bot_instance, 'last_signal_candidates_ts', None)
+        if ts is not None:
+            ts = float(ts)
+    except Exception:
+        ts = None
+    if not isinstance(c, list):
+        c = []
+    out = []
+    for item in c[:50]:
+        if isinstance(item, dict):
+            out.append(item)
+    return jsonify({'candidates': out, 'ts': ts, 'connected': True})
+
 
 @app.route('/api/export_trades')
 def export_trades():
