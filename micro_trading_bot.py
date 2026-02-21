@@ -2273,6 +2273,16 @@ class LegendaryCryptoTitanBot:
         self.safety_pause_until_ts = 0.0
         self.safety_pause_reason = None
         self.last_feed_health = None
+        try:
+            self.auto_resume_after_safety_pause = str(os.getenv('AUTO_RESUME_AFTER_SAFETY_PAUSE', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.auto_resume_after_safety_pause = True
+
+        try:
+            self.loss_streak_cooldown_seconds = float(os.getenv('LOSS_STREAK_COOLDOWN_SECONDS', '1800') or 1800)
+        except Exception:
+            self.loss_streak_cooldown_seconds = 1800.0
+        self.loss_streak_block_until_ts = 0.0
 
         try:
             self.strategy_cooldown_enabled = str(os.getenv('STRATEGY_COOLDOWN_ENABLED', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
@@ -3945,6 +3955,17 @@ class LegendaryCryptoTitanBot:
     
     def _should_take_trade(self, quality_score: float, signal_confidence: float) -> Tuple[bool, str]:
         """🎯 PROFESSIONAL TRADER - Quality-focused with mode flexibility"""
+        try:
+            now_ts = float(time.time())
+            block_until = float(getattr(self, 'loss_streak_block_until_ts', 0.0) or 0.0)
+            if block_until > 0 and now_ts >= block_until:
+                self.loss_streak_block_until_ts = 0.0
+                self.current_loss_streak = 0
+                self.consecutive_losses = 0
+                print("      âœ… Loss-streak cooldown expired - trading guard reset")
+        except Exception:
+            pass
+
         # AGGRESSIVE MODE: ACTIVE TRADING - Frequent trades!
         if self.trading_mode == 'AGGRESSIVE':
             import time as _time
@@ -4094,10 +4115,15 @@ class LegendaryCryptoTitanBot:
             self.current_win_streak = int(getattr(self, 'current_win_streak', 0) or 0) + 1
             self.current_loss_streak = 0
             self.consecutive_losses = 0
+            self.loss_streak_block_until_ts = 0.0
         else:
             self.current_loss_streak = int(getattr(self, 'current_loss_streak', 0) or 0) + 1
             self.current_win_streak = 0
             self.consecutive_losses = int(getattr(self, 'consecutive_losses', 0) or 0) + 1
+            try:
+                self.loss_streak_block_until_ts = float(time.time()) + float(getattr(self, 'loss_streak_cooldown_seconds', 1800.0) or 1800.0)
+            except Exception:
+                pass
 
         self.longest_win_streak = max(int(getattr(self, 'longest_win_streak', 0) or 0), int(getattr(self, 'current_win_streak', 0) or 0))
         self.total_completed_trades = total_completed
@@ -4201,8 +4227,10 @@ class LegendaryCryptoTitanBot:
         self.take_profit = 3.5
         self.stop_loss = 1.5
         try:
-            self.min_confidence_for_trade = max(getattr(self, 'min_confidence_for_trade', 0.0), 0.45)
-            self.min_trade_quality_score = max(getattr(self, 'min_trade_quality_score', 0.0), 60.0)
+            if float(getattr(self, 'min_confidence_for_trade', 0.0) or 0.0) <= 0:
+                self.min_confidence_for_trade = 0.30
+            if float(getattr(self, 'min_trade_quality_score', 0.0) or 0.0) <= 0:
+                self.min_trade_quality_score = 55.0
         except Exception:
             pass
         
@@ -4464,9 +4492,12 @@ class LegendaryCryptoTitanBot:
                                 self.safety_pause_until_ts = float(time.time()) + float(self.safety_pause_seconds)
                             except Exception:
                                 self.safety_pause_until_ts = 0.0
-                            self.bot_running = False
                             print(f"\n🛑 SAFETY PAUSE: {self.safety_pause_reason}")
-                            print("   Bot paused. Wait for feed recovery then press Start Trading again.")
+                            if bool(getattr(self, 'auto_resume_after_safety_pause', True)):
+                                print("   Auto-resume enabled: bot will continue automatically when pause expires.")
+                            else:
+                                self.bot_running = False
+                                print("   Bot paused. Wait for feed recovery then press Start Trading again.")
                             continue
                 except Exception:
                     pass

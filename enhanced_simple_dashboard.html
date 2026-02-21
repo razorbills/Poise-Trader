@@ -1441,18 +1441,71 @@
             ];
         }
 
+        function assistantExtractText(completion) {
+            try {
+                if (!completion) return '';
+                if (typeof completion === 'string') return completion;
+                if (typeof completion.text === 'string') return completion.text;
+                const msg = completion.message || null;
+                if (!msg) return '';
+                if (typeof msg.content === 'string') return msg.content;
+                if (Array.isArray(msg.content)) {
+                    let out = '';
+                    for (const part of msg.content) {
+                        if (!part) continue;
+                        if (typeof part === 'string') out += part;
+                        else if (typeof part.text === 'string') out += part.text;
+                    }
+                    return out;
+                }
+            } catch (e) {}
+            return '';
+        }
+
+        async function assistantPuterChat(payload, options = {}, timeoutMs = 25000, maxAttempts = 3) {
+            let lastErr = null;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('Puter AI timeout')), timeoutMs);
+                    });
+                    const result = await Promise.race([
+                        puter.ai.chat(payload, options || {}),
+                        timeoutPromise
+                    ]);
+                    return result;
+                } catch (e) {
+                    lastErr = e;
+                    if (attempt < maxAttempts) {
+                        await new Promise(r => setTimeout(r, 300 * attempt));
+                    }
+                }
+            }
+            throw lastErr || new Error('Puter AI failed');
+        }
+
+        async function assistantFallbackServer(message) {
+            try {
+                const response = await fetch(`${API_URL}/api/assistant/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: assistantSessionId, message: String(message || '').slice(0, 3000) })
+                });
+                const data = await response.json();
+                const txt = (data && data.reply) ? String(data.reply) : '';
+                return txt || 'Assistant fallback is unavailable right now.';
+            } catch (e) {
+                return 'Assistant is temporarily unavailable. Please try again.';
+            }
+        }
+
         async function assistantPuterRun(promptText) {
             if (!(window.puter && puter.ai && typeof puter.ai.chat === 'function')) {
                 throw new Error('Puter AI is not available in this browser session.');
             }
 
             const tools = assistantPuterTools();
-            let completion = null;
-            try {
-                completion = await puter.ai.chat(promptText, { tools });
-            } catch (e) {
-                completion = null;
-            }
+            const completion = await assistantPuterChat(promptText, { tools }, 25000, 3);
 
             const completionMsg = (completion && typeof completion === 'object' && completion.message) ? completion.message : null;
             const toolCalls = completionMsg && Array.isArray(completionMsg.tool_calls) ? completionMsg.tool_calls : [];
@@ -1494,28 +1547,20 @@
                 msgs.push(completionMsg);
                 for (const tr of toolResults) msgs.push(tr);
 
+                const completion2 = await assistantPuterChat(msgs, {}, 30000, 3);
+                let full = assistantExtractText(completion2);
+                if (!full) full = 'No response returned.';
                 const bubble = assistantAppendStreaming('assistant', '');
-                let full = '';
-                const stream = await puter.ai.chat(msgs, { stream: true });
-                for await (const part of stream) {
-                    const delta = part && part.text ? String(part.text) : '';
-                    if (!delta) continue;
-                    full += delta;
-                    if (bubble) bubble.textContent = full;
-                }
+                if (bubble) bubble.textContent = full;
                 assistantPersist('assistant', full);
                 return;
             }
 
+            const completion3 = await assistantPuterChat(promptText, {}, 30000, 3);
+            let full = assistantExtractText(completion3);
+            if (!full) full = 'No response returned.';
             const bubble = assistantAppendStreaming('assistant', '');
-            let full = '';
-            const stream = await puter.ai.chat(promptText, { stream: true });
-            for await (const part of stream) {
-                const delta = part && part.text ? String(part.text) : '';
-                if (!delta) continue;
-                full += delta;
-                if (bubble) bubble.textContent = full;
-            }
+            if (bubble) bubble.textContent = full;
             assistantPersist('assistant', full);
         }
 
@@ -1550,7 +1595,8 @@
             try {
                 await assistantPuterRun(prompt);
             } catch (e) {
-                assistantAppend('assistant', 'Puter AI failed in this browser session.');
+                const fallback = await assistantFallbackServer(msg);
+                assistantAppend('assistant', fallback);
             }
         }
 
