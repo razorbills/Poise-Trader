@@ -1,7 +1,7 @@
 {
   "version": "3.0",
   "created": "2025-10-21T11:54:00.000000",
-  "last_updated": "2025-10-22T19:34:52.664645",
+  "last_updated": "2026-03-18T12:48:13.846986",
   "total_trades": 4,
   "total_profit_loss": 0.002653714941070806,
   "win_rate": 0.5,
@@ -62,14 +62,14 @@
       "profit_loss": 0.0031732320013138082,
       "best_strategies": {},
       "volatility_preference": 0.0,
-      "execution_quality": 0.6355000000000001
+      "execution_quality": 0.704755
     },
     "ETH/USDT": {
       "trades": 2,
       "profit_loss": -0.0005195170602430021,
       "best_strategies": {},
       "volatility_preference": 0.0,
-      "execution_quality": 0.5950000000000001
+      "execution_quality": 0.67195
     }
   },
   "time_patterns": {
@@ -100,12 +100,12 @@
   },
   "knowledge_sessions": [],
   "execution_stats": {
-    "total_executions": 5,
-    "successful_executions": 5,
+    "total_executions": 4,
+    "successful_executions": 4,
     "failed_executions": 0,
     "confidence_vs_success": {
-      "0.3": {
-        "successes": 5,
+      "0.5": {
+        "successes": 4,
         "failures": 0
       }
     }

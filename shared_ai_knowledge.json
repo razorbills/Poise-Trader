@@ -1,72 +1,6 @@
 {
-  "cross_bot_trades": 642,
+  "cross_bot_trades": 648,
   "micro_bot_lessons": [
-    {
-      "type": "trade_execution",
-      "symbol": "SOL/USDT",
-      "success": false,
-      "confidence": 0.35,
-      "strategy": "AGGRESSIVE_FORCED",
-      "regime": "sideways",
-      "lesson": "Trade execution failed for BUY SOL/USDT",
-      "timestamp": "2025-10-22T11:49:54.003797",
-      "bot_source": "micro"
-    },
-    {
-      "type": "trade_execution",
-      "symbol": "BTC/USDT",
-      "success": false,
-      "confidence": 0.35,
-      "strategy": "AGGRESSIVE_FORCED",
-      "regime": "sideways",
-      "lesson": "Trade execution failed for BUY BTC/USDT",
-      "timestamp": "2025-10-22T11:50:34.106154",
-      "bot_source": "micro"
-    },
-    {
-      "type": "trade_execution",
-      "symbol": "ETH/USDT",
-      "success": false,
-      "confidence": 0.35,
-      "strategy": "AGGRESSIVE_FORCED",
-      "regime": "sideways",
-      "lesson": "Trade execution failed for BUY ETH/USDT",
-      "timestamp": "2025-10-22T11:50:37.118198",
-      "bot_source": "micro"
-    },
-    {
-      "type": "trade_execution",
-      "symbol": "SOL/USDT",
-      "success": false,
-      "confidence": 0.35,
-      "strategy": "AGGRESSIVE_FORCED",
-      "regime": "sideways",
-      "lesson": "Trade execution failed for BUY SOL/USDT",
-      "timestamp": "2025-10-22T11:50:40.130958",
-      "bot_source": "micro"
-    },
-    {
-      "type": "trade_execution",
-      "symbol": "BTC/USDT",
-      "success": false,
-      "confidence": 0.35,
-      "strategy": "AGGRESSIVE_FORCED",
-      "regime": "sideways",
-      "lesson": "Trade execution failed for BUY BTC/USDT",
-      "timestamp": "2025-10-22T11:51:20.317269",
-      "bot_source": "micro"
-    },
-    {
-      "type": "trade_execution",
-      "symbol": "ETH/USDT",
-      "success": false,
-      "confidence": 0.35,
-      "strategy": "AGGRESSIVE_FORCED",
-      "regime": "sideways",
-      "lesson": "Trade execution failed for BUY ETH/USDT",
-      "timestamp": "2025-10-22T11:51:23.327068",
-      "bot_source": "micro"
-    },
     {
       "type": "trade_execution",
       "symbol": "SOL/USDT",
@@ -1099,6 +1033,72 @@
       "regime": "sideways",
       "lesson": "Trade execution successful for BUY BTC/USDT",
       "timestamp": "2025-10-22T19:34:52.674558",
+      "bot_source": "micro"
+    },
+    {
+      "type": "trade_execution",
+      "symbol": "BNB/USDT",
+      "success": true,
+      "confidence": 0.55,
+      "strategy": "LEGENDARY_TITAN_momentum",
+      "regime": "sideways",
+      "lesson": "Trade execution successful for BUY BNB/USDT",
+      "timestamp": "2026-03-18T12:44:06.527879",
+      "bot_source": "micro"
+    },
+    {
+      "type": "trade_execution",
+      "symbol": "BNB/USDT",
+      "success": true,
+      "confidence": 0.55,
+      "strategy": "LEGENDARY_TITAN_momentum",
+      "regime": "sideways",
+      "lesson": "Trade execution successful for BUY BNB/USDT",
+      "timestamp": "2026-03-18T12:44:06.824188",
+      "bot_source": "micro"
+    },
+    {
+      "type": "trade_execution",
+      "symbol": "BTC/USDT",
+      "success": true,
+      "confidence": 0.55,
+      "strategy": "LEGENDARY_TITAN_momentum",
+      "regime": "sideways",
+      "lesson": "Trade execution successful for BUY BTC/USDT",
+      "timestamp": "2026-03-18T12:48:13.172462",
+      "bot_source": "micro"
+    },
+    {
+      "type": "trade_execution",
+      "symbol": "ETH/USDT",
+      "success": true,
+      "confidence": 0.55,
+      "strategy": "LEGENDARY_TITAN_momentum",
+      "regime": "sideways",
+      "lesson": "Trade execution successful for BUY ETH/USDT",
+      "timestamp": "2026-03-18T12:48:13.503188",
+      "bot_source": "micro"
+    },
+    {
+      "type": "trade_execution",
+      "symbol": "BTC/USDT",
+      "success": true,
+      "confidence": 0.55,
+      "strategy": "LEGENDARY_TITAN_momentum",
+      "regime": "sideways",
+      "lesson": "Trade execution successful for BUY BTC/USDT",
+      "timestamp": "2026-03-18T12:48:13.699159",
+      "bot_source": "micro"
+    },
+    {
+      "type": "trade_execution",
+      "symbol": "ETH/USDT",
+      "success": true,
+      "confidence": 0.55,
+      "strategy": "LEGENDARY_TITAN_momentum",
+      "regime": "sideways",
+      "lesson": "Trade execution successful for BUY ETH/USDT",
+      "timestamp": "2026-03-18T12:48:13.874314",
       "bot_source": "micro"
     }
   ],

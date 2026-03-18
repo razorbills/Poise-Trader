@@ -2022,9 +2022,9 @@ class LegendaryCryptoTitanBot:
 
         if initial_capital is None:
             try:
-                initial_capital = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
+                initial_capital = float(os.getenv('INITIAL_CAPITAL', '20.0') or 20.0)
             except Exception:
-                initial_capital = 5.0
+                initial_capital = 20.0
 
         self.initial_capital = float(initial_capital)
         self.current_capital = float(initial_capital)
@@ -3943,7 +3943,7 @@ class LegendaryCryptoTitanBot:
             print(f"   ⚠️ Quality score calculation error: {e}")
             return 50.0  # Default moderate score on error
     
-    def _should_take_trade(self, quality_score: float, signal_confidence: float) -> Tuple[bool, str]:
+    def _should_take_trade(self, quality_score: float, signal_confidence: float, forced: bool = False) -> Tuple[bool, str]:
         """🎯 PROFESSIONAL TRADER - Quality-focused with mode flexibility"""
         # AGGRESSIVE MODE: ACTIVE TRADING - Frequent trades!
         if self.trading_mode == 'AGGRESSIVE':
@@ -3982,6 +3982,14 @@ class LegendaryCryptoTitanBot:
             return True, f"⚡ AGGRESSIVE: {grade}"
         
         # PRECISION MODE: STRICT PROFESSIONAL STANDARDS
+        
+        if forced and getattr(self, 'force_trade_mode', False):
+            if signal_confidence < self.min_confidence_for_trade:
+                return False, f"Confidence too low for forced trade: {signal_confidence:.1%} < {self.min_confidence_for_trade:.1%}"
+            min_quality = float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0)
+            if quality_score < min_quality:
+                return False, f"Quality too low for forced trade: {quality_score:.1f} < {min_quality}"
+            return True, "Forced trade approved (meets Precision thresholds)"
         
         # CRITICAL: Stop trading after 3 consecutive losses - take a break!
         if self.current_loss_streak >= 3:
@@ -4187,7 +4195,11 @@ class LegendaryCryptoTitanBot:
             self.trading_mode = 'PRECISION'
 
         try:
-            if _IS_RENDER and not _REAL_TRADING_ENABLED and not _STRICT_REAL_DATA:
+            auto_start = str(os.getenv('POISE_AUTOSTART', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on', 'y']
+        except Exception:
+            auto_start = True
+        try:
+            if auto_start and not _REAL_TRADING_ENABLED and not _STRICT_REAL_DATA:
                 self.bot_running = True
             else:
                 self.bot_running = False
@@ -4484,6 +4496,35 @@ class LegendaryCryptoTitanBot:
                 # STEP 3: Generate signals
                 print("\n🔮 Generating trading signals...")
                 
+                # Precision mode idle recovery (keeps trading without lowering quality)
+                if str(getattr(self, 'trading_mode', '') or '').upper() == 'PRECISION':
+                    try:
+                        import time as _t
+                        now_ts = float(_t.time())
+                        last_trade_ts = float(getattr(self, 'last_trade_time', 0.0) or 0.0)
+                        idle_sec = now_ts - last_trade_ts if last_trade_ts > 0 else 1e9
+                        if idle_sec >= 3600.0:  # 1 hour without trades
+                            self.consecutive_losses = 0
+                            try:
+                                if isinstance(getattr(self, 'strategy_cooldowns', None), dict):
+                                    self.strategy_cooldowns.clear()
+                            except Exception:
+                                pass
+                            try:
+                                base_conf = float(getattr(self, 'base_confidence_threshold', 0.30) or 0.30)
+                                cur_conf = float(getattr(self, 'min_confidence_for_trade', base_conf) or base_conf)
+                                self.min_confidence_for_trade = max(base_conf, cur_conf - 0.05)
+                            except Exception:
+                                pass
+                            try:
+                                cur_min_hist = int(getattr(self, 'min_price_history', 30) or 30)
+                                self.min_price_history = max(10, cur_min_hist - 5)
+                            except Exception:
+                                pass
+                            print(f"   🟡 Precision idle recovery: thresholds adjusted for activity (quality intact)")
+                    except Exception:
+                        pass
+                
                 # Use professional signals if available
                 if self.professional_mode:
                     # Get both standard and professional signals
@@ -4756,11 +4797,11 @@ class LegendaryCryptoTitanBot:
                     self.aggressive_trade_guarantee = True
                     self.aggressive_trade_interval = 60.0
                     self.cycle_sleep_override = 10.0
-                    # AGGRESSIVE MODE: ACTIVE TRADING - At least 1 trade per 5 minutes!
-                    self.win_rate_optimizer_enabled = True
-                    self.min_trade_quality_score = 50.0  # Lower threshold - more trades!
-                    self.min_confidence_for_trade = 0.45  # 45% minimum - balanced
-                    self.confidence_threshold = 0.45
+                    self.win_rate_optimizer_enabled = False
+                    self.min_trade_quality_score = 50.0
+                    self.min_confidence_for_trade = config['min_confidence']
+                    self.confidence_threshold = config['min_confidence']
+                    self.force_trade_mode = True
                     self.max_concurrent_positions = 5  # More positions
                     self.max_positions = 8
                     self.take_profit = 2.5  # Professional profit target (2.5%)
@@ -4792,21 +4833,20 @@ class LegendaryCryptoTitanBot:
                     self.base_confidence_threshold = config['min_confidence']
                     self.fast_mode_enabled = False
                     self.precision_mode_enabled = True
-                    self.min_price_history = 30  # Reduced from 50 - start trading sooner
+                    self.min_price_history = 30
                     self.confidence_adjustment_factor = 0.01
                     self.aggressive_trade_guarantee = False
                     self.cycle_sleep_override = None
-                    # PRECISION MODE: Balanced quality trading
                     self.win_rate_optimizer_enabled = True
-                    self.min_trade_quality_score = 55.0  # BALANCED - Filters weak trades, allows decent setups
-                    # Use config values for confidence (30%)
-                    self.max_concurrent_positions = 2  # Focused positions
+                    self.min_trade_quality_score = 55.0
+                    self.max_concurrent_positions = 3
                     self.max_positions = 3
-                    self.take_profit = 3.5  # Professional profit target (3.5%)
-                    self.stop_loss = 1.5  # Controlled risk (1.5%)
-                    self.min_hold_time = 600  # Professional grace period (10 minutes minimum)
-                    self.partial_profit_levels = [2.0, 2.75]  # Partial profits at 2.0% and 2.75%
-                    self.max_consecutive_losses = 3  # Balanced loss limit (increased from 2)
+                    self.take_profit = 3.5
+                    self.stop_loss = 1.5
+                    self.min_hold_time = 600
+                    self.partial_profit_levels = [2.0, 2.75]
+                    self.max_consecutive_losses = 3
+                    self.force_trade_mode = True
                     print("\n🎯 PRECISION (NORMAL) MODE SELECTED!")
                     print("   💎 Win rate optimizer: ENABLED")
                     print("   🎯 Minimum Quality: 55/100, Confidence: 30%")
@@ -4846,13 +4886,14 @@ class LegendaryCryptoTitanBot:
                 # PRECISION MODE: Balanced quality trading
                 self.win_rate_optimizer_enabled = True
                 self.min_trade_quality_score = 55.0
-                self.max_concurrent_positions = 2
+                self.max_concurrent_positions = 3
                 self.max_positions = 3
                 self.take_profit = 3.5  # Professional profit target (3.5%)
                 self.stop_loss = 1.5  # Controlled risk (1.5%)
                 self.min_hold_time = 600  # Professional grace period (10 minutes)
                 self.partial_profit_levels = [2.0, 2.75]
                 self.max_consecutive_losses = 3
+                self.force_trade_mode = True
                 print("\n🎯 PRECISION (NORMAL) MODE SELECTED (Auto)!")
                 print("   💎 Win rate optimizer: ENABLED")
                 print("   🎯 Minimum Quality: 55/100, Confidence: 30%")
@@ -5872,7 +5913,7 @@ class LegendaryCryptoTitanBot:
             forced_signal = AITradingSignal(
                 symbol=symbol,
                 action=action,
-                confidence=0.20,  # Just above threshold
+                confidence=max(self.min_confidence_for_trade, 0.30),
                 expected_return=1.5,
                 risk_score=0.3,
                 time_horizon=60,
@@ -9789,7 +9830,8 @@ class LegendaryCryptoTitanBot:
                 reason = None
                 try:
                     quality_score = float(self._calculate_trade_quality_score(s, md) or 0.0)
-                    take, reason = self._should_take_trade(quality_score, conf)
+                    forced_flag = 'FORCED' in str(getattr(s, 'strategy_name', '') or '')
+                    take, reason = self._should_take_trade(quality_score, conf, forced=forced_flag)
                 except Exception:
                     pass
 
@@ -9965,7 +10007,8 @@ class LegendaryCryptoTitanBot:
                     pass
 
                 quality_score = self._calculate_trade_quality_score(signal, md)
-                should_take, reason = self._should_take_trade(quality_score, signal.confidence)
+                forced_flag = 'FORCED' in str(getattr(signal, 'strategy_name', '') or '')
+                should_take, reason = self._should_take_trade(quality_score, signal.confidence, forced=forced_flag)
                 
                 if not should_take:
                     print(f"   🚫 {signal.symbol}: SKIPPED - {reason}")
@@ -10142,7 +10185,8 @@ class LegendaryCryptoTitanBot:
             # 🎯 90% WIN RATE QUALITY FILTER FOR LEGENDARY TRADES
             if getattr(self, 'win_rate_optimizer_enabled', True):
                 quality_score = self._calculate_trade_quality_score(signal, {'price': signal.entry_price})
-                should_take, reason = self._should_take_trade(quality_score, signal.confidence)
+                forced_flag = 'FORCED' in str(getattr(signal, 'strategy_name', '') or '')
+                should_take, reason = self._should_take_trade(quality_score, signal.confidence, forced=forced_flag)
                 
                 if not should_take:
                     print(f"   🚫 {signal.symbol}: LEGENDARY SKIPPED - {reason}")
@@ -12418,23 +12462,24 @@ async def main(legendary_bot):
         legendary_bot.win_rate_optimizer_enabled = True
         print('\n✅ NORMAL (PRECISION) MODE SELECTED (env var)')
     else:
-        # DEFAULT TO PRECISION MODE - USER CAN CHANGE IN DASHBOARD
-        print("\n🎯 DEFAULTING TO PRECISION (NORMAL) MODE")
-        print("   (Use dashboard to select Aggressive or Normal mode)")
-        legendary_bot.trading_mode = 'PRECISION'
-        _cfg = legendary_bot.mode_config['PRECISION']
+        print("\n🎯 DEFAULTING TO AGGRESSIVE MODE")
+        print("   (Use dashboard to switch modes anytime)")
+        legendary_bot.trading_mode = 'AGGRESSIVE'
+        _cfg = legendary_bot.mode_config['AGGRESSIVE']
         legendary_bot.target_accuracy = _cfg['target_accuracy']
         legendary_bot.min_confidence_for_trade = _cfg['min_confidence']
         legendary_bot.ensemble_threshold = _cfg['ensemble_threshold']
         legendary_bot.confidence_threshold = _cfg['min_confidence']
         legendary_bot.base_confidence_threshold = _cfg['min_confidence']
-        legendary_bot.fast_mode_enabled = False
-        legendary_bot.precision_mode_enabled = True
-        legendary_bot.min_price_history = 10  # LOWERED from 50 - start trading faster!
-        legendary_bot.confidence_adjustment_factor = 0.01
-        legendary_bot.aggressive_trade_guarantee = False
-        legendary_bot.cycle_sleep_override = None
-        legendary_bot.win_rate_optimizer_enabled = False  # DISABLED by default - no over-filtering!
+        legendary_bot.fast_mode_enabled = True
+        legendary_bot.precision_mode_enabled = False
+        legendary_bot.min_price_history = 20
+        legendary_bot.confidence_adjustment_factor = 0.05
+        legendary_bot.aggressive_trade_guarantee = True
+        legendary_bot.aggressive_trade_interval = 60.0
+        legendary_bot.cycle_sleep_override = 10.0
+        legendary_bot.win_rate_optimizer_enabled = False
+        legendary_bot.force_trade_mode = True
 
     # Bot is ready - Dashboard is already running (started earlier)
     print("\n✅ Bot initialized and ready")
@@ -12472,7 +12517,7 @@ async def main(legendary_bot):
         print("="*70 + "\n")
         
         # Run infinite cycles - dashboard controls when to actually trade
-        await legendary_bot.run_micro_trading_cycle(cycles=1000)
+        await legendary_bot.run_micro_trading_cycle(cycles=999999)
         
         # Keep charts open
         if PLOTTING_AVAILABLE and legendary_bot.live_chart:
