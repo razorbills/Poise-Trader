@@ -2110,6 +2110,9 @@ class LegendaryCryptoTitanBot:
         self.require_multiple_confirmations = True  # Require multiple signal confirmations
         self.last_trade_time = 0  # Track last trade time for aggressive mode
         self.force_trade_after_seconds = 300  # Force trade if 5 min passes (aggressive mode)
+        self.probe_entry_enabled = True
+        self.probe_quality_slack = 5.0
+        self.probe_conf_slack = 0.05
         
         # 🌍 MULTI-ASSET ALLOCATION SYSTEM (Initialize early to prevent AttributeError)
         self.asset_categories = {
@@ -10011,8 +10014,24 @@ class LegendaryCryptoTitanBot:
                 should_take, reason = self._should_take_trade(quality_score, signal.confidence, forced=forced_flag)
                 
                 if not should_take:
-                    print(f"   🚫 {signal.symbol}: SKIPPED - {reason}")
-                    continue
+                    try:
+                        conf = float(getattr(signal, 'confidence', 0.0) or 0.0)
+                        min_quality = float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0)
+                        near_quality = float(quality_score or 0.0) >= (min_quality - float(getattr(self, 'probe_quality_slack', 5.0) or 5.0))
+                        near_conf = conf >= (float(getattr(self, 'min_confidence_for_trade', 0.30) or 0.30) - float(getattr(self, 'probe_conf_slack', 0.05) or 0.05))
+                        if bool(getattr(self, 'probe_entry_enabled', True)) and near_quality and near_conf and float(available_cash or 0.0) >= float(self.min_trade_size or 0.0):
+                            position_size = float(self.min_trade_size or 0.0)
+                            try:
+                                signal.strategy_name = 'PROBE_ENTRY'
+                            except Exception:
+                                pass
+                            print(f"   🟢 {signal.symbol}: PROBE ENTRY - size ${position_size:.2f} (Quality {quality_score:.1f}, Conf {conf:.1%})")
+                        else:
+                            print(f"   🚫 {signal.symbol}: SKIPPED - {reason}")
+                            continue
+                    except Exception:
+                        print(f"   🚫 {signal.symbol}: SKIPPED - {reason}")
+                        continue
                 else:
                     print(f"   🎯 {signal.symbol}: {reason}")
             

@@ -434,6 +434,26 @@ def _assistant_get_bot_snapshot():
         snap['winning_trades'] = int(getattr(bot_instance, 'winning_trades', 0) or 0)
         snap['current_market_regime'] = str(getattr(bot_instance, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN')
         snap['volatility_regime'] = str(getattr(bot_instance, 'volatility_regime', 'NORMAL') or 'NORMAL')
+        snap['min_trade_size'] = float(getattr(bot_instance, 'min_trade_size', 0.0) or 0.0)
+        snap['max_concurrent_positions'] = int(getattr(bot_instance, 'max_concurrent_positions', 0) or 0)
+        snap['safety_pause_until_ts'] = float(getattr(bot_instance, 'safety_pause_until_ts', 0.0) or 0.0)
+        snap['safety_pause_reason'] = getattr(bot_instance, 'safety_pause_reason', None)
+        snap['last_trade_time'] = float(getattr(bot_instance, 'last_trade_time', 0.0) or 0.0)
+        try:
+            cds = getattr(bot_instance, 'strategy_cooldowns', None)
+            snap['strategy_cooldown_count'] = int(len(cds)) if isinstance(cds, dict) else 0
+        except Exception:
+            snap['strategy_cooldown_count'] = 0
+        try:
+            lfh = getattr(bot_instance, 'last_feed_health', None)
+            if isinstance(lfh, dict):
+                snap['last_feed_health'] = {
+                    'connected': bool(lfh.get('connected', False)),
+                    'last_ok_age_sec': lfh.get('last_ok_age_sec', None),
+                    'consecutive_failures': lfh.get('consecutive_failures', None),
+                }
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -444,6 +464,10 @@ def _assistant_get_bot_snapshot():
             snap['fee_rate'] = float(getattr(tr, 'fee_rate', 0.0) or 0.0)
             snap['paper_spread_bps'] = getattr(tr, 'paper_spread_bps', None)
             snap['paper_slippage_bps'] = getattr(tr, 'paper_slippage_bps', None)
+            try:
+                snap['cash_balance'] = float(getattr(tr, 'cash_balance', 0.0) or 0.0)
+            except Exception:
+                pass
 
             positions = {}
             if hasattr(tr, 'get_portfolio_value_sync'):
@@ -464,10 +488,141 @@ def _assistant_get_bot_snapshot():
                     positions = {}
 
             snap['positions'] = positions
+            try:
+                th = getattr(tr, 'trade_history', None)
+                if isinstance(th, list):
+                    snap['total_entries'] = int(len(th))
+                else:
+                    snap['total_entries'] = int(getattr(bot_instance, 'trade_count', 0) or 0)
+            except Exception:
+                pass
     except Exception:
         pass
 
     return snap
+
+
+def _assistant_get_trade_history():
+    global bot_instance
+    if not bot_instance:
+        return []
+    bot_trades = []
+    trader_trades = []
+    try:
+        if hasattr(bot_instance, 'trade_history') and isinstance(getattr(bot_instance, 'trade_history', None), list):
+            bot_trades = list(getattr(bot_instance, 'trade_history', []) or [])
+    except Exception:
+        bot_trades = []
+    try:
+        tr = getattr(bot_instance, 'trader', None)
+        if tr is not None and hasattr(tr, 'trade_history') and isinstance(getattr(tr, 'trade_history', None), list):
+            trader_trades = list(getattr(tr, 'trade_history', []) or [])
+    except Exception:
+        trader_trades = []
+    return trader_trades if len(trader_trades) >= len(bot_trades) else bot_trades
+
+
+def _assistant_trade_stats(trades):
+    now_ts = float(time.time())
+    total = 0
+    entries_24h = 0
+    buys = 0
+    sells = 0
+    last_ts = 0.0
+    for t in trades or []:
+        if not isinstance(t, dict):
+            continue
+        total += 1
+        try:
+            side = str(t.get('side', t.get('action', '')) or '').upper()
+            if side == 'BUY':
+                buys += 1
+            elif side == 'SELL':
+                sells += 1
+        except Exception:
+            pass
+        ts_val = None
+        try:
+            ts_raw = t.get('timestamp', t.get('time', None))
+            if isinstance(ts_raw, (int, float)):
+                ts_val = float(ts_raw)
+                if ts_val > 1e12:
+                    ts_val = ts_val / 1000.0
+            elif isinstance(ts_raw, str) and ts_raw.strip():
+                ts_txt = ts_raw.strip().replace('Z', '+00:00')
+                ts_val = datetime.fromisoformat(ts_txt).timestamp()
+        except Exception:
+            ts_val = None
+        if ts_val:
+            if ts_val > last_ts:
+                last_ts = ts_val
+            if (now_ts - ts_val) <= 86400:
+                entries_24h += 1
+    last_age = None
+    if last_ts > 0:
+        try:
+            last_age = max(0.0, now_ts - last_ts)
+        except Exception:
+            last_age = None
+    return {
+        'total_entries': int(total),
+        'entries_24h': int(entries_24h),
+        'buy_entries': int(buys),
+        'sell_entries': int(sells),
+        'last_trade_ts': float(last_ts or 0.0),
+        'last_trade_age_sec': last_age,
+    }
+
+
+def _assistant_build_health_diagnosis(snap: dict, trade_stats: dict):
+    issues = []
+    try:
+        if not bool((snap or {}).get('connected', False)):
+            issues.append('Bot is not connected')
+            return issues
+        if not bool((snap or {}).get('bot_running', False)):
+            issues.append('Bot is paused/stopped')
+        sp = float((snap or {}).get('safety_pause_until_ts', 0.0) or 0.0)
+        if sp > float(time.time()):
+            issues.append(f"Safety pause active ({int(sp - time.time())}s remaining)")
+        fh = (snap or {}).get('last_feed_health', None)
+        if isinstance(fh, dict):
+            if not bool(fh.get('connected', True)):
+                issues.append('Market data feed disconnected')
+            try:
+                if float(fh.get('consecutive_failures', 0) or 0) >= 3:
+                    issues.append('Frequent market-data failures')
+            except Exception:
+                pass
+        try:
+            max_pos = int((snap or {}).get('max_concurrent_positions', 0) or 0)
+            active = len(((snap or {}).get('positions') or {}).keys())
+            if max_pos > 0 and active >= max_pos:
+                issues.append(f"At max positions ({active}/{max_pos})")
+        except Exception:
+            pass
+        try:
+            cash = float((snap or {}).get('cash_balance', 0.0) or 0.0)
+            mts = float((snap or {}).get('min_trade_size', 0.0) or 0.0)
+            if mts > 0 and cash > 0 and cash < mts:
+                issues.append(f"Low free cash (${cash:.2f}) below min trade size (${mts:.2f})")
+        except Exception:
+            pass
+        try:
+            cooldowns = int((snap or {}).get('strategy_cooldown_count', 0) or 0)
+            if cooldowns > 0:
+                issues.append(f"{cooldowns} strategy cooldown(s) active")
+        except Exception:
+            pass
+        try:
+            age = (trade_stats or {}).get('last_trade_age_sec', None)
+            if isinstance(age, (int, float)) and age > 7200:
+                issues.append(f"No entries in the last {int(age // 3600)}h")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return issues
 
 
 def _assistant_symbol_from_text(text: str):
@@ -931,8 +1086,51 @@ def _assistant_analyze_symbol(symbol: str, snap: dict):
 
 def _assistant_handle_user_message(session_id: str, message: str):
     snap = _assistant_get_bot_snapshot()
+    trades = _assistant_get_trade_history()
+    trade_stats = _assistant_trade_stats(trades)
     text = str(message or '').strip()
     lower = text.lower()
+
+    try:
+        if 'total_entries' not in snap:
+            snap['total_entries'] = int((trade_stats or {}).get('total_entries', 0) or 0)
+    except Exception:
+        pass
+
+    if any(k in lower for k in ['summary', 'status', 'overview', 'health', 'report']):
+        if not snap.get('connected'):
+            return {'reply': 'Bot is not connected right now.', 'pending_action': None}
+        pnl = float(snap.get('current_capital', 0.0) or 0.0) - float(snap.get('initial_capital', 0.0) or 0.0)
+        active = len(((snap.get('positions') or {}).keys()))
+        issues = _assistant_build_health_diagnosis(snap, trade_stats)
+        last_age = trade_stats.get('last_trade_age_sec', None)
+        if isinstance(last_age, (int, float)):
+            if last_age < 60:
+                last_trade_text = f'{int(last_age)}s ago'
+            elif last_age < 3600:
+                last_trade_text = f'{int(last_age // 60)}m ago'
+            else:
+                last_trade_text = f'{int(last_age // 3600)}h ago'
+        else:
+            last_trade_text = 'unknown'
+        lines = [
+            f"Mode: {snap.get('trading_mode')}",
+            f"Running: {'YES' if snap.get('bot_running') else 'NO'}",
+            f"PnL: {pnl:.4f}",
+            f"Entries executed: {int(trade_stats.get('total_entries', 0) or 0)}",
+            f"Entries (24h): {int(trade_stats.get('entries_24h', 0) or 0)}",
+            f"Completed trades: {int(snap.get('total_completed_trades', 0) or 0)}",
+            f"Winning trades: {int(snap.get('winning_trades', 0) or 0)}",
+            f"Win rate: {float(snap.get('win_rate', 0.0) or 0.0):.2%}",
+            f"Active positions: {active}",
+            f"Last entry: {last_trade_text}",
+            f"Market regime: {snap.get('current_market_regime')}",
+            f"Volatility: {snap.get('volatility_regime')}",
+        ]
+        if issues:
+            lines.append('Potential blockers:')
+            lines.extend([f"- {x}" for x in issues[:5]])
+        return {'reply': "\n".join(lines), 'pending_action': None}
 
     if (
         ('why' in lower or 'reason' in lower)
@@ -984,6 +1182,15 @@ def _assistant_handle_user_message(session_id: str, message: str):
 
         regime = str(snap.get('current_market_regime', 'UNKNOWN') or 'UNKNOWN')
         vreg = str(snap.get('volatility_regime', 'NORMAL') or 'NORMAL')
+        issues = _assistant_build_health_diagnosis(snap, trade_stats)
+        if issues:
+            return {
+                'reply': (
+                    f'Bot is RUNNING (mode={mode}) with {active} open position(s), but these blockers were detected:\n'
+                    + "\n".join([f"- {x}" for x in issues[:5]])
+                ),
+                'pending_action': None,
+            }
         return {
             'reply': (
                 f'Bot is RUNNING (mode={mode}). Right now it has {active} open position(s). '\
@@ -1132,13 +1339,17 @@ def _assistant_handle_user_message(session_id: str, message: str):
         if not snap.get('connected'):
             return {'reply': 'Bot is not connected right now.', 'pending_action': None}
         pnl = float(snap.get('current_capital', 0.0) or 0.0) - float(snap.get('initial_capital', 0.0) or 0.0)
-        total = int(snap.get('total_completed_trades', 0) or 0)
+        total_completed = int(snap.get('total_completed_trades', 0) or 0)
+        total_entries = int((trade_stats or {}).get('total_entries', snap.get('total_entries', 0)) or 0)
+        entries_24h = int((trade_stats or {}).get('entries_24h', 0) or 0)
         wins = int(snap.get('winning_trades', 0) or 0)
         wr = float(snap.get('win_rate', 0.0) or 0.0)
         return {
             'reply': "\n".join([
                 f"PnL: {pnl:.4f}",
-                f"Total completed trades: {total}",
+                f"Total entries executed: {total_entries}",
+                f"Entries in last 24h: {entries_24h}",
+                f"Total completed trades: {total_completed}",
                 f"Winning trades: {wins}",
                 f"Win rate: {wr:.2%}",
                 f"Market regime: {snap.get('current_market_regime')}",
@@ -1146,6 +1357,36 @@ def _assistant_handle_user_message(session_id: str, message: str):
             ]),
             'pending_action': None,
         }
+    
+    if any(k in lower for k in ['how many trades', 'trades placed', 'trades executed', 'entries since', 'entries placed', 'executed since']):
+        if not snap.get('connected'):
+            return {'reply': 'Bot is not connected right now.', 'pending_action': None}
+        total_entries = int((trade_stats or {}).get('total_entries', snap.get('total_entries', 0)) or 0)
+        total_completed = int(snap.get('total_completed_trades', 0) or 0)
+        entries_24h = int((trade_stats or {}).get('entries_24h', 0) or 0)
+        return {
+            'reply': f"Total entries executed since start: {total_entries}\nEntries in last 24h: {entries_24h}\nTotal trades completed: {total_completed}",
+            'pending_action': None,
+        }
+
+    if any(k in lower for k in ['improve', 'better ai', 'make ai smarter', 'optimize bot', 'improve bot']):
+        if not snap.get('connected'):
+            return {'reply': 'Bot is not connected right now. First start/connect the bot, then ask me for optimization.', 'pending_action': None}
+        issues = _assistant_build_health_diagnosis(snap, trade_stats)
+        mode = str(snap.get('trading_mode', 'UNKNOWN') or 'UNKNOWN')
+        lines = [f"Current mode: {mode}"]
+        if issues:
+            lines.append('Fix these first:')
+            lines.extend([f"- {x}" for x in issues[:5]])
+        lines.extend([
+            'High-impact upgrades:',
+            '- Keep feed healthy (no disconnect/failure spikes).',
+            '- Keep strategy cooldowns low during long idle periods.',
+            '- Use PROBE entries for near-threshold setups, then scale winners.',
+            '- Track entries in 24h and adjust mode only if activity drops.',
+            '- Review top 20 recent entries and cut weakest patterns.',
+        ])
+        return {'reply': "\n".join(lines), 'pending_action': None}
 
     if any(k in lower for k in ['close', 'exit', 'sell now', 'close trade', 'close position']):
         symbol = _assistant_symbol_from_text(text)
