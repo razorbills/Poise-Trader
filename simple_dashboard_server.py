@@ -464,6 +464,10 @@ def _assistant_get_bot_snapshot():
             snap['fee_rate'] = float(getattr(tr, 'fee_rate', 0.0) or 0.0)
             snap['paper_spread_bps'] = getattr(tr, 'paper_spread_bps', None)
             snap['paper_slippage_bps'] = getattr(tr, 'paper_slippage_bps', None)
+            snap['trader_total_entries'] = int(getattr(tr, 'total_trades', 0) or 0)
+            snap['trader_winning_trades'] = int(getattr(tr, 'winning_trades', 0) or 0)
+            snap['real_trading_enabled'] = bool(getattr(tr, 'real_trading_enabled', False))
+            snap['real_trading_ready'] = bool(getattr(tr, '_real_trading_ready', lambda: False)())
             try:
                 snap['cash_balance'] = float(getattr(tr, 'cash_balance', 0.0) or 0.0)
             except Exception:
@@ -499,6 +503,25 @@ def _assistant_get_bot_snapshot():
     except Exception:
         pass
 
+    try:
+        ph = getattr(bot_instance, 'price_history', None)
+        if isinstance(ph, dict):
+            tracked = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+            symbol_prices = {}
+            for sym in tracked:
+                try:
+                    seq = ph.get(sym)
+                    if seq:
+                        px = float(list(seq)[-1] or 0.0)
+                        if px > 0:
+                            symbol_prices[sym] = px
+                except Exception:
+                    continue
+            if symbol_prices:
+                snap['symbol_prices'] = symbol_prices
+    except Exception:
+        pass
+
     return snap
 
 
@@ -522,7 +545,7 @@ def _assistant_get_trade_history():
     return trader_trades if len(trader_trades) >= len(bot_trades) else bot_trades
 
 
-def _assistant_trade_stats(trades):
+def _assistant_trade_stats(trades, snap: dict = None):
     now_ts = float(time.time())
     total = 0
     entries_24h = 0
@@ -564,8 +587,19 @@ def _assistant_trade_stats(trades):
             last_age = max(0.0, now_ts - last_ts)
         except Exception:
             last_age = None
+    lifetime_total = int(total)
+    try:
+        if isinstance(snap, dict):
+            lifetime_total = max(
+                int(total),
+                int((snap or {}).get('trader_total_entries', 0) or 0),
+                int((snap or {}).get('total_entries', 0) or 0),
+            )
+    except Exception:
+        lifetime_total = int(total)
     return {
         'total_entries': int(total),
+        'total_entries_lifetime': int(lifetime_total),
         'entries_24h': int(entries_24h),
         'buy_entries': int(buys),
         'sell_entries': int(sells),
@@ -1087,7 +1121,7 @@ def _assistant_analyze_symbol(symbol: str, snap: dict):
 def _assistant_handle_user_message(session_id: str, message: str):
     snap = _assistant_get_bot_snapshot()
     trades = _assistant_get_trade_history()
-    trade_stats = _assistant_trade_stats(trades)
+    trade_stats = _assistant_trade_stats(trades, snap=snap)
     text = str(message or '').strip()
     lower = text.lower()
 
@@ -1117,7 +1151,8 @@ def _assistant_handle_user_message(session_id: str, message: str):
             f"Mode: {snap.get('trading_mode')}",
             f"Running: {'YES' if snap.get('bot_running') else 'NO'}",
             f"PnL: {pnl:.4f}",
-            f"Entries executed: {int(trade_stats.get('total_entries', 0) or 0)}",
+            f"Entries executed (lifetime): {int(trade_stats.get('total_entries_lifetime', 0) or 0)}",
+            f"Entries in memory: {int(trade_stats.get('total_entries', 0) or 0)}",
             f"Entries (24h): {int(trade_stats.get('entries_24h', 0) or 0)}",
             f"Completed trades: {int(snap.get('total_completed_trades', 0) or 0)}",
             f"Winning trades: {int(snap.get('winning_trades', 0) or 0)}",
@@ -1130,7 +1165,51 @@ def _assistant_handle_user_message(session_id: str, message: str):
         if issues:
             lines.append('Potential blockers:')
             lines.extend([f"- {x}" for x in issues[:5]])
+        try:
+            btc_px = float(((snap.get('symbol_prices') or {}).get('BTC/USDT', 0.0)) or 0.0)
+            if btc_px > 0:
+                lines.append(f"BTC/USDT: ${btc_px:,.2f}")
+        except Exception:
+            pass
         return {'reply': "\n".join(lines), 'pending_action': None}
+
+    if any(k in lower for k in ['real money', 'real trading', 'live trading', 'can i trade', 'ready for real', 'is it ready']):
+        if not snap.get('connected'):
+            return {'reply': 'Bot is not connected right now.', 'pending_action': None}
+        enabled = bool(snap.get('real_trading_enabled', False))
+        ready = bool(snap.get('real_trading_ready', False))
+        mode = str(snap.get('trading_mode', 'UNKNOWN') or 'UNKNOWN')
+        if enabled and ready:
+            reply = (
+                f"Yes, real trading is READY right now.\n"
+                f"Current mode: {mode}\n"
+                f"REAL_TRADING: ON\n"
+                f"Safety note: Start with a very small size and monitor the first few fills."
+            )
+        elif enabled and not ready:
+            reply = (
+                f"Not ready yet for real money.\n"
+                f"Current mode: {mode}\n"
+                f"REAL_TRADING is ON but readiness check is failing.\n"
+                f"Requirements: futures market type, valid MEXC keys, and exchange connectivity."
+            )
+        else:
+            reply = (
+                f"Not ready for real money because REAL_TRADING is OFF.\n"
+                f"Current mode: {mode}\n"
+                f"Enable REAL_TRADING and make sure MEXC keys are present, then restart the service."
+            )
+        return {'reply': reply, 'pending_action': None}
+
+    if any(k in lower for k in ['btc price', 'bitcoin price', 'current btc', 'current price btc', 'btc/usdt price']):
+        px = 0.0
+        try:
+            px = float(((snap.get('symbol_prices') or {}).get('BTC/USDT', 0.0)) or 0.0)
+        except Exception:
+            px = 0.0
+        if px > 0:
+            return {'reply': f"Current BTC/USDT from bot feed: ${px:,.2f}", 'pending_action': None}
+        return {'reply': 'BTC price is not available yet. Wait for the feed warm-up and ask again in a few seconds.', 'pending_action': None}
 
     if (
         ('why' in lower or 'reason' in lower)
@@ -1340,14 +1419,16 @@ def _assistant_handle_user_message(session_id: str, message: str):
             return {'reply': 'Bot is not connected right now.', 'pending_action': None}
         pnl = float(snap.get('current_capital', 0.0) or 0.0) - float(snap.get('initial_capital', 0.0) or 0.0)
         total_completed = int(snap.get('total_completed_trades', 0) or 0)
-        total_entries = int((trade_stats or {}).get('total_entries', snap.get('total_entries', 0)) or 0)
+        total_entries = int((trade_stats or {}).get('total_entries_lifetime', snap.get('total_entries', 0)) or 0)
+        in_memory_entries = int((trade_stats or {}).get('total_entries', 0) or 0)
         entries_24h = int((trade_stats or {}).get('entries_24h', 0) or 0)
         wins = int(snap.get('winning_trades', 0) or 0)
         wr = float(snap.get('win_rate', 0.0) or 0.0)
         return {
             'reply': "\n".join([
                 f"PnL: {pnl:.4f}",
-                f"Total entries executed: {total_entries}",
+                f"Total entries executed (lifetime): {total_entries}",
+                f"Entries in memory: {in_memory_entries}",
                 f"Entries in last 24h: {entries_24h}",
                 f"Total completed trades: {total_completed}",
                 f"Winning trades: {wins}",
@@ -1361,11 +1442,17 @@ def _assistant_handle_user_message(session_id: str, message: str):
     if any(k in lower for k in ['how many trades', 'trades placed', 'trades executed', 'entries since', 'entries placed', 'executed since']):
         if not snap.get('connected'):
             return {'reply': 'Bot is not connected right now.', 'pending_action': None}
-        total_entries = int((trade_stats or {}).get('total_entries', snap.get('total_entries', 0)) or 0)
+        total_entries = int((trade_stats or {}).get('total_entries_lifetime', snap.get('total_entries', 0)) or 0)
+        in_memory_entries = int((trade_stats or {}).get('total_entries', 0) or 0)
         total_completed = int(snap.get('total_completed_trades', 0) or 0)
         entries_24h = int((trade_stats or {}).get('entries_24h', 0) or 0)
         return {
-            'reply': f"Total entries executed since start: {total_entries}\nEntries in last 24h: {entries_24h}\nTotal trades completed: {total_completed}",
+            'reply': (
+                f"Total entries executed (lifetime): {total_entries}\n"
+                f"Entries currently kept in memory: {in_memory_entries}\n"
+                f"Entries in last 24h: {entries_24h}\n"
+                f"Total trades completed: {total_completed}"
+            ),
             'pending_action': None,
         }
 
@@ -1755,7 +1842,7 @@ def get_metrics():
         
         # Get actual trade count from bot
         if hasattr(bot_instance, 'trader') and hasattr(bot_instance.trader, 'trade_history'):
-            metrics['total_trades'] = len(bot_instance.trader.trade_history)
+            metrics['total_trades'] = int(getattr(bot_instance.trader, 'total_trades', len(bot_instance.trader.trade_history)) or 0)
         else:
             metrics['total_trades'] = getattr(bot_instance, 'trade_count', 0)
         
