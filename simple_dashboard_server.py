@@ -545,6 +545,74 @@ def _assistant_get_trade_history():
     return trader_trades if len(trader_trades) >= len(bot_trades) else bot_trades
 
 
+def _assistant_collect_persistent_trade_totals():
+    entries = 0
+    wins = 0
+
+    candidate_paths = []
+    try:
+        if bot_instance is not None:
+            tr = getattr(bot_instance, 'trader', None)
+            sf = getattr(tr, 'state_file', None) if tr is not None else None
+            if sf:
+                candidate_paths.append(str(sf))
+    except Exception:
+        pass
+
+    candidate_paths.extend([
+        os.path.join('data', 'trading_state.json'),
+        'trading_state.json',
+    ])
+
+    seen = set()
+    unique_paths = []
+    for p in candidate_paths:
+        try:
+            ap = os.path.abspath(str(p))
+        except Exception:
+            ap = str(p)
+        if ap in seen:
+            continue
+        seen.add(ap)
+        unique_paths.append(ap)
+
+    for p in unique_paths:
+        try:
+            if not os.path.exists(p):
+                continue
+            if os.path.getsize(p) <= 2:
+                continue
+            with open(p, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+            if not isinstance(state, dict):
+                continue
+            state_entries = 0
+            try:
+                state_entries = int(state.get('total_trades', 0) or 0)
+            except Exception:
+                state_entries = 0
+            try:
+                th = state.get('trade_history')
+                if isinstance(th, list):
+                    state_entries = max(state_entries, int(len(th)))
+            except Exception:
+                pass
+            state_wins = 0
+            try:
+                state_wins = int(state.get('winning_trades', 0) or 0)
+            except Exception:
+                state_wins = 0
+            entries = max(entries, state_entries)
+            wins = max(wins, state_wins)
+        except Exception:
+            continue
+
+    return {
+        'entries': int(entries),
+        'winning_trades': int(wins),
+    }
+
+
 def _assistant_get_lifetime_counters():
     try:
         st = _assistant_load_state()
@@ -653,6 +721,10 @@ def _assistant_trade_stats(trades, snap: dict = None):
         lifetime_total = max(int(lifetime_total), int(lc.get('entries', 0) or 0))
         completed_lifetime = max(int(completed_lifetime), int(lc.get('completed_trades', 0) or 0))
         wins_lifetime = max(int(wins_lifetime), int(lc.get('winning_trades', 0) or 0))
+        persisted = _assistant_collect_persistent_trade_totals()
+        lifetime_total = max(int(lifetime_total), int((persisted or {}).get('entries', 0) or 0))
+        completed_lifetime = max(int(completed_lifetime), int((persisted or {}).get('entries', 0) or 0))
+        wins_lifetime = max(int(wins_lifetime), int((persisted or {}).get('winning_trades', 0) or 0))
         _assistant_update_lifetime_counters(
             entries=int(lifetime_total),
             completed_trades=int(completed_lifetime),

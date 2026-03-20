@@ -1301,7 +1301,15 @@ class LivePaperTradingManager:
                     Path('data') / 'trading_state.json',
                     base_dir / 'trading_state.json',
                 ]
-                if not Path(self.state_file).exists():
+                target_path = Path(self.state_file)
+                need_migration = (not target_path.exists())
+                if not need_migration:
+                    try:
+                        if target_path.stat().st_size <= 2:
+                            need_migration = True
+                    except Exception:
+                        need_migration = True
+                if need_migration:
                     for legacy in legacy_candidates:
                         try:
                             if legacy.exists():
@@ -1310,7 +1318,7 @@ class LivePaperTradingManager:
                                 except Exception:
                                     pass
                                 try:
-                                    Path(self.state_file).write_bytes(legacy.read_bytes())
+                                    target_path.write_bytes(legacy.read_bytes())
                                 except Exception:
                                     pass
                                 break
