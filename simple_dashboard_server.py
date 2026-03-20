@@ -545,6 +545,47 @@ def _assistant_get_trade_history():
     return trader_trades if len(trader_trades) >= len(bot_trades) else bot_trades
 
 
+def _assistant_get_lifetime_counters():
+    try:
+        st = _assistant_load_state()
+        counters = st.get('lifetime_counters')
+        if not isinstance(counters, dict):
+            counters = {}
+        return {
+            'entries': int(counters.get('entries', 0) or 0),
+            'completed_trades': int(counters.get('completed_trades', 0) or 0),
+            'winning_trades': int(counters.get('winning_trades', 0) or 0),
+        }
+    except Exception:
+        return {'entries': 0, 'completed_trades': 0, 'winning_trades': 0}
+
+
+def _assistant_update_lifetime_counters(entries: int = None, completed_trades: int = None, winning_trades: int = None):
+    try:
+        st = _assistant_load_state()
+        counters = st.get('lifetime_counters')
+        if not isinstance(counters, dict):
+            counters = {}
+        cur_entries = int(counters.get('entries', 0) or 0)
+        cur_completed = int(counters.get('completed_trades', 0) or 0)
+        cur_wins = int(counters.get('winning_trades', 0) or 0)
+        if entries is not None:
+            cur_entries = max(cur_entries, int(entries or 0))
+        if completed_trades is not None:
+            cur_completed = max(cur_completed, int(completed_trades or 0))
+        if winning_trades is not None:
+            cur_wins = max(cur_wins, int(winning_trades or 0))
+        st['lifetime_counters'] = {
+            'entries': int(cur_entries),
+            'completed_trades': int(cur_completed),
+            'winning_trades': int(cur_wins),
+            'updated_ts': float(time.time()),
+        }
+        _assistant_save_state(st)
+    except Exception:
+        pass
+
+
 def _assistant_trade_stats(trades, snap: dict = None):
     now_ts = float(time.time())
     total = 0
@@ -588,6 +629,8 @@ def _assistant_trade_stats(trades, snap: dict = None):
         except Exception:
             last_age = None
     lifetime_total = int(total)
+    completed_lifetime = 0
+    wins_lifetime = 0
     try:
         if isinstance(snap, dict):
             lifetime_total = max(
@@ -595,14 +638,36 @@ def _assistant_trade_stats(trades, snap: dict = None):
                 int((snap or {}).get('trader_total_entries', 0) or 0),
                 int((snap or {}).get('total_entries', 0) or 0),
             )
+            completed_lifetime = max(
+                int((snap or {}).get('total_completed_trades', 0) or 0),
+                int((snap or {}).get('trader_total_entries', 0) or 0),
+            )
+            wins_lifetime = max(
+                int((snap or {}).get('winning_trades', 0) or 0),
+                int((snap or {}).get('trader_winning_trades', 0) or 0),
+            )
     except Exception:
         lifetime_total = int(total)
+    try:
+        lc = _assistant_get_lifetime_counters()
+        lifetime_total = max(int(lifetime_total), int(lc.get('entries', 0) or 0))
+        completed_lifetime = max(int(completed_lifetime), int(lc.get('completed_trades', 0) or 0))
+        wins_lifetime = max(int(wins_lifetime), int(lc.get('winning_trades', 0) or 0))
+        _assistant_update_lifetime_counters(
+            entries=int(lifetime_total),
+            completed_trades=int(completed_lifetime),
+            winning_trades=int(wins_lifetime),
+        )
+    except Exception:
+        pass
     return {
         'total_entries': int(total),
         'total_entries_lifetime': int(lifetime_total),
         'entries_24h': int(entries_24h),
         'buy_entries': int(buys),
         'sell_entries': int(sells),
+        'completed_trades_lifetime': int(completed_lifetime),
+        'winning_trades_lifetime': int(wins_lifetime),
         'last_trade_ts': float(last_ts or 0.0),
         'last_trade_age_sec': last_age,
     }
@@ -668,6 +733,25 @@ def _assistant_symbol_from_text(text: str):
     if m:
         return f"{m.group(1).upper()}/USDT"
     return None
+
+
+def _assistant_is_no_trade_question(lower_text: str):
+    lower = str(lower_text or '').lower()
+    if not lower:
+        return False
+    ask_reason = any(k in lower for k in ['why', 'reason', 'how come', 'what happened', 'stuck', 'idle'])
+    no_trade_words = any(k in lower for k in [
+        'no trades',
+        'not placing',
+        'not taking',
+        'not trading',
+        'not opening',
+        'not entering',
+        'no position',
+        'last trade',
+        'no trade going on',
+    ])
+    return bool(ask_reason and no_trade_words)
 
 
 def _assistant_format_positions(snap: dict):
@@ -1173,7 +1257,7 @@ def _assistant_handle_user_message(session_id: str, message: str):
             pass
         return {'reply': "\n".join(lines), 'pending_action': None}
 
-    if any(k in lower for k in ['real money', 'real trading', 'live trading', 'can i trade', 'ready for real', 'is it ready']):
+    if (not _assistant_is_no_trade_question(lower)) and any(k in lower for k in ['real money', 'real trading', 'live trading', 'can i trade', 'ready for real', 'is it ready']):
         if not snap.get('connected'):
             return {'reply': 'Bot is not connected right now.', 'pending_action': None}
         enabled = bool(snap.get('real_trading_enabled', False))
@@ -1211,10 +1295,7 @@ def _assistant_handle_user_message(session_id: str, message: str):
             return {'reply': f"Current BTC/USDT from bot feed: ${px:,.2f}", 'pending_action': None}
         return {'reply': 'BTC price is not available yet. Wait for the feed warm-up and ask again in a few seconds.', 'pending_action': None}
 
-    if (
-        ('why' in lower or 'reason' in lower)
-        and any(k in lower for k in ['no trades', 'not placing', 'not taking', 'not trading', 'not opening', 'not placing any trades'])
-    ):
+    if _assistant_is_no_trade_question(lower):
         if not snap.get('connected'):
             return {'reply': 'Bot is not connected right now, so it cannot place trades.', 'pending_action': None}
 
@@ -1270,10 +1351,22 @@ def _assistant_handle_user_message(session_id: str, message: str):
                 ),
                 'pending_action': None,
             }
+        last_age = trade_stats.get('last_trade_age_sec', None)
+        if isinstance(last_age, (int, float)):
+            if last_age < 60:
+                last_trade_text = f'{int(last_age)}s ago'
+            elif last_age < 3600:
+                last_trade_text = f'{int(last_age // 60)}m ago'
+            else:
+                last_trade_text = f'{int(last_age // 3600)}h ago'
+        else:
+            last_trade_text = 'unknown'
+
         return {
             'reply': (
                 f'Bot is RUNNING (mode={mode}). Right now it has {active} open position(s). '\
                 f'It is scanning markets and only places trades when signals pass its filters. '\
+                f'Last entry={last_trade_text}, entries(24h)={int((trade_stats or {}).get("entries_24h", 0) or 0)}. '\
                 f'Current regime={regime}, volatility={vreg}. '\
                 'If you want more trades, you can ask: "switch mode to AGGRESSIVE" (I will ask for confirmation).'
             ),
@@ -1418,20 +1511,20 @@ def _assistant_handle_user_message(session_id: str, message: str):
         if not snap.get('connected'):
             return {'reply': 'Bot is not connected right now.', 'pending_action': None}
         pnl = float(snap.get('current_capital', 0.0) or 0.0) - float(snap.get('initial_capital', 0.0) or 0.0)
-        total_completed = int(snap.get('total_completed_trades', 0) or 0)
+        total_completed = int((trade_stats or {}).get('completed_trades_lifetime', snap.get('total_completed_trades', 0)) or 0)
         total_entries = int((trade_stats or {}).get('total_entries_lifetime', snap.get('total_entries', 0)) or 0)
         in_memory_entries = int((trade_stats or {}).get('total_entries', 0) or 0)
         entries_24h = int((trade_stats or {}).get('entries_24h', 0) or 0)
-        wins = int(snap.get('winning_trades', 0) or 0)
-        wr = float(snap.get('win_rate', 0.0) or 0.0)
+        wins = int((trade_stats or {}).get('winning_trades_lifetime', snap.get('winning_trades', 0)) or 0)
+        wr = (float(wins) / float(total_completed)) if total_completed > 0 else float(snap.get('win_rate', 0.0) or 0.0)
         return {
             'reply': "\n".join([
                 f"PnL: {pnl:.4f}",
                 f"Total entries executed (lifetime): {total_entries}",
                 f"Entries in memory: {in_memory_entries}",
                 f"Entries in last 24h: {entries_24h}",
-                f"Total completed trades: {total_completed}",
-                f"Winning trades: {wins}",
+                f"Total completed trades (lifetime): {total_completed}",
+                f"Winning trades (lifetime): {wins}",
                 f"Win rate: {wr:.2%}",
                 f"Market regime: {snap.get('current_market_regime')}",
                 f"Volatility regime: {snap.get('volatility_regime')}",
@@ -1444,14 +1537,21 @@ def _assistant_handle_user_message(session_id: str, message: str):
             return {'reply': 'Bot is not connected right now.', 'pending_action': None}
         total_entries = int((trade_stats or {}).get('total_entries_lifetime', snap.get('total_entries', 0)) or 0)
         in_memory_entries = int((trade_stats or {}).get('total_entries', 0) or 0)
-        total_completed = int(snap.get('total_completed_trades', 0) or 0)
+        total_completed = int((trade_stats or {}).get('completed_trades_lifetime', snap.get('total_completed_trades', 0)) or 0)
+        total_wins = int((trade_stats or {}).get('winning_trades_lifetime', snap.get('winning_trades', 0)) or 0)
         entries_24h = int((trade_stats or {}).get('entries_24h', 0) or 0)
+        active_positions = len(((snap.get('positions') or {}).keys()))
+        pnl = float(snap.get('current_capital', 0.0) or 0.0) - float(snap.get('initial_capital', 0.0) or 0.0)
+        wr = (float(total_wins) / float(total_completed)) if total_completed > 0 else float(snap.get('win_rate', 0.0) or 0.0)
         return {
             'reply': (
                 f"Total entries executed (lifetime): {total_entries}\n"
                 f"Entries currently kept in memory: {in_memory_entries}\n"
                 f"Entries in last 24h: {entries_24h}\n"
-                f"Total trades completed: {total_completed}"
+                f"Total trades completed (lifetime): {total_completed}\n"
+                f"Open positions: {active_positions}\n"
+                f"Cumulative PnL: {pnl:.4f}\n"
+                f"Win rate: {wr:.2%}"
             ),
             'pending_action': None,
         }
