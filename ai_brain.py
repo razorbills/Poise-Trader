@@ -118,6 +118,7 @@ class AIBrain:
                 'pattern_success': 0.0,
                 'rl_reward': 0.0
             },
+            'context_performance': {},
             
             # Position tracking
             'position_tracking': {},
@@ -181,6 +182,14 @@ class AIBrain:
                             for k in keys:
                                 trimmed[k] = sk.get(k)
                             self.brain['symbol_knowledge'] = trimmed
+
+                        cp = self.brain.get('context_performance')
+                        if isinstance(cp, dict) and len(cp) > 800:
+                            trimmed_cp = {}
+                            keys = list(cp.keys())[-800:]
+                            for k in keys:
+                                trimmed_cp[k] = cp.get(k)
+                            self.brain['context_performance'] = trimmed_cp
                 except Exception:
                     pass
                 
@@ -319,6 +328,7 @@ class AIBrain:
             
             self.brain['symbol_knowledge'][symbol]['trades'] += 1
             self.brain['symbol_knowledge'][symbol]['profit_loss'] += profit_loss
+            self._update_context_performance(symbol, strategy_scores, market_conditions, profit_loss)
             
             # Learn confidence accuracy
             if confidence > 0.7:
@@ -676,6 +686,24 @@ class AIBrain:
                 # Derive fields not provided by the optimizer for compatibility
                 risk_score = 1.0 - win_prob  # Lower risk when win probability is high
                 pattern_strength = win_prob if ultra_prediction.get('pattern_matches') else max(0.3, win_prob * 0.8)
+
+                context_edge, context_samples = self._get_context_edge(
+                    symbol=symbol,
+                    strategy_scores=market_data.get('strategy_scores', {}),
+                    market_conditions=market_data.get('market_conditions', {}),
+                )
+                edge_scale = min(1.0, max(0.2, float(context_samples) / 40.0))
+                combined_confidence = max(0.05, min(0.97, combined_confidence + context_edge * 0.16 * edge_scale))
+                win_prob = max(0.05, min(0.97, win_prob + context_edge * 0.18 * edge_scale))
+                risk_score = max(0.03, min(0.97, 1.0 - win_prob))
+                if context_samples >= 25 and context_edge < -0.22:
+                    if combined_confidence > 0.50:
+                        combined_confidence *= 0.82
+                    if ml_signal.action != 'HOLD':
+                        ml_signal.action = 'HOLD'
+                elif context_samples >= 25 and context_edge > 0.28:
+                    combined_confidence = min(0.97, combined_confidence * 1.08)
+                    win_prob = min(0.97, win_prob * 1.05)
                 
                 return {
                     'action': ml_signal.action,
@@ -791,6 +819,103 @@ class AIBrain:
             
         except Exception as e:
             print(f"⚠️ Learning error: {e}")
+
+    def _build_context_key(self, symbol: str, strategy_scores: Dict, market_conditions: Dict) -> str:
+        try:
+            symbol_key = str(symbol or 'UNKNOWN').upper()
+        except Exception:
+            symbol_key = 'UNKNOWN'
+
+        strategy_key = 'unknown'
+        try:
+            if isinstance(strategy_scores, dict) and strategy_scores:
+                strategy_key = str(max(strategy_scores.items(), key=lambda x: float(x[1] or 0.0))[0]).lower()
+        except Exception:
+            strategy_key = 'unknown'
+
+        regime_key = 'unknown'
+        try:
+            regime_key = str(
+                market_conditions.get('regime')
+                or market_conditions.get('market_regime')
+                or market_conditions.get('market_type')
+                or 'unknown'
+            ).lower()
+        except Exception:
+            regime_key = 'unknown'
+
+        volatility_key = 'normal'
+        try:
+            vol = market_conditions.get('volatility_regime', market_conditions.get('volatility', 'normal'))
+            volatility_key = str(vol if vol is not None else 'normal').lower()
+        except Exception:
+            volatility_key = 'normal'
+
+        try:
+            hour_bucket = f"{int(datetime.now().hour // 4) * 4:02d}"
+        except Exception:
+            hour_bucket = "00"
+
+        return f"{symbol_key}|{strategy_key}|{regime_key}|{volatility_key}|h{hour_bucket}"
+
+    def _update_context_performance(self, symbol: str, strategy_scores: Dict, market_conditions: Dict, profit_loss: float):
+        try:
+            if 'context_performance' not in self.brain or not isinstance(self.brain['context_performance'], dict):
+                self.brain['context_performance'] = {}
+
+            key = self._build_context_key(symbol, strategy_scores or {}, market_conditions or {})
+            if key not in self.brain['context_performance']:
+                self.brain['context_performance'][key] = {
+                    'trades': 0,
+                    'wins': 0,
+                    'losses': 0,
+                    'pnl_ema': 0.0,
+                    'edge_score': 0.0,
+                    'last_updated': datetime.now().isoformat(),
+                }
+
+            cp = self.brain['context_performance'][key]
+            cp['trades'] = int(cp.get('trades', 0) or 0) + 1
+            if float(profit_loss or 0.0) > 0:
+                cp['wins'] = int(cp.get('wins', 0) or 0) + 1
+            else:
+                cp['losses'] = int(cp.get('losses', 0) or 0) + 1
+
+            alpha = 0.08
+            cp['pnl_ema'] = float(cp.get('pnl_ema', 0.0) or 0.0) * (1.0 - alpha) + float(profit_loss or 0.0) * alpha
+            win_rate = float(cp.get('wins', 0) or 0) / max(1.0, float(cp.get('trades', 0) or 0))
+            pnl_component = max(-1.0, min(1.0, float(cp.get('pnl_ema', 0.0) or 0.0) / 5.0))
+            cp['edge_score'] = max(-1.0, min(1.0, ((win_rate - 0.5) * 1.4) + pnl_component * 0.35))
+            cp['last_updated'] = datetime.now().isoformat()
+
+            if _IS_RENDER and len(self.brain['context_performance']) > 1200:
+                trimmed = {}
+                keys = list(self.brain['context_performance'].keys())[-1000:]
+                for k in keys:
+                    trimmed[k] = self.brain['context_performance'].get(k)
+                self.brain['context_performance'] = trimmed
+        except Exception as e:
+            print(f"⚠️ Context learning error: {e}")
+
+    def _get_context_edge(self, symbol: str, strategy_scores: Dict, market_conditions: Dict) -> Tuple[float, int]:
+        try:
+            cp = self.brain.get('context_performance', {})
+            if not isinstance(cp, dict) or not cp:
+                return 0.0, 0
+
+            key = self._build_context_key(symbol, strategy_scores or {}, market_conditions or {})
+            entry = cp.get(key, {})
+            trades = int(entry.get('trades', 0) or 0)
+            if trades <= 0:
+                return 0.0, 0
+
+            edge = float(entry.get('edge_score', 0.0) or 0.0)
+            win_rate = float(entry.get('wins', 0) or 0) / max(1.0, float(trades))
+            blended = edge * 0.65 + (win_rate - 0.5) * 0.7
+            blended = max(-1.0, min(1.0, blended))
+            return blended, trades
+        except Exception:
+            return 0.0, 0
     
     def _update_strategy_weights(self):
         """Update strategy weights based on performance"""

@@ -249,6 +249,18 @@ def run_bot():
             import traceback
             traceback.print_exc()
         finally:
+            try:
+                if bot_instance and hasattr(bot_instance, 'ai_brain') and bot_instance.ai_brain:
+                    if hasattr(bot_instance.ai_brain, 'end_learning_session'):
+                        bot_instance.ai_brain.end_learning_session()
+                    elif hasattr(bot_instance.ai_brain, 'save_brain'):
+                        bot_instance.ai_brain.save_brain()
+                else:
+                    from ai_brain import ai_brain as shared_ai_brain
+                    if hasattr(shared_ai_brain, 'save_brain'):
+                        shared_ai_brain.save_brain()
+            except Exception:
+                pass
             if state_sync:
                 try:
                     await state_sync.sync_once()

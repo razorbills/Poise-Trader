@@ -53,7 +53,7 @@ class SupabaseStateSync:
         keys_env = str(
             os.getenv(
                 "STATE_SYNC_KEYS",
-                "learned_knowledge.json,trading_state.json,strategy_learning_data.pkl",
+                "./ai_brain.json,./ai_brain_backup.json,./shared_ai_knowledge.json,./ultra_ai_learning.json,./winning_patterns.json,./trading_state.json,data/trading_state.json,data/learned_knowledge.json,data/strategy_learning_data.pkl,./rl_state.json,./deep_rl_state.json,./confidence_calibration.json,./parameter_tuning.json",
             )
             or ""
         )
@@ -82,14 +82,12 @@ class SupabaseStateSync:
         return f"{self.supabase_url}/rest/v1/{self.table}{path}" 
 
     def _local_path_for_key(self, key: str) -> str:
-        if "/" in key or "\\" in key:
-            return key
-        try:
-            if os.path.isdir('/var/data'):
-                return os.path.join('/var/data', 'data', key)
-        except Exception:
-            pass
-        return os.path.join("data", key)
+        clean_key = str(key or "").strip()
+        if not clean_key:
+            return os.path.join("data", "state.bin")
+        if "/" in clean_key or "\\" in clean_key:
+            return clean_key
+        return clean_key
 
     def _read_local_b64(self, key: str) -> Optional[str]:
         path = self._local_path_for_key(key)

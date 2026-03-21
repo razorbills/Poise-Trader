@@ -2259,6 +2259,16 @@ class LegendaryCryptoTitanBot:
             self.risk_engine = None
 
         try:
+            self.exposure_cap_buffer = float(os.getenv('EXPOSURE_CAP_BUFFER', '0.985') or 0.985)
+        except Exception:
+            self.exposure_cap_buffer = 0.985
+
+        try:
+            self.min_rr_floor = float(os.getenv('MIN_RR_FLOOR', '1.25') or 1.25)
+        except Exception:
+            self.min_rr_floor = 1.25
+
+        try:
             self.max_feed_stale_seconds = float(os.getenv('MAX_FEED_STALE_SECONDS', '45') or 45)
         except Exception:
             self.max_feed_stale_seconds = 45.0
@@ -7943,6 +7953,124 @@ class LegendaryCryptoTitanBot:
         print(f"   💰 Multi-Asset Sizing: {asset_category} | Category: {category_weight:.0%} | Symbol: {symbol_multiplier}x | Confidence: {confidence_multiplier:.0%} → ${adjusted_size:.2f}")
         
         return adjusted_size
+
+    def _apply_exposure_caps(self, symbol: str, position_size: float, current_positions: Dict[str, Any], portfolio: Dict[str, Any]) -> Tuple[float, Optional[str]]:
+        try:
+            if getattr(self, 'risk_engine', None) is None or not hasattr(self.risk_engine, 'config'):
+                return float(position_size or 0.0), None
+
+            leverage = float(getattr(getattr(self, 'trader', None), 'leverage', 1.0) or 1.0)
+            if leverage <= 0:
+                leverage = 1.0
+
+            equity = float((portfolio or {}).get('total_value', 0) or 0)
+            if equity <= 0:
+                return float(position_size or 0.0), None
+
+            total_notional = 0.0
+            symbol_notional = 0.0
+            for sym, pos in (current_positions or {}).items():
+                if not isinstance(pos, dict):
+                    continue
+                cv = float(pos.get('current_value', 0) or 0)
+                if cv <= 0:
+                    continue
+                total_notional += cv
+                if str(sym) == str(symbol):
+                    symbol_notional += cv
+
+            max_total = float(getattr(self.risk_engine.config, 'max_total_notional_multiple', 0.0) or 0.0) * equity
+            max_sym = float(getattr(self.risk_engine.config, 'max_symbol_notional_multiple', 0.0) or 0.0) * equity
+
+            if max_total <= 0 or max_sym <= 0:
+                return float(position_size or 0.0), None
+
+            remaining_total = max_total - total_notional
+            remaining_sym = max_sym - symbol_notional
+            remaining_notional = min(remaining_total, remaining_sym)
+            if remaining_notional <= 0:
+                if remaining_sym <= remaining_total:
+                    return 0.0, 'symbol_exposure_cap'
+                return 0.0, 'total_exposure_cap'
+
+            max_margin_allowed = remaining_notional / leverage
+            cap_buffer = float(getattr(self, 'exposure_cap_buffer', 0.985) or 0.985)
+            cap_buffer = max(0.90, min(0.999, cap_buffer))
+            max_margin_allowed *= cap_buffer
+
+            raw_size = float(position_size or 0.0)
+            if raw_size > max_margin_allowed:
+                print(f"   🛡️ {symbol}: Clamping size ${raw_size:.2f} -> ${float(max_margin_allowed or 0):.2f} due to exposure caps")
+                raw_size = float(max_margin_allowed or 0.0)
+
+            min_required = float(getattr(self, 'min_trade_size', 0.0) or 0.0)
+            if raw_size > 0 and raw_size < min_required:
+                return raw_size, 'exposure_below_min_trade'
+
+            return max(0.0, raw_size), None
+        except Exception:
+            return float(position_size or 0.0), None
+
+    def _get_adaptive_exit_profile(self, signal: 'AITradingSignal') -> Tuple[float, float]:
+        try:
+            sl_pct = float(getattr(self, 'stop_loss', 0.5) or 0.5)
+        except Exception:
+            sl_pct = 0.5
+        try:
+            tp_pct = float(getattr(self, 'take_profit', 1.0) or 1.0)
+        except Exception:
+            tp_pct = 1.0
+
+        try:
+            conf = float(getattr(signal, 'confidence', 0.5) or 0.5)
+        except Exception:
+            conf = 0.5
+
+        try:
+            vol_score = float(getattr(signal, 'volatility_score', 0.0) or 0.0)
+        except Exception:
+            vol_score = 0.0
+
+        vol_regime = str(getattr(self, 'volatility_regime', 'NORMAL') or 'NORMAL').upper()
+        market_regime = str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN').upper()
+
+        if conf < 0.52:
+            tp_pct *= 0.82
+            sl_pct *= 0.92
+        elif conf < 0.62:
+            tp_pct *= 0.90
+            sl_pct *= 0.95
+        elif conf > 0.78:
+            tp_pct *= 1.12
+            sl_pct *= 1.03
+
+        if vol_regime == 'HIGH' or vol_score > 0.70:
+            sl_pct *= 1.15
+            tp_pct *= 1.10
+        elif vol_regime == 'LOW' and vol_score < 0.35:
+            sl_pct *= 0.92
+            tp_pct *= 0.88
+
+        if market_regime in ['SIDEWAYS', 'CONSOLIDATION', 'VOLATILE_SIDEWAYS', 'RANGING']:
+            tp_pct *= 0.90
+        elif market_regime in ['TRENDING', 'BULL', 'BEAR', 'BULLISH', 'BEARISH']:
+            tp_pct *= 1.06
+
+        min_sl = float(getattr(self, 'min_stop_loss_pct', 0.20) or 0.20)
+        min_tp = float(getattr(self, 'min_take_profit_pct', 0.30) or 0.30)
+        max_sl = float(getattr(self, 'max_stop_loss_pct', 1.80) or 1.80)
+        max_tp = float(getattr(self, 'max_take_profit_pct', 3.20) or 3.20)
+        rr_floor = float(getattr(self, 'min_rr_floor', 1.25) or 1.25)
+
+        sl_pct = max(min_sl, min(max_sl, float(sl_pct or min_sl)))
+        tp_pct = max(min_tp, min(max_tp, float(tp_pct or min_tp)))
+
+        if sl_pct > 0:
+            rr = tp_pct / sl_pct
+            if rr < rr_floor:
+                tp_pct = min(max_tp, sl_pct * rr_floor)
+
+        return sl_pct, tp_pct
     
     async def _background_price_fetcher(self):
         """📡 🔥 Enhanced background task - fetches COMPREHENSIVE market data for AI learning"""
@@ -9939,36 +10067,21 @@ class LegendaryCryptoTitanBot:
 
             try:
                 if getattr(self, 'risk_engine', None) is not None:
+                    position_size, cap_reason = self._apply_exposure_caps(
+                        signal.symbol,
+                        float(position_size or 0.0),
+                        current_positions,
+                        portfolio,
+                    )
+                    if cap_reason == 'exposure_below_min_trade':
+                        print(f"   🛡️ {signal.symbol}: Exposure headroom ${float(position_size or 0):.2f} is below min trade size ${float(self.min_trade_size or 0):.2f}")
+                        continue
+                    if cap_reason in ['symbol_exposure_cap', 'total_exposure_cap']:
+                        print(f"   🛡️ {signal.symbol}: RiskEngine pre-cap blocked ({cap_reason})")
+                        continue
+
                     leverage = float(getattr(getattr(self, 'trader', None), 'leverage', 1.0) or 1.0)
                     equity = float(portfolio.get('total_value', 0) or 0)
-
-                    try:
-                        if equity > 0 and leverage > 0 and hasattr(self.risk_engine, 'config'):
-                            total_notional = 0.0
-                            symbol_notional = 0.0
-                            for sym, pos in (current_positions or {}).items():
-                                if not isinstance(pos, dict):
-                                    continue
-                                cv = float(pos.get('current_value', 0) or 0)
-                                if cv <= 0:
-                                    continue
-                                total_notional += cv
-                                if str(sym) == str(signal.symbol):
-                                    symbol_notional += cv
-
-                            max_total = float(getattr(self.risk_engine.config, 'max_total_notional_multiple', 0.0) or 0.0) * equity
-                            max_sym = float(getattr(self.risk_engine.config, 'max_symbol_notional_multiple', 0.0) or 0.0) * equity
-                            remaining_total = max_total - total_notional
-                            remaining_sym = max_sym - symbol_notional
-                            remaining_notional = min(remaining_total, remaining_sym)
-                            if remaining_notional > 0:
-                                max_margin_allowed = remaining_notional / leverage
-                                if float(position_size or 0) > float(max_margin_allowed or 0):
-                                    print(f"   🛡️ {signal.symbol}: Clamping size ${float(position_size or 0):.2f} -> ${float(max_margin_allowed or 0):.2f} due to exposure caps")
-                                    position_size = float(max_margin_allowed or 0)
-                    except Exception:
-                        pass
-
                     allowed, risk_mult, reason = self.risk_engine.check_entry(
                         symbol=signal.symbol,
                         equity=equity,
@@ -9976,6 +10089,17 @@ class LegendaryCryptoTitanBot:
                         proposed_margin_usd=float(position_size or 0),
                         leverage=leverage,
                     )
+                    if not allowed and str(reason) in ['symbol_exposure_cap', 'total_exposure_cap'] and float(position_size or 0.0) > float(self.min_trade_size or 0.0):
+                        retry_size = max(float(self.min_trade_size or 0.0), float(position_size or 0.0) * 0.97)
+                        allowed, risk_mult, reason = self.risk_engine.check_entry(
+                            symbol=signal.symbol,
+                            equity=equity,
+                            positions=current_positions,
+                            proposed_margin_usd=float(retry_size or 0),
+                            leverage=leverage,
+                        )
+                        if allowed:
+                            position_size = float(retry_size or 0.0)
                     if not allowed:
                         print(f"   🛡️ {signal.symbol}: RiskEngine blocked entry ({reason})")
                         continue
@@ -10065,8 +10189,7 @@ class LegendaryCryptoTitanBot:
                     pass
 
                 ep = float(getattr(signal, 'entry_price', 0) or 0)
-                sl_pct = float(getattr(self, 'stop_loss', 0.5) or 0.5)
-                tp_pct = float(getattr(self, 'take_profit', 1.0) or 1.0)
+                sl_pct, tp_pct = self._get_adaptive_exit_profile(signal)
                 if ep > 0 and sl_pct > 0 and tp_pct > 0:
                     if str(trade_action).upper() == 'BUY':
                         signal.stop_loss = ep * (1 - sl_pct / 100.0)
@@ -10153,36 +10276,21 @@ class LegendaryCryptoTitanBot:
 
             try:
                 if getattr(self, 'risk_engine', None) is not None:
+                    position_size, cap_reason = self._apply_exposure_caps(
+                        signal.symbol,
+                        float(position_size or 0.0),
+                        current_positions,
+                        portfolio,
+                    )
+                    if cap_reason == 'exposure_below_min_trade':
+                        print(f"   🛡️ {signal.symbol}: Exposure headroom ${float(position_size or 0):.2f} is below min trade size ${float(self.min_trade_size or 0):.2f}")
+                        continue
+                    if cap_reason in ['symbol_exposure_cap', 'total_exposure_cap']:
+                        print(f"   🛡️ {signal.symbol}: RiskEngine pre-cap blocked ({cap_reason})")
+                        continue
+
                     leverage = float(getattr(getattr(self, 'trader', None), 'leverage', 1.0) or 1.0)
                     equity = float(portfolio.get('total_value', 0) or 0)
-
-                    try:
-                        if equity > 0 and leverage > 0 and hasattr(self.risk_engine, 'config'):
-                            total_notional = 0.0
-                            symbol_notional = 0.0
-                            for sym, pos in (current_positions or {}).items():
-                                if not isinstance(pos, dict):
-                                    continue
-                                cv = float(pos.get('current_value', 0) or 0)
-                                if cv <= 0:
-                                    continue
-                                total_notional += cv
-                                if str(sym) == str(signal.symbol):
-                                    symbol_notional += cv
-
-                            max_total = float(getattr(self.risk_engine.config, 'max_total_notional_multiple', 0.0) or 0.0) * equity
-                            max_sym = float(getattr(self.risk_engine.config, 'max_symbol_notional_multiple', 0.0) or 0.0) * equity
-                            remaining_total = max_total - total_notional
-                            remaining_sym = max_sym - symbol_notional
-                            remaining_notional = min(remaining_total, remaining_sym)
-                            if remaining_notional > 0:
-                                max_margin_allowed = remaining_notional / leverage
-                                if float(position_size or 0) > float(max_margin_allowed or 0):
-                                    print(f"   🛡️ {signal.symbol}: Clamping size ${float(position_size or 0):.2f} -> ${float(max_margin_allowed or 0):.2f} due to exposure caps")
-                                    position_size = float(max_margin_allowed or 0)
-                    except Exception:
-                        pass
-
                     allowed, risk_mult, reason = self.risk_engine.check_entry(
                         symbol=signal.symbol,
                         equity=equity,
@@ -10190,6 +10298,17 @@ class LegendaryCryptoTitanBot:
                         proposed_margin_usd=float(position_size or 0),
                         leverage=leverage,
                     )
+                    if not allowed and str(reason) in ['symbol_exposure_cap', 'total_exposure_cap'] and float(position_size or 0.0) > float(self.min_trade_size or 0.0):
+                        retry_size = max(float(self.min_trade_size or 0.0), float(position_size or 0.0) * 0.97)
+                        allowed, risk_mult, reason = self.risk_engine.check_entry(
+                            symbol=signal.symbol,
+                            equity=equity,
+                            positions=current_positions,
+                            proposed_margin_usd=float(retry_size or 0),
+                            leverage=leverage,
+                        )
+                        if allowed:
+                            position_size = float(retry_size or 0.0)
                     if not allowed:
                         print(f"   🛡️ {signal.symbol}: RiskEngine blocked entry ({reason})")
                         continue
