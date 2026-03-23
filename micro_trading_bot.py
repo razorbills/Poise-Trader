@@ -23,7 +23,7 @@
 ✅ CRYPTO IMMORTALITY: Lives forever in the blockchain
 
 🎯 "BE FEARFUL WHEN OTHERS ARE GREEDY, BE GREEDY WHEN OTHERS ARE FEARFUL"
-💫 From $20 to Financial Freedom - The Legendary Journey Begins!
+💫 From $5 to Financial Freedom - The Legendary Journey Begins!
 """
 
 import asyncio
