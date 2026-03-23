@@ -386,7 +386,7 @@ def set_mode():
                 bot_instance.aggressive_trade_guarantee = True
                 bot_instance.aggressive_trade_interval = 60.0
                 bot_instance.cycle_sleep_override = 10.0
-                bot_instance.win_rate_optimizer_enabled = False  # DISABLE for aggressive
+                bot_instance.win_rate_optimizer_enabled = True
                 print(f"⚡ AGGRESSIVE MODE configured (bot_running={was_running})")
             else:
                 bot_instance.fast_mode_enabled = False
@@ -396,6 +396,16 @@ def set_mode():
                 bot_instance.aggressive_trade_guarantee = False
                 bot_instance.cycle_sleep_override = None
                 print(f"🎯 PRECISION MODE configured (bot_running={was_running})")
+            try:
+                if hasattr(bot_instance, 'apply_micro_account_profile'):
+                    bot_instance.apply_micro_account_profile()
+            except Exception:
+                pass
+            try:
+                if hasattr(bot_instance, 'sync_mode_learning_bridge'):
+                    bot_instance.sync_mode_learning_bridge()
+            except Exception:
+                pass
             
             # CRITICAL: Restore original bot_running state (don't auto-start!)
             bot_instance.bot_running = was_running

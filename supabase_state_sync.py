@@ -59,7 +59,7 @@ class SupabaseStateSync:
         )
         keys = [k.strip() for k in keys_env.split(",") if k.strip()]
 
-        interval_seconds = int(str(os.getenv("STATE_SYNC_INTERVAL_SECONDS", "60") or "60").strip() or 60)
+        interval_seconds = int(str(os.getenv("STATE_SYNC_INTERVAL_SECONDS", "20") or "20").strip() or 20)
         table = str(os.getenv("SUPABASE_STATE_TABLE", "bot_state") or "bot_state").strip() or "bot_state"
 
         return cls(

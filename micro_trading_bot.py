@@ -2337,6 +2337,10 @@ class LegendaryCryptoTitanBot:
                 'risk_multiplier': 0.8
             }
         }
+        self.current_mode_risk_multiplier = 1.0
+        self.current_position_size_boost = 1.0
+        self.cross_mode_blended_win_rate = 0.5
+        self.cross_mode_weight = 0.0
         
         # Initialize ALL advanced systems directly in the bot
         self._initialize_world_class_systems()
@@ -3596,7 +3600,49 @@ class LegendaryCryptoTitanBot:
         self.mode_config['PRECISION']['min_confidence'] = max(float(self.mode_config['PRECISION'].get('min_confidence', 0.30) or 0.30), 0.35)
         self.mode_config['AGGRESSIVE']['risk_multiplier'] = min(float(self.mode_config['AGGRESSIVE'].get('risk_multiplier', 1.2) or 1.2), 0.9)
         self.mode_config['PRECISION']['risk_multiplier'] = min(float(self.mode_config['PRECISION'].get('risk_multiplier', 0.8) or 0.8), 0.7)
+        self.sync_mode_learning_bridge()
         print(f"🛡️ MICRO CAPITAL PROFILE ACTIVE | Capital=${cap:.2f} | Size=${self.min_trade_size:.2f} | TP={self.take_profit:.2f}% | SL={self.stop_loss:.2f}%")
+
+    def sync_mode_learning_bridge(self):
+        try:
+            brain = getattr(self, 'ai_brain', None)
+            if brain is None or not hasattr(brain, 'get_mode_bridge_adjustments'):
+                return
+            mode = str(getattr(self, 'trading_mode', 'PRECISION') or 'PRECISION').upper()
+            cap = float(getattr(self, 'current_capital', getattr(self, 'initial_capital', 5.0)) or 5.0)
+            adj = brain.get_mode_bridge_adjustments(mode, cap)
+            if not isinstance(adj, dict):
+                return
+
+            floor = float(adj.get('confidence_floor', 0.35 if mode == 'AGGRESSIVE' else 0.45) or (0.35 if mode == 'AGGRESSIVE' else 0.45))
+            if mode == 'AGGRESSIVE':
+                self.min_confidence_for_trade = max(0.18, min(0.70, max(float(getattr(self, 'min_confidence_for_trade', floor) or floor), floor)))
+            else:
+                self.min_confidence_for_trade = max(0.24, min(0.85, max(float(getattr(self, 'min_confidence_for_trade', floor) or floor), floor)))
+
+            self.base_confidence_threshold = self.min_confidence_for_trade
+            self.confidence_threshold = max(float(getattr(self, 'confidence_threshold', self.min_confidence_for_trade) or self.min_confidence_for_trade), self.min_confidence_for_trade)
+
+            rm = float(adj.get('risk_multiplier', 0.75) or 0.75)
+            psb = float(adj.get('position_size_boost', 1.0) or 1.0)
+            self.current_mode_risk_multiplier = max(0.55, min(1.05, rm))
+            self.current_position_size_boost = max(0.85, min(1.35, psb))
+            self.cross_mode_blended_win_rate = float(adj.get('blended_win_rate', 0.5) or 0.5)
+            self.cross_mode_weight = float(adj.get('opposite_mode_weight', 0.0) or 0.0)
+
+            try:
+                if hasattr(self, 'mode_config') and isinstance(self.mode_config, dict):
+                    cfg = self.mode_config.get(mode, {})
+                    if isinstance(cfg, dict):
+                        cfg['min_confidence'] = float(self.min_confidence_for_trade)
+                        cfg['risk_multiplier'] = float(self.current_mode_risk_multiplier)
+                        self.mode_config[mode] = cfg
+            except Exception:
+                pass
+
+            print(f"🧠 CROSS-MODE LEARNING ACTIVE | Mode={mode} | Conf≥{self.min_confidence_for_trade:.1%} | Risk×{self.current_mode_risk_multiplier:.2f} | Size×{self.current_position_size_boost:.2f} | Shared WR={self.cross_mode_blended_win_rate:.1%}")
+        except Exception:
+            pass
         
     def _init_cz_strategy(self):
         """Initialize Changpeng Zhao's global vision strategy"""
@@ -5042,6 +5088,10 @@ class LegendaryCryptoTitanBot:
     
     async def _generate_micro_signals(self) -> List[AITradingSignal]:
         """🧬 Generate 90% accuracy micro trading signals with ensemble AI"""
+        try:
+            self.sync_mode_learning_bridge()
+        except Exception:
+            pass
         # AGGRESSIVE MODE: Generate forced signals if needed
         if self.trading_mode == 'AGGRESSIVE':
             print("⚡ AGGRESSIVE MODE: Generating high-volume signals")
@@ -5059,7 +5109,7 @@ class LegendaryCryptoTitanBot:
                 signal = AITradingSignal(
                     symbol=symbol,
                     action=action,
-                    confidence=0.35,  # Low but acceptable for aggressive
+                    confidence=max(0.35, float(getattr(self, 'min_confidence_for_trade', 0.30) or 0.30)),
                     expected_return=1.5,
                     risk_score=0.3,
                     time_horizon=60,
@@ -6617,7 +6667,10 @@ class LegendaryCryptoTitanBot:
                     'volatility': vol_score,
                     'trend_strength': 0.3,
                     'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways'
-                }
+                },
+                'trading_mode': str(getattr(self, 'trading_mode', 'PRECISION') or 'PRECISION'),
+                'account_capital': float(getattr(self, 'initial_capital', 5.0) or 5.0),
+                'current_capital': float(getattr(self, 'current_capital', 5.0) or 5.0)
             }
             
             # Add loss analysis if it's a loss
@@ -7880,6 +7933,8 @@ class LegendaryCryptoTitanBot:
                     market_data=market_data,
                     consecutive_losses=self.consecutive_losses
                 )
+                dynamic_size *= float(getattr(self, 'current_position_size_boost', 1.0) or 1.0)
+                dynamic_size *= float(getattr(self, 'current_mode_risk_multiplier', 1.0) or 1.0)
                 
                 print(f"   🎯 Dynamic Position Sizer: ${dynamic_size:.2f} (Volatility-adjusted)")
                 return max(self.min_trade_size, min(dynamic_size, available_cash * 0.8))
@@ -7917,6 +7972,8 @@ class LegendaryCryptoTitanBot:
         # Adjust for confidence (higher confidence = larger position within risk limits)
         confidence_multiplier = 0.5 + (signal.confidence * 0.5)  # 0.5x to 1.0x
         risk_based_size *= confidence_multiplier
+        risk_based_size *= float(getattr(self, 'current_position_size_boost', 1.0) or 1.0)
+        risk_based_size *= float(getattr(self, 'current_mode_risk_multiplier', 1.0) or 1.0)
         
         # Reduce size after consecutive losses
         if self.consecutive_losses >= self.max_consecutive_losses:
@@ -7967,6 +8024,8 @@ class LegendaryCryptoTitanBot:
         # Calculate position size
         base_size = available_cash * confidence_multiplier
         adjusted_size = base_size * category_weight * symbol_multiplier
+        adjusted_size *= float(getattr(self, 'current_position_size_boost', 1.0) or 1.0)
+        adjusted_size *= float(getattr(self, 'current_mode_risk_multiplier', 1.0) or 1.0)
         
         # Ensure minimum and maximum limits
         adjusted_size = max(self.min_trade_size, adjusted_size)
@@ -9605,7 +9664,10 @@ class LegendaryCryptoTitanBot:
                     'volatility': self._calculate_volatility(symbol),
                     'trend_strength': 0.3,
                     'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways'
-                }
+                },
+                'trading_mode': str(getattr(self, 'trading_mode', 'PRECISION') or 'PRECISION'),
+                'account_capital': float(getattr(self, 'initial_capital', 5.0) or 5.0),
+                'current_capital': float(getattr(self, 'current_capital', 5.0) or 5.0)
             }
             ai_brain.learn_from_trade(minimal_trade_data)
             print(f"   ✅ AI learned from orphaned {symbol} position (${pnl:+.2f})")
@@ -9684,7 +9746,10 @@ class LegendaryCryptoTitanBot:
                 'volatility': signal.volatility_score,
                 'trend_strength': 0.3,
                 'regime': self.regime_detector.current_regime.value if self.regime_detector else 'sideways'
-            }
+            },
+            'trading_mode': str(getattr(self, 'trading_mode', 'PRECISION') or 'PRECISION'),
+            'account_capital': float(getattr(self, 'initial_capital', 5.0) or 5.0),
+            'current_capital': float(getattr(self, 'current_capital', 5.0) or 5.0)
         }
         
         # Add loss analysis if it's a loss
@@ -10616,7 +10681,10 @@ class LegendaryCryptoTitanBot:
                         'volatility': signal.volatility_score,
                         'trend_strength': 0.4,  # Higher for legendary
                         'regime': getattr(getattr(self.regime_detector, 'current_regime', None), 'value', 'sideways') if self.regime_detector else 'sideways'
-                    }
+                    },
+                    'trading_mode': str(getattr(self, 'trading_mode', 'PRECISION') or 'PRECISION'),
+                    'account_capital': float(getattr(self, 'initial_capital', 5.0) or 5.0),
+                    'current_capital': float(getattr(self, 'current_capital', 5.0) or 5.0)
                 }
                 
                 # Add loss analysis to trade data if it's a loss

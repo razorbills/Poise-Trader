@@ -958,6 +958,90 @@
             </div>
         </div>
 
+        <div class="card" style="margin-bottom: 20px; border: 1px solid rgba(102, 126, 234, 0.35); background: linear-gradient(135deg, rgba(34,44,82,0.94) 0%, rgba(56,30,85,0.88) 100%);">
+            <div class="card-title">🧠 AI Bridge Stats</div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px;">
+                <div style="padding:10px 12px; border-radius:10px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size:11px; color:#b9c2ff;">Bridge Mode</div>
+                    <div id="bridgeMode" style="font-size:18px; font-weight:700; color:#7cf7d4;">PRECISION</div>
+                </div>
+                <div style="padding:10px 12px; border-radius:10px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size:11px; color:#b9c2ff;">Shared Win Rate</div>
+                    <div id="bridgeSharedWR" style="font-size:18px; font-weight:700; color:#ffd166;">0.0%</div>
+                </div>
+                <div style="padding:10px 12px; border-radius:10px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size:11px; color:#b9c2ff;">Confidence Floor</div>
+                    <div id="bridgeConfidenceFloor" style="font-size:18px; font-weight:700; color:#7cc6ff;">0.0%</div>
+                </div>
+                <div style="padding:10px 12px; border-radius:10px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size:11px; color:#b9c2ff;">Risk Multiplier</div>
+                    <div id="bridgeRiskMult" style="font-size:18px; font-weight:700; color:#ff8fab;">x0.00</div>
+                </div>
+                <div style="padding:10px 12px; border-radius:10px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size:11px; color:#b9c2ff;">Size Boost</div>
+                    <div id="bridgeSizeBoost" style="font-size:18px; font-weight:700; color:#a1ff8b;">x0.00</div>
+                </div>
+                <div style="padding:10px 12px; border-radius:10px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size:11px; color:#b9c2ff;">Cross-Mode Import</div>
+                    <div id="bridgeOppWeight" style="font-size:18px; font-weight:700; color:#d0b3ff;">0.0%</div>
+                </div>
+            </div>
+            <div style="padding:10px; border-radius:12px; background: rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:12px; color:#d5d9ff;">Knowledge Level</span>
+                    <span id="bridgeKnowledgeLevelLabel" style="font-size:12px; color:#7cf7d4; font-weight:700;">0.0%</span>
+                </div>
+                <div style="height:10px; border-radius:999px; background: rgba(255,255,255,0.08); overflow:hidden;">
+                    <div id="bridgeKnowledgeLevelBar" style="height:10px; width:0%; background: linear-gradient(90deg, #38ef7d 0%, #667eea 100%);"></div>
+                </div>
+            </div>
+            <div style="padding:10px; border-radius:12px; background: rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:12px; color:#d5d9ff;">AI Learning Timeline</span>
+                    <span id="bridgeTimelineSummary" style="font-size:12px; color:#9fe3ff;">warming up...</span>
+                </div>
+                <div style="height:130px;">
+                    <canvas id="aiLearningTimelineChart"></canvas>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 10px;">
+                <div style="padding:8px 10px; border-radius:10px; background: rgba(255,255,255,0.04);">
+                    <div style="font-size:11px; color:#b9c2ff;">Total Learned Trades</div>
+                    <div id="learnTotalTrades" style="font-size:16px; font-weight:700;">0</div>
+                </div>
+                <div style="padding:8px 10px; border-radius:10px; background: rgba(255,255,255,0.04);">
+                    <div style="font-size:11px; color:#b9c2ff;">Symbols Learned</div>
+                    <div id="learnSymbols" style="font-size:16px; font-weight:700;">0</div>
+                </div>
+                <div style="padding:8px 10px; border-radius:10px; background: rgba(255,255,255,0.04);">
+                    <div style="font-size:11px; color:#b9c2ff;">Contexts Learned</div>
+                    <div id="learnContexts" style="font-size:16px; font-weight:700;">0</div>
+                </div>
+                <div style="padding:8px 10px; border-radius:10px; background: rgba(255,255,255,0.04);">
+                    <div style="font-size:11px; color:#b9c2ff;">Micro Trades Learned</div>
+                    <div id="learnMicroTrades" style="font-size:16px; font-weight:700;">0</div>
+                </div>
+                <div style="padding:8px 10px; border-radius:10px; background: rgba(255,255,255,0.04);">
+                    <div style="font-size:11px; color:#b9c2ff;">Aggressive Win Rate</div>
+                    <div id="learnAggWR" style="font-size:16px; font-weight:700;">0.0%</div>
+                </div>
+                <div style="padding:8px 10px; border-radius:10px; background: rgba(255,255,255,0.04);">
+                    <div style="font-size:11px; color:#b9c2ff;">Precision Win Rate</div>
+                    <div id="learnPrecWR" style="font-size:16px; font-weight:700;">0.0%</div>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+                <div style="padding:10px; border-radius:10px; background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size:12px; color:#d5d9ff; margin-bottom:6px;">Top Learned Strategies</div>
+                    <div id="bridgeTopStrategies" style="font-size:12px; color:#cfd5ff;">No strategy learning yet</div>
+                </div>
+                <div style="padding:10px; border-radius:10px; background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+                    <div style="font-size:12px; color:#d5d9ff; margin-bottom:6px;">Best Learned Symbols</div>
+                    <div id="bridgeTopSymbols" style="font-size:12px; color:#cfd5ff;">No symbol learning yet</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Main Grid -->
         <div class="main-grid">
             <!-- Left Column -->
@@ -1105,9 +1189,13 @@
         let isTrading = false;
         let botConnected = false;
         let pnlChart = null;
+        let aiLearningChart = null;
         let pnlHistory = [];
         let positions = {};
         let recentTrades = [];
+        let learningTimelineCache = [];
+        let learningTimelineStorageKey = 'poise_ai_learning_timeline';
+        let learningTimelineCursor = 0;
 
         let assistantSessionId = null;
         let assistantPendingAction = null;
@@ -1711,6 +1799,76 @@
             });
         }
 
+        function initLearningTimelineChart() {
+            const node = document.getElementById('aiLearningTimelineChart');
+            if (!node) return;
+            const ctx = node.getContext('2d');
+            aiLearningChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Knowledge',
+                            data: [],
+                            borderColor: '#38ef7d',
+                            backgroundColor: 'rgba(56, 239, 125, 0.12)',
+                            fill: true,
+                            tension: 0.35,
+                            pointRadius: 0,
+                            borderWidth: 2,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Win Rate',
+                            data: [],
+                            borderColor: '#7cc6ff',
+                            backgroundColor: 'rgba(124, 198, 255, 0.10)',
+                            fill: false,
+                            tension: 0.35,
+                            pointRadius: 0,
+                            borderWidth: 2,
+                            yAxisID: 'y'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const v = Number(context.parsed.y || 0);
+                                    return `${context.dataset.label}: ${(v * 100).toFixed(1)}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { maxTicksLimit: 6, color: 'rgba(240,244,255,0.75)' }
+                        },
+                        y: {
+                            min: 0,
+                            max: 1,
+                            ticks: {
+                                stepSize: 0.2,
+                                color: 'rgba(240,244,255,0.75)',
+                                callback: function(value) {
+                                    return `${(Number(value || 0) * 100).toFixed(0)}%`;
+                                }
+                            },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        }
+                    }
+                }
+            });
+        }
+
         // Update P&L Chart
         function updateChart(data) {
             if (!pnlChart) return;
@@ -1892,6 +2050,12 @@
                     updatePortfolio(portfolio);
                 }
 
+                const bridgeResponse = await fetch(`${API_URL}/api/ai_bridge_stats`);
+                if (bridgeResponse.ok) {
+                    const bridge = await bridgeResponse.json();
+                    updateAIBridgeStats(bridge);
+                }
+
                 const tradesResponse = await fetch(`${API_URL}/api/trades?limit=200&order=desc`);
                 if (tradesResponse.ok) {
                     const data = await tradesResponse.json();
@@ -1900,6 +2064,159 @@
             } catch (error) {
                 console.error('Error fetching data:', error);
             }
+        }
+
+        function pct(v) {
+            const x = Number(v || 0);
+            return `${(x * 100).toFixed(1)}%`;
+        }
+
+        function num(v) {
+            return Number(v || 0);
+        }
+
+        function makeLearningTimelineStorageKey() {
+            try {
+                const host = String((window.location && window.location.host) ? window.location.host : 'default');
+                return `poise_ai_learning_timeline_${host}`;
+            } catch (e) {
+                return 'poise_ai_learning_timeline_default';
+            }
+        }
+
+        function saveLearningTimelineCache(rows, cursor) {
+            try {
+                const payload = {
+                    rows: Array.isArray(rows) ? rows.slice(-300) : [],
+                    cursor: Math.max(0, Math.round(num(cursor)))
+                };
+                localStorage.setItem(learningTimelineStorageKey, JSON.stringify(payload));
+            } catch (e) {}
+        }
+
+        function loadLearningTimelineCache() {
+            try {
+                const raw = localStorage.getItem(learningTimelineStorageKey);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                if (parsed && Array.isArray(parsed.rows)) {
+                    learningTimelineCursor = Math.max(0, Math.round(num(parsed.cursor)));
+                    return parsed.rows.slice(-300);
+                }
+            } catch (e) {}
+            return [];
+        }
+
+        function mergeLearningTimeline(baseRows, incomingRows) {
+            const merged = [];
+            const seen = new Set();
+            const source = []
+                .concat(Array.isArray(baseRows) ? baseRows : [])
+                .concat(Array.isArray(incomingRows) ? incomingRows : []);
+            for (const row of source) {
+                if (!row || typeof row !== 'object') continue;
+                const ts = row.timestamp || '';
+                const tr = Math.round(num(row.total_trades));
+                const key = `${ts}|${tr}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                merged.push({
+                    timestamp: ts,
+                    win_rate: Math.max(0, Math.min(1, num(row.win_rate))),
+                    total_trades: tr,
+                    knowledge_level: Math.max(0, Math.min(1, num(row.knowledge_level)))
+                });
+            }
+            merged.sort((a, b) => {
+                const ta = new Date(a.timestamp || 0).getTime() || 0;
+                const tb = new Date(b.timestamp || 0).getTime() || 0;
+                if (ta !== tb) return ta - tb;
+                return num(a.total_trades) - num(b.total_trades);
+            });
+            return merged.slice(-300);
+        }
+
+        function updateAIBridgeStats(payload) {
+            const bridge = (payload && payload.bridge) ? payload.bridge : {};
+            const learning = (payload && payload.learning) ? payload.learning : {};
+            const timeline = (payload && payload.learning_timeline) ? payload.learning_timeline : [];
+            const timelineState = (payload && payload.timeline_state) ? payload.timeline_state : {};
+            const topStrategies = (payload && payload.top_strategies) ? payload.top_strategies : [];
+            const topSymbols = (payload && payload.top_symbols) ? payload.top_symbols : [];
+
+            document.getElementById('bridgeMode').textContent = (bridge.mode || 'PRECISION').toString();
+            document.getElementById('bridgeSharedWR').textContent = pct(bridge.blended_win_rate);
+            document.getElementById('bridgeConfidenceFloor').textContent = pct(bridge.confidence_floor);
+            document.getElementById('bridgeRiskMult').textContent = `x${num(bridge.risk_multiplier).toFixed(2)}`;
+            document.getElementById('bridgeSizeBoost').textContent = `x${num(bridge.position_size_boost).toFixed(2)}`;
+            document.getElementById('bridgeOppWeight').textContent = pct(bridge.opposite_mode_weight);
+
+            const knowledgeLevel = Math.max(0, Math.min(1, num(learning.knowledge_level)));
+            document.getElementById('bridgeKnowledgeLevelLabel').textContent = pct(knowledgeLevel);
+            document.getElementById('bridgeKnowledgeLevelBar').style.width = `${(knowledgeLevel * 100).toFixed(1)}%`;
+
+            document.getElementById('learnTotalTrades').textContent = `${Math.round(num(learning.total_trades)).toLocaleString()}`;
+            document.getElementById('learnSymbols').textContent = `${Math.round(num(learning.symbols_learned)).toLocaleString()}`;
+            document.getElementById('learnContexts').textContent = `${Math.round(num(learning.contexts_learned)).toLocaleString()}`;
+            document.getElementById('learnMicroTrades').textContent = `${Math.round(num(learning.micro_trades)).toLocaleString()}`;
+            document.getElementById('learnAggWR').textContent = pct(learning.aggressive_win_rate);
+            document.getElementById('learnPrecWR').textContent = pct(learning.precision_win_rate);
+
+            const strategyHtml = (topStrategies || []).slice(0, 4).map(s =>
+                `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <span style="color:#ffffff;">${(s.name || 'unknown').toUpperCase()}</span>
+                    <span style="color:#7cf7d4;">${pct(s.win_rate)} · ${Math.round(num(s.trades))}T</span>
+                </div>`
+            ).join('');
+            document.getElementById('bridgeTopStrategies').innerHTML = strategyHtml || 'No strategy learning yet';
+
+            const symbolHtml = (topSymbols || []).slice(0, 4).map(s =>
+                `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <span style="color:#ffffff;">${s.symbol || 'UNKNOWN'}</span>
+                    <span style="color:${num(s.profit_loss) >= 0 ? '#38ef7d' : '#ff6b6b'};">${num(s.profit_loss) >= 0 ? '+' : ''}$${num(s.profit_loss).toFixed(2)}</span>
+                </div>`
+            ).join('');
+            document.getElementById('bridgeTopSymbols').innerHTML = symbolHtml || 'No symbol learning yet';
+
+            const nextCursor = Math.max(learningTimelineCursor, Math.round(num(timelineState.cursor)));
+            learningTimelineCursor = nextCursor;
+            learningTimelineCache = mergeLearningTimeline(learningTimelineCache, timeline);
+            if (learningTimelineCache.length > 0) {
+                saveLearningTimelineCache(learningTimelineCache, learningTimelineCursor);
+            }
+            updateAILearningTimeline(learningTimelineCache.length > 0 ? learningTimelineCache : timeline);
+        }
+
+        function updateAILearningTimeline(timeline) {
+            if (!aiLearningChart) return;
+            const rows = Array.isArray(timeline) ? timeline.slice(-40) : [];
+            const labels = rows.map((p, i) => {
+                if (!p || !p.timestamp) return `${i + 1}`;
+                const d = new Date(p.timestamp);
+                if (Number.isNaN(d.getTime())) return `${i + 1}`;
+                return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            });
+            const knowledge = rows.map(p => Math.max(0, Math.min(1, num((p || {}).knowledge_level))));
+            const winRates = rows.map(p => Math.max(0, Math.min(1, num((p || {}).win_rate))));
+
+            aiLearningChart.data.labels = labels;
+            aiLearningChart.data.datasets[0].data = knowledge;
+            aiLearningChart.data.datasets[1].data = winRates;
+            aiLearningChart.update('none');
+
+            const summaryNode = document.getElementById('bridgeTimelineSummary');
+            if (!summaryNode) return;
+            if (rows.length < 2) {
+                summaryNode.textContent = `restored ${Math.round(num(learningTimelineCursor))} learned trades`;
+                return;
+            }
+            const firstK = knowledge[0] || 0;
+            const lastK = knowledge[knowledge.length - 1] || 0;
+            const firstW = winRates[0] || 0;
+            const lastW = winRates[winRates.length - 1] || 0;
+            const deltaK = (lastK - firstK) * 100;
+            const deltaW = (lastW - firstW) * 100;
+            summaryNode.textContent = `knowledge ${deltaK >= 0 ? '+' : ''}${deltaK.toFixed(1)}% · win rate ${deltaW >= 0 ? '+' : ''}${deltaW.toFixed(1)}% · cursor ${Math.round(num(learningTimelineCursor))}`;
         }
 
         // Update metrics
@@ -2573,6 +2890,12 @@
             });
             
             initChart();
+            initLearningTimelineChart();
+            learningTimelineStorageKey = makeLearningTimelineStorageKey();
+            learningTimelineCache = loadLearningTimelineCache();
+            if (learningTimelineCache.length > 0) {
+                updateAILearningTimeline(learningTimelineCache);
+            }
             initAssistant();
             loadAvailableMarkets();
             

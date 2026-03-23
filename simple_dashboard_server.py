@@ -2046,6 +2046,205 @@ def get_metrics():
     return jsonify(metrics)
 
 
+@app.route('/api/ai_bridge_stats')
+def get_ai_bridge_stats():
+    global bot_instance
+
+    base = {
+        'bridge': {
+            'mode': 'PRECISION',
+            'confidence_floor': 0.35,
+            'risk_multiplier': 0.75,
+            'position_size_boost': 1.0,
+            'blended_win_rate': 0.5,
+            'opposite_mode_weight': 0.0
+        },
+        'learning': {
+            'total_trades': 0,
+            'total_profit_loss': 0.0,
+            'global_win_rate': 0.0,
+            'symbols_learned': 0,
+            'contexts_learned': 0,
+            'aggressive_trades': 0,
+            'aggressive_win_rate': 0.0,
+            'precision_trades': 0,
+            'precision_win_rate': 0.0,
+            'micro_trades': 0,
+            'micro_win_rate': 0.0,
+            'knowledge_level': 0.0
+        },
+        'learning_timeline': [],
+        'timeline_state': {
+            'cursor': 0,
+            'points': 0
+        },
+        'top_strategies': [],
+        'top_symbols': [],
+        'last_updated': None
+    }
+
+    try:
+        brain = {}
+        if not bot_instance:
+            candidates = []
+            try:
+                state_dir = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+                if state_dir:
+                    candidates.append(os.path.join(state_dir, 'ai_brain.json'))
+            except Exception:
+                pass
+            candidates.extend([os.path.join('data', 'ai_brain.json'), 'ai_brain.json'])
+            for path in candidates:
+                try:
+                    if os.path.exists(path):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            loaded = json.load(f)
+                        if isinstance(loaded, dict):
+                            brain = loaded
+                            break
+                except Exception:
+                    continue
+
+        mode = str(getattr(bot_instance, 'trading_mode', 'PRECISION') or 'PRECISION').upper() if bot_instance else 'PRECISION'
+        if mode == 'NORMAL':
+            mode = 'PRECISION'
+        cap = float(getattr(bot_instance, 'current_capital', getattr(bot_instance, 'initial_capital', 5.0)) or 5.0) if bot_instance else 5.0
+
+        bridge = dict(base['bridge'])
+        try:
+            if bot_instance and hasattr(bot_instance, 'ai_brain') and bot_instance.ai_brain and hasattr(bot_instance.ai_brain, 'get_mode_bridge_adjustments'):
+                adj = bot_instance.ai_brain.get_mode_bridge_adjustments(mode, cap)
+                if isinstance(adj, dict):
+                    bridge.update({
+                        'mode': mode,
+                        'confidence_floor': float(adj.get('confidence_floor', bridge['confidence_floor']) or bridge['confidence_floor']),
+                        'risk_multiplier': float(adj.get('risk_multiplier', bridge['risk_multiplier']) or bridge['risk_multiplier']),
+                        'position_size_boost': float(adj.get('position_size_boost', bridge['position_size_boost']) or bridge['position_size_boost']),
+                        'blended_win_rate': float(adj.get('blended_win_rate', bridge['blended_win_rate']) or bridge['blended_win_rate']),
+                        'opposite_mode_weight': float(adj.get('opposite_mode_weight', bridge['opposite_mode_weight']) or bridge['opposite_mode_weight'])
+                    })
+        except Exception:
+            pass
+
+        brain_obj = None
+        try:
+            brain_obj = getattr(bot_instance, 'ai_brain', None) if bot_instance else None
+        except Exception:
+            brain_obj = None
+
+        if brain_obj is not None and hasattr(brain_obj, 'brain') and isinstance(getattr(brain_obj, 'brain', None), dict):
+            brain = getattr(brain_obj, 'brain', {})
+
+        learning = dict(base['learning'])
+        if brain:
+            learning['total_trades'] = int(brain.get('total_trades', 0) or 0)
+            learning['total_profit_loss'] = float(brain.get('total_profit_loss', 0.0) or 0.0)
+            learning['global_win_rate'] = float(brain.get('win_rate', 0.0) or 0.0)
+            learning['symbols_learned'] = len(brain.get('symbol_knowledge', {}) or {})
+            learning['contexts_learned'] = len(brain.get('context_performance', {}) or {})
+            learning['last_updated'] = brain.get('last_updated')
+
+            mk = brain.get('mode_knowledge', {}) or {}
+            ag = mk.get('AGGRESSIVE', {}) or {}
+            pr = mk.get('PRECISION', {}) or {}
+
+            ag_tr = int(ag.get('trades', 0) or 0)
+            ag_wr = float(ag.get('wins', 0) or 0) / max(1.0, float(ag_tr))
+            pr_tr = int(pr.get('trades', 0) or 0)
+            pr_wr = float(pr.get('wins', 0) or 0) / max(1.0, float(pr_tr))
+            learning['aggressive_trades'] = ag_tr
+            learning['aggressive_win_rate'] = ag_wr
+            learning['precision_trades'] = pr_tr
+            learning['precision_win_rate'] = pr_wr
+
+            mack = brain.get('micro_account_knowledge', {}) or {}
+            mc_tr = int(mack.get('trades', 0) or 0)
+            mc_wr = float(mack.get('wins', 0) or 0) / max(1.0, float(mc_tr))
+            learning['micro_trades'] = mc_tr
+            learning['micro_win_rate'] = mc_wr
+
+            total_tr = float(learning['total_trades'] or 0)
+            progress = min(1.0, total_tr / 300.0)
+            contexts = min(1.0, float(learning['contexts_learned'] or 0) / 800.0)
+            symbols = min(1.0, float(learning['symbols_learned'] or 0) / 40.0)
+            learning['knowledge_level'] = max(0.0, min(1.0, progress * 0.55 + contexts * 0.30 + symbols * 0.15))
+
+        top_strategies = []
+        try:
+            sp = (brain or {}).get('strategy_performance', {}) or {}
+            rows = []
+            for name, stats in sp.items():
+                wins = float((stats or {}).get('wins', 0) or 0)
+                losses = float((stats or {}).get('losses', 0) or 0)
+                trades = wins + losses
+                if trades <= 0:
+                    continue
+                wr = wins / max(1.0, trades)
+                pnl = float((stats or {}).get('total_return', 0.0) or 0.0)
+                rows.append({'name': str(name), 'trades': int(trades), 'win_rate': wr, 'pnl': pnl, 'score': wr * 0.75 + max(-1.0, min(1.0, pnl / 20.0)) * 0.25})
+            rows.sort(key=lambda x: x.get('score', 0), reverse=True)
+            top_strategies = rows[:5]
+        except Exception:
+            top_strategies = []
+
+        top_symbols = []
+        try:
+            sk = (brain or {}).get('symbol_knowledge', {}) or {}
+            rows = []
+            for sym, stats in sk.items():
+                trades = float((stats or {}).get('trades', 0) or 0)
+                if trades <= 0:
+                    continue
+                pnl = float((stats or {}).get('profit_loss', 0.0) or 0.0)
+                avg = pnl / max(1.0, trades)
+                rows.append({'symbol': str(sym), 'trades': int(trades), 'profit_loss': pnl, 'avg_pnl': avg})
+            rows.sort(key=lambda x: x.get('profit_loss', 0.0), reverse=True)
+            top_symbols = rows[:5]
+        except Exception:
+            top_symbols = []
+
+        learning_timeline = []
+        try:
+            history = (brain or {}).get('win_rate_history', []) or []
+            if isinstance(history, list):
+                slice_history = history[-240:]
+                symbol_count = float(learning.get('symbols_learned', 0) or 0)
+                context_count = float(learning.get('contexts_learned', 0) or 0)
+                for point in slice_history:
+                    if not isinstance(point, dict):
+                        continue
+                    ts = point.get('timestamp')
+                    wr = float(point.get('win_rate', 0.0) or 0.0)
+                    tt = float(point.get('total_trades', learning.get('total_trades', 0)) or 0.0)
+                    progress = min(1.0, tt / 300.0)
+                    contexts = min(1.0, context_count / 800.0)
+                    symbols = min(1.0, symbol_count / 40.0)
+                    klevel = max(0.0, min(1.0, progress * 0.55 + contexts * 0.30 + symbols * 0.15))
+                    learning_timeline.append({
+                        'timestamp': ts,
+                        'win_rate': wr,
+                        'total_trades': int(tt),
+                        'knowledge_level': klevel
+                    })
+        except Exception:
+            learning_timeline = []
+
+        return jsonify({
+            'bridge': bridge,
+            'learning': learning,
+            'learning_timeline': learning_timeline,
+            'timeline_state': {
+                'cursor': int(float(learning.get('total_trades', 0) or 0)),
+                'points': len(learning_timeline)
+            },
+            'top_strategies': top_strategies,
+            'top_symbols': top_symbols,
+            'last_updated': (brain or {}).get('last_updated')
+        })
+    except Exception:
+        return jsonify(base)
+
+
 @app.route('/api/trades')
 def get_recent_trades():
     """Get recent trades in a simple normalized format for the dashboard"""
@@ -2368,9 +2567,8 @@ def set_mode():
             bot_instance.aggressive_trade_guarantee = True
             bot_instance.aggressive_trade_interval = 60.0
             bot_instance.cycle_sleep_override = 10.0
-            bot_instance.win_rate_optimizer_enabled = False
+            bot_instance.win_rate_optimizer_enabled = True
             bot_instance.min_trade_quality_score = 10.0
-            bot_instance.min_confidence_for_trade = 0.10
             print(f"⚡ AGGRESSIVE MODE ACTIVATED")
         else:
             bot_instance.fast_mode_enabled = False
@@ -2379,13 +2577,17 @@ def set_mode():
             bot_instance.confidence_adjustment_factor = 0.01
             bot_instance.aggressive_trade_guarantee = False
             bot_instance.cycle_sleep_override = None
-            bot_instance.win_rate_optimizer_enabled = False
+            bot_instance.win_rate_optimizer_enabled = True
             bot_instance.min_trade_quality_score = 25.0
-            bot_instance.min_confidence_for_trade = 0.30
             print(f"🎯 NORMAL MODE ACTIVATED")
 
         try:
             bot_instance.apply_micro_account_profile()
+        except Exception:
+            pass
+        try:
+            if hasattr(bot_instance, 'sync_mode_learning_bridge'):
+                bot_instance.sync_mode_learning_bridge()
         except Exception:
             pass
     

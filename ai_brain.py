@@ -92,6 +92,18 @@ class AIBrain:
         except Exception:
             self.learning_min_trades_between_saves = 1
 
+        try:
+            self.win_rate_history_limit = int(float(os.getenv('AI_WIN_RATE_HISTORY_LIMIT', '1200') or 1200))
+        except Exception:
+            self.win_rate_history_limit = 1200
+        self.win_rate_history_limit = max(200, min(5000, int(self.win_rate_history_limit or 1200)))
+
+        try:
+            self.render_win_rate_history_limit = int(float(os.getenv('AI_RENDER_WIN_RATE_HISTORY_LIMIT', '600') or 600))
+        except Exception:
+            self.render_win_rate_history_limit = 600
+        self.render_win_rate_history_limit = max(120, min(self.win_rate_history_limit, int(self.render_win_rate_history_limit or 600)))
+
         self._last_learning_update_ts = 0.0
         self._trades_since_save = 0
         
@@ -178,7 +190,19 @@ class AIBrain:
             },
             
             # Learning sessions tracking
-            'knowledge_sessions': []
+            'knowledge_sessions': [],
+            'mode_knowledge': {
+                'AGGRESSIVE': {'trades': 0, 'wins': 0, 'profit_loss': 0.0, 'confidence_ema': 0.5},
+                'PRECISION': {'trades': 0, 'wins': 0, 'profit_loss': 0.0, 'confidence_ema': 0.5},
+                'SHARED': {'trades': 0, 'wins': 0, 'profit_loss': 0.0}
+            },
+            'micro_account_knowledge': {
+                'trades': 0,
+                'wins': 0,
+                'profit_loss': 0.0,
+                'best_confidence_floor': 0.35,
+                'best_risk_multiplier': 0.75
+            }
         }
         self.load_brain()
         
@@ -187,8 +211,14 @@ class AIBrain:
         try:
             if os.path.exists(self.brain_file):
                 if _file_too_large_for_render(self.brain_file, max_mb=5.0):
-                    print("🧠 AI brain file is large - skipping load on Render")
-                    self.save_brain()
+                    print("🧠 AI brain file is large on Render - preserving existing file")
+                    if os.path.exists(self.backup_file) and not _file_too_large_for_render(self.backup_file, max_mb=5.0):
+                        try:
+                            with open(self.backup_file, 'r') as f:
+                                loaded_brain = json.load(f)
+                            self._merge_brain_data(loaded_brain)
+                        except Exception:
+                            pass
                     return
                 with open(self.brain_file, 'r') as f:
                     loaded_brain = json.load(f)
@@ -210,8 +240,8 @@ class AIBrain:
                             self.brain['recent_trades'] = rt[-200:]
 
                         wrh = self.brain.get('win_rate_history')
-                        if isinstance(wrh, list) and len(wrh) > 50:
-                            self.brain['win_rate_history'] = wrh[-50:]
+                        if isinstance(wrh, list) and len(wrh) > self.render_win_rate_history_limit:
+                            self.brain['win_rate_history'] = wrh[-self.render_win_rate_history_limit:]
 
                         ks = self.brain.get('knowledge_sessions')
                         if isinstance(ks, list) and len(ks) > 20:
@@ -319,6 +349,7 @@ class AIBrain:
             confidence = trade_data.get('confidence', 0.5)
             strategy_scores = trade_data.get('strategy_scores', {})
             market_conditions = trade_data.get('market_conditions', {})
+            mode = self._normalize_mode(trade_data.get('trading_mode', trade_data.get('mode', market_conditions.get('mode'))))
             
             # 🔥 NEW: Extract comprehensive market data if available
             comprehensive_data = trade_data.get('comprehensive_market_data', {})
@@ -333,6 +364,7 @@ class AIBrain:
             
             # Learn from strategy performance
             was_profitable = profit_loss > 0
+            self._update_mode_knowledge(mode, trade_data, profit_loss, confidence, was_profitable)
             for strategy, score in strategy_scores.items():
                 if strategy in self.brain['strategy_performance']:
                     if was_profitable:
@@ -492,9 +524,8 @@ class AIBrain:
                     'total_trades': total_recent
                 })
                 
-                # Keep only last 100 win rate records
-                if len(self.brain['win_rate_history']) > 100:
-                    self.brain['win_rate_history'] = self.brain['win_rate_history'][-100:]
+                if len(self.brain['win_rate_history']) > self.win_rate_history_limit:
+                    self.brain['win_rate_history'] = self.brain['win_rate_history'][-self.win_rate_history_limit:]
                 
                 # Check if we're improving towards 90% win rate
                 if recent_win_rate > 0.85:
@@ -963,6 +994,121 @@ class AIBrain:
             return blended, trades
         except Exception:
             return 0.0, 0
+
+    def _normalize_mode(self, mode_value: Any) -> str:
+        try:
+            m = str(mode_value or '').strip().upper()
+        except Exception:
+            m = ''
+        if m == 'NORMAL':
+            m = 'PRECISION'
+        if m not in ['AGGRESSIVE', 'PRECISION']:
+            m = 'PRECISION'
+        return m
+
+    def _update_mode_knowledge(self, mode: str, trade_data: Dict, profit_loss: float, confidence: float, was_profitable: bool):
+        try:
+            mk = self.brain.setdefault('mode_knowledge', {})
+            if not isinstance(mk, dict):
+                mk = {}
+                self.brain['mode_knowledge'] = mk
+
+            for key in ['AGGRESSIVE', 'PRECISION']:
+                if key not in mk or not isinstance(mk.get(key), dict):
+                    mk[key] = {'trades': 0, 'wins': 0, 'profit_loss': 0.0, 'confidence_ema': 0.5}
+            if 'SHARED' not in mk or not isinstance(mk.get('SHARED'), dict):
+                mk['SHARED'] = {'trades': 0, 'wins': 0, 'profit_loss': 0.0}
+
+            ms = mk.get(mode, {})
+            ms['trades'] = int(ms.get('trades', 0) or 0) + 1
+            ms['wins'] = int(ms.get('wins', 0) or 0) + (1 if was_profitable else 0)
+            ms['profit_loss'] = float(ms.get('profit_loss', 0.0) or 0.0) + float(profit_loss or 0.0)
+            old_ema = float(ms.get('confidence_ema', 0.5) or 0.5)
+            ms['confidence_ema'] = old_ema * 0.9 + float(confidence or 0.5) * 0.1
+            mk[mode] = ms
+
+            shared = mk.get('SHARED', {})
+            shared['trades'] = int(shared.get('trades', 0) or 0) + 1
+            shared['wins'] = int(shared.get('wins', 0) or 0) + (1 if was_profitable else 0)
+            shared['profit_loss'] = float(shared.get('profit_loss', 0.0) or 0.0) + float(profit_loss or 0.0)
+            mk['SHARED'] = shared
+
+            mack = self.brain.setdefault('micro_account_knowledge', {})
+            if not isinstance(mack, dict):
+                mack = {}
+                self.brain['micro_account_knowledge'] = mack
+            cap = 0.0
+            try:
+                cap = float(trade_data.get('account_capital', trade_data.get('initial_capital', 0.0)) or 0.0)
+            except Exception:
+                cap = 0.0
+            if cap <= 10.0:
+                mack['trades'] = int(mack.get('trades', 0) or 0) + 1
+                mack['wins'] = int(mack.get('wins', 0) or 0) + (1 if was_profitable else 0)
+                mack['profit_loss'] = float(mack.get('profit_loss', 0.0) or 0.0) + float(profit_loss or 0.0)
+                wins = int(mack.get('wins', 0) or 0)
+                trades = int(mack.get('trades', 0) or 0)
+                wr = float(wins) / max(1.0, float(trades))
+                base_floor = 0.28 if wr >= 0.55 else 0.34 if wr >= 0.45 else 0.38
+                mack['best_confidence_floor'] = float(mack.get('best_confidence_floor', base_floor) or base_floor) * 0.8 + base_floor * 0.2
+                base_rm = 0.90 if wr >= 0.60 else 0.80 if wr >= 0.50 else 0.70
+                mack['best_risk_multiplier'] = float(mack.get('best_risk_multiplier', base_rm) or base_rm) * 0.85 + base_rm * 0.15
+        except Exception:
+            pass
+
+    def get_mode_bridge_adjustments(self, mode: str, account_capital: float = 5.0) -> Dict[str, float]:
+        try:
+            mode = self._normalize_mode(mode)
+            opposite = 'AGGRESSIVE' if mode == 'PRECISION' else 'PRECISION'
+            mk = self.brain.get('mode_knowledge', {}) if isinstance(self.brain, dict) else {}
+            cur = mk.get(mode, {}) if isinstance(mk, dict) else {}
+            opp = mk.get(opposite, {}) if isinstance(mk, dict) else {}
+            shared = mk.get('SHARED', {}) if isinstance(mk, dict) else {}
+
+            cur_tr = float(cur.get('trades', 0) or 0)
+            cur_wr = float(cur.get('wins', 0) or 0) / max(1.0, cur_tr)
+            opp_tr = float(opp.get('trades', 0) or 0)
+            opp_wr = float(opp.get('wins', 0) or 0) / max(1.0, opp_tr)
+            sh_tr = float(shared.get('trades', 0) or 0)
+            sh_wr = float(shared.get('wins', 0) or 0) / max(1.0, sh_tr)
+
+            cur_weight = min(1.0, cur_tr / 40.0)
+            opp_weight = min(1.0, opp_tr / 60.0) * 0.6
+            shared_weight = min(1.0, sh_tr / 80.0) * 0.8
+
+            denom = max(0.0001, cur_weight + opp_weight + shared_weight)
+            blended_wr = (cur_wr * cur_weight + opp_wr * opp_weight + sh_wr * shared_weight) / denom
+
+            cap = float(account_capital or 0.0)
+            micro = self.brain.get('micro_account_knowledge', {}) if isinstance(self.brain, dict) else {}
+            micro_floor = float(micro.get('best_confidence_floor', 0.35) or 0.35)
+            micro_rm = float(micro.get('best_risk_multiplier', 0.75) or 0.75)
+
+            base_floor = 0.32 if mode == 'AGGRESSIVE' else 0.40
+            confidence_floor = max(0.18, min(0.70, base_floor - (blended_wr - 0.5) * 0.22))
+            risk_multiplier = max(0.55, min(1.05, 0.72 + (blended_wr - 0.5) * 1.2))
+            size_boost = max(0.85, min(1.35, 1.0 + (blended_wr - 0.5) * 0.8))
+
+            if cap <= 10.0:
+                confidence_floor = max(confidence_floor, min(0.55, micro_floor))
+                risk_multiplier = min(risk_multiplier, max(0.55, min(0.95, micro_rm)))
+                size_boost = max(0.90, min(1.20, size_boost))
+
+            return {
+                'confidence_floor': float(confidence_floor),
+                'risk_multiplier': float(risk_multiplier),
+                'position_size_boost': float(size_boost),
+                'blended_win_rate': float(blended_wr),
+                'opposite_mode_weight': float(opp_weight)
+            }
+        except Exception:
+            return {
+                'confidence_floor': 0.35 if self._normalize_mode(mode) == 'AGGRESSIVE' else 0.45,
+                'risk_multiplier': 0.75,
+                'position_size_boost': 1.0,
+                'blended_win_rate': 0.5,
+                'opposite_mode_weight': 0.0
+            }
     
     def _update_strategy_weights(self):
         """Update strategy weights based on performance"""
