@@ -1339,6 +1339,24 @@ class LivePaperTradingManager:
             self.total_trades = 0
             self.winning_trades = 0
             print(f"🆕 NEW trading session with ${initial_capital:,.2f}")
+
+        try:
+            self.initial_capital = 5.0
+            active_qty = 0.0
+            for _sym, _pos in (self.positions or {}).items():
+                try:
+                    active_qty += float((_pos or {}).get('quantity', 0) or 0)
+                except Exception:
+                    continue
+            if active_qty <= 0:
+                self.cash_balance = 5.0
+                self._paper_reserved_cash = 0.0
+                self.total_trades = 0
+                self.winning_trades = 0
+                if hasattr(self, '_save_state'):
+                    self._save_state()
+        except Exception:
+            pass
         
         try:
             self.market_type = str(os.getenv('PAPER_MARKET_TYPE', 'futures') or 'futures').strip().lower()

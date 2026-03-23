@@ -46,10 +46,7 @@ ASSISTANT_MEMORY_KEEP_LINES = 300
 ASSISTANT_STATE_PATH = os.path.join('data', 'assistant_state.json')
 ASSISTANT_STATE_MAX_BYTES = 200_000
 
-try:
-    DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
-except Exception:
-    DEFAULT_STARTING_CAPITAL = 5.0
+DEFAULT_STARTING_CAPITAL = 5.0
 
 @app.route('/')
 def index():
@@ -2224,6 +2221,32 @@ def get_portfolio():
                 trader_portfolio = bot_instance.trader.get_portfolio_value_sync()
                 portfolio['total_value'] = trader_portfolio.get('total_value', portfolio['total_value'])
                 portfolio['cash'] = trader_portfolio.get('cash', portfolio['cash'])
+                try:
+                    current_total = float(portfolio.get('total_value', 0.0) or 0.0)
+                    open_positions = trader_portfolio.get('positions') or {}
+                    open_count = len([p for p in open_positions.values() if float((p or {}).get('quantity', 0) or 0) > 0])
+                    total_trades = float(getattr(bot_instance.trader, 'total_trades', 0) or 0)
+                    if current_total > 5.0 and open_count == 0 and total_trades <= 0:
+                        portfolio['total_value'] = 5.0
+                        portfolio['cash'] = 5.0
+                        try:
+                            bot_instance.current_capital = 5.0
+                        except Exception:
+                            pass
+                        try:
+                            bot_instance.initial_capital = 5.0
+                        except Exception:
+                            pass
+                        try:
+                            bot_instance.trader.cash_balance = 5.0
+                            bot_instance.trader.initial_capital = 5.0
+                            bot_instance.trader._paper_reserved_cash = 0.0
+                            if hasattr(bot_instance.trader, '_save_state'):
+                                bot_instance.trader._save_state()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
                 positions_out = {}
                 for symbol, pos_data in (trader_portfolio.get('positions') or {}).items():
@@ -2548,6 +2571,7 @@ def reset_trading():
         # Create fresh trading state
         fresh_state = {
             "cash_balance": start_capital,
+            "reserved_cash": 0.0,
             "positions": {},
             "trade_history": [],
             "total_trades": 0,
@@ -2579,10 +2603,19 @@ def reset_trading():
                 bot_instance.trader.cash_balance = start_capital
             except Exception:
                 pass
+            try:
+                bot_instance.trader._paper_reserved_cash = 0.0
+            except Exception:
+                pass
             bot_instance.trader.positions = {}
             bot_instance.trader.trade_history = []
             try:
                 bot_instance.trader.initial_capital = start_capital
+            except Exception:
+                pass
+            try:
+                if hasattr(bot_instance.trader, '_save_state'):
+                    bot_instance.trader._save_state()
             except Exception:
                 pass
             bot_instance.total_completed_trades = 0

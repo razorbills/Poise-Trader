@@ -23,10 +23,7 @@ bot_status = {
     'last_update': None
 }
 
-try:
-    DEFAULT_STARTING_CAPITAL = float(os.environ.get('INITIAL_CAPITAL', '5.0') or 5.0)
-except Exception:
-    DEFAULT_STARTING_CAPITAL = 5.0
+DEFAULT_STARTING_CAPITAL = 5.0
 
 bot_status['capital'] = DEFAULT_STARTING_CAPITAL
 

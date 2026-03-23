@@ -202,10 +202,7 @@ def run_bot():
             from micro_trading_bot import LegendaryCryptoTitanBot
             
             # Create bot instance
-            try:
-                initial_capital = float(os.environ.get('INITIAL_CAPITAL', '5.0') or 5.0)
-            except Exception:
-                initial_capital = 5.0
+            initial_capital = 5.0
             bot_instance = LegendaryCryptoTitanBot(initial_capital=initial_capital)
             
             # Set default mode (can be changed via dashboard)

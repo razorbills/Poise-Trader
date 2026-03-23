@@ -2021,10 +2021,7 @@ class LegendaryCryptoTitanBot:
         print("="*80)
 
         if initial_capital is None:
-            try:
-                initial_capital = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
-            except Exception:
-                initial_capital = 5.0
+            initial_capital = 5.0
 
         self.initial_capital = float(initial_capital)
         self.current_capital = float(initial_capital)

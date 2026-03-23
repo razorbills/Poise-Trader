@@ -298,14 +298,12 @@ def reset_trading():
     import json
     
     try:
-        try:
-            start_capital = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
-        except Exception:
-            start_capital = 5.0
+        start_capital = 5.0
 
         # Create fresh state file
         fresh_state = {
             "cash_balance": start_capital,
+            "reserved_cash": 0.0,
             "initial_capital": start_capital,
             "positions": {},
             "trade_history": [],
