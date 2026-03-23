@@ -2234,6 +2234,25 @@ class LegendaryCryptoTitanBot:
                 print(f"   Error: {_e}")
                 print(f"   The bot REQUIRES real paper trading manager - no mock traders allowed!")
                 raise RuntimeError("Real paper trading manager is required - no mock traders allowed!")
+        try:
+            self.realistic_mexc_mode = str(os.getenv('REALISTIC_MEXC_MODE', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.realistic_mexc_mode = True
+        try:
+            self.microstructure_guard_enabled = str(os.getenv('MICROSTRUCTURE_GUARD_ENABLED', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.microstructure_guard_enabled = True
+        try:
+            self.enable_legacy_legendary_pass = str(os.getenv('ENABLE_LEGACY_LEGENDARY_PASS', '0') or '0').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.enable_legacy_legendary_pass = False
+        try:
+            self.min_edge_bps = float(os.getenv('MIN_EDGE_BPS', '6.0') or 6.0)
+        except Exception:
+            self.min_edge_bps = 6.0
+        self.execution_edge_history = deque(maxlen=200)
+        self.execution_quality_history = deque(maxlen=200)
+        self._configure_realistic_execution_profile()
         self.live_chart = None
         
         # Initialize real-time data manager
@@ -3744,6 +3763,7 @@ class LegendaryCryptoTitanBot:
             'liquidity_score': 0.5,
             'expected_slippage_bps': None,
             'book_depth_usd': None,
+            'orderbook_imbalance': 0.0,
         }
 
         active_feed = getattr(self, 'data_feed', None)
@@ -3806,6 +3826,13 @@ class LegendaryCryptoTitanBot:
                         depth_usd += px * max(0.0, qty)
 
                     snapshot['book_depth_usd'] = float(depth_usd or 0.0)
+                    try:
+                        top_bid_usd = sum(float(p) * max(0.0, float(q)) for p, q in bids[:8])
+                        top_ask_usd = sum(float(p) * max(0.0, float(q)) for p, q in asks[:8])
+                        denom_top = max(1e-9, float(top_bid_usd + top_ask_usd))
+                        snapshot['orderbook_imbalance'] = float((top_bid_usd - top_ask_usd) / denom_top)
+                    except Exception:
+                        snapshot['orderbook_imbalance'] = 0.0
 
                     notional = max(0.0, float(notional_usd or 0.0))
                     denom = max(1.0, float(depth_usd or 0.0))
@@ -3824,6 +3851,89 @@ class LegendaryCryptoTitanBot:
             pass
 
         return snapshot
+
+    def _configure_realistic_execution_profile(self):
+        try:
+            if not bool(getattr(self, 'realistic_mexc_mode', True)):
+                return
+            trader = getattr(self, 'trader', None)
+            if trader is None:
+                return
+            env_has_model = bool(os.getenv('PAPER_EXECUTION_MODEL'))
+            env_has_preset = bool(os.getenv('PAPER_SIM_PRESET'))
+            if hasattr(trader, 'paper_execution_model') and not env_has_model and not env_has_preset:
+                trader.paper_execution_model = 'exchange'
+            if hasattr(trader, 'paper_exchange_sim'):
+                trader.paper_exchange_sim = True
+            if hasattr(trader, 'paper_spread_bps') and not bool(os.getenv('PAPER_SPREAD_BPS')):
+                trader.paper_spread_bps = max(1.5, float(getattr(trader, 'paper_spread_bps', 2.0) or 2.0))
+            if hasattr(trader, 'paper_slippage_bps') and not bool(os.getenv('PAPER_SLIPPAGE_BPS')):
+                trader.paper_slippage_bps = max(2.0, float(getattr(trader, 'paper_slippage_bps', 4.0) or 4.0))
+            if hasattr(trader, 'paper_latency_ms_min') and not bool(os.getenv('PAPER_LATENCY_MS_MIN')):
+                trader.paper_latency_ms_min = max(30, int(float(getattr(trader, 'paper_latency_ms_min', 50) or 50)))
+            if hasattr(trader, 'paper_latency_ms_max') and not bool(os.getenv('PAPER_LATENCY_MS_MAX')):
+                trader.paper_latency_ms_max = max(int(getattr(trader, 'paper_latency_ms_min', 30) or 30), int(float(getattr(trader, 'paper_latency_ms_max', 220) or 220)))
+            if hasattr(trader, 'paper_orderbook_limit') and not bool(os.getenv('PAPER_ORDERBOOK_LIMIT')):
+                trader.paper_orderbook_limit = max(20, int(float(getattr(trader, 'paper_orderbook_limit', 20) or 20)))
+            if hasattr(trader, 'paper_partial_fill_prob') and not bool(os.getenv('PAPER_PARTIAL_FILL_PROB')):
+                trader.paper_partial_fill_prob = max(0.08, min(0.35, float(getattr(trader, 'paper_partial_fill_prob', 0.15) or 0.15)))
+            if hasattr(trader, 'paper_min_notional_usd') and not bool(os.getenv('PAPER_MIN_NOTIONAL_USD')):
+                trader.paper_min_notional_usd = max(5.0, float(getattr(trader, 'paper_min_notional_usd', 5.0) or 5.0))
+            print("🎯 Realistic MEXC execution profile active")
+        except Exception as e:
+            print(f"⚠️ Realistic execution profile setup skipped: {e}")
+
+    def _estimate_expected_edge_bps(self, signal: 'AITradingSignal', market_data: Dict) -> float:
+        try:
+            entry = float(getattr(signal, 'entry_price', 0.0) or 0.0)
+            tp = float(getattr(signal, 'take_profit', 0.0) or 0.0)
+            if entry <= 0 or tp <= 0:
+                return 0.0
+            gross_move_bps = abs(tp - entry) / entry * 10000.0
+            conf = max(0.0, min(1.0, float(getattr(signal, 'confidence', 0.0) or 0.0)))
+            confidence_weight = 0.35 + 0.65 * conf
+            gross_edge_bps = gross_move_bps * confidence_weight
+            try:
+                spread_bps = float(market_data.get('spread_bps', 0.0) or 0.0)
+            except Exception:
+                spread_bps = 0.0
+            try:
+                slippage_bps = float(market_data.get('expected_slippage_bps', 0.0) or 0.0)
+            except Exception:
+                slippage_bps = 0.0
+            fee_rate = 0.001
+            try:
+                tr = getattr(self, 'trader', None)
+                if tr is not None:
+                    fee_rate = float(getattr(tr, 'fee_rate', fee_rate) or fee_rate)
+            except Exception:
+                fee_rate = 0.001
+            fee_bps_roundtrip = max(0.0, fee_rate * 2.0 * 10000.0)
+            cost_bps = fee_bps_roundtrip + spread_bps + slippage_bps
+            edge_bps = float(gross_edge_bps - cost_bps)
+            return edge_bps
+        except Exception:
+            return 0.0
+
+    def _passes_microstructure_gate(self, signal: 'AITradingSignal', market_data: Dict) -> Tuple[bool, str]:
+        try:
+            if not bool(getattr(self, 'microstructure_guard_enabled', True)):
+                return True, "Microstructure guard disabled"
+            spread_bps = float(market_data.get('spread_bps', 0.0) or 0.0)
+            liq = float(market_data.get('liquidity_score', 0.5) or 0.5)
+            imbalance = float(market_data.get('orderbook_imbalance', 0.0) or 0.0)
+            action = str(getattr(signal, 'action', 'BUY') or 'BUY').upper()
+            if spread_bps > 90:
+                return False, f"Spread too wide ({spread_bps:.1f} bps)"
+            if liq < 0.12:
+                return False, f"Liquidity too thin ({liq:.2f})"
+            if action == 'BUY' and imbalance < -0.35:
+                return False, f"Orderbook ask pressure ({imbalance:.2f})"
+            if action == 'SELL' and imbalance > 0.35:
+                return False, f"Orderbook bid pressure ({imbalance:.2f})"
+            return True, f"Microstructure OK (spread={spread_bps:.1f}bps liq={liq:.2f} imb={imbalance:.2f})"
+        except Exception:
+            return True, "Microstructure guard fallback"
     
     def _calculate_trade_quality_score(self, signal: 'AITradingSignal', market_data: Dict = None) -> float:
         """🎯 Calculate comprehensive trade quality score (0-100) for 90% win rate filtering"""
@@ -10245,6 +10355,40 @@ class LegendaryCryptoTitanBot:
                         continue
                 else:
                     print(f"   🎯 {signal.symbol}: {reason}")
+
+                edge_bps = self._estimate_expected_edge_bps(signal, md)
+                try:
+                    self.execution_edge_history.append(float(edge_bps))
+                except Exception:
+                    pass
+                if edge_bps < float(getattr(self, 'min_edge_bps', 6.0) or 6.0):
+                    print(f"   🚫 {signal.symbol}: SKIPPED - Net edge too low ({edge_bps:.1f}bps)")
+                    continue
+                ok_micro, micro_reason = self._passes_microstructure_gate(signal, md)
+                try:
+                    self.execution_quality_history.append({
+                        'symbol': signal.symbol,
+                        'edge_bps': float(edge_bps),
+                        'spread_bps': md.get('spread_bps'),
+                        'liq': md.get('liquidity_score'),
+                        'imb': md.get('orderbook_imbalance'),
+                        'ok': bool(ok_micro),
+                    })
+                except Exception:
+                    pass
+                if not ok_micro:
+                    print(f"   🚫 {signal.symbol}: SKIPPED - {micro_reason}")
+                    continue
+                else:
+                    print(f"   📉 {signal.symbol}: {micro_reason} | Net edge {edge_bps:.1f}bps")
+                try:
+                    liq_score = float(md.get('liquidity_score', 0.5) or 0.5)
+                    size_adj = max(0.55, min(1.05, 0.55 + liq_score))
+                    position_size = float(position_size or 0.0) * size_adj
+                    if position_size < float(self.min_trade_size or 0.0):
+                        position_size = float(self.min_trade_size or 0.0)
+                except Exception:
+                    pass
             
             # 🚨 SPOT TRADING ONLY: Convert SELL signals to BUY signals
             # In spot trading, you can only BUY to open positions (no short selling)
@@ -10331,6 +10475,13 @@ class LegendaryCryptoTitanBot:
             else:
                 print(f"   ❌ {signal.symbol}: Trade failed - {result.get('error', 'unknown error')}")
                 await self._learn_from_trade_execution(signal.symbol, signal, result)
+
+        if not bool(getattr(self, 'enable_legacy_legendary_pass', False)):
+            if trades_executed > 0:
+                print(f"🔥 {trades_executed} trades executed this cycle")
+            else:
+                print("😤 No trades executed this cycle")
+            return
 
         # Check positions
         active_positions = len([p for p in current_positions.values() if p.get('quantity', 0) > 0])
