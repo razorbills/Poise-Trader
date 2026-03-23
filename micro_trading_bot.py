@@ -2250,6 +2250,41 @@ class LegendaryCryptoTitanBot:
             self.min_edge_bps = float(os.getenv('MIN_EDGE_BPS', '6.0') or 6.0)
         except Exception:
             self.min_edge_bps = 6.0
+        try:
+            self.universe_top_n = int(float(os.getenv('UNIVERSE_TOP_N', '8') or 8))
+        except Exception:
+            self.universe_top_n = 8
+        self.universe_top_n = max(4, min(20, int(self.universe_top_n)))
+        try:
+            self.universe_reselect_interval_cycles = int(float(os.getenv('UNIVERSE_RESELECT_INTERVAL_CYCLES', '3') or 3))
+        except Exception:
+            self.universe_reselect_interval_cycles = 3
+        self.universe_reselect_interval_cycles = max(1, min(20, int(self.universe_reselect_interval_cycles)))
+        self.universe_last_refresh_cycle = 0
+        try:
+            self.symbol_performance_guard_enabled = str(os.getenv('SYMBOL_PERFORMANCE_GUARD_ENABLED', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.symbol_performance_guard_enabled = True
+        try:
+            self.symbol_guard_min_trades = int(float(os.getenv('SYMBOL_GUARD_MIN_TRADES', '6') or 6))
+        except Exception:
+            self.symbol_guard_min_trades = 6
+        try:
+            self.symbol_guard_min_win_rate = float(os.getenv('SYMBOL_GUARD_MIN_WIN_RATE', '0.34') or 0.34)
+        except Exception:
+            self.symbol_guard_min_win_rate = 0.34
+        try:
+            self.symbol_guard_cooldown_seconds = float(os.getenv('SYMBOL_GUARD_COOLDOWN_SECONDS', '3600') or 3600)
+        except Exception:
+            self.symbol_guard_cooldown_seconds = 3600.0
+        self.symbol_execution_stats = {}
+        self.symbol_disabled_until = {}
+        self.session_profile_name = 'GLOBAL'
+        self.session_confidence_boost = 0.0
+        self.session_quality_bonus = 0.0
+        self.session_size_multiplier = 1.0
+        self.session_max_symbols = self.universe_top_n
+        self.session_min_gap_multiplier = 1.0
         self.execution_edge_history = deque(maxlen=200)
         self.execution_quality_history = deque(maxlen=200)
         self.session_start_ts = float(time.time())
@@ -2276,7 +2311,23 @@ class LegendaryCryptoTitanBot:
         self.capital_mode_state = 'NORMAL'
         self.capital_mode_size_multiplier = 1.0
         self.capital_mode_quality_bonus = 0.0
+        try:
+            self.auto_optimizer_enabled = str(os.getenv('AUTO_OPTIMIZER_ENABLED', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.auto_optimizer_enabled = True
+        try:
+            self.auto_optimizer_interval_seconds = float(os.getenv('AUTO_OPTIMIZER_INTERVAL_SECONDS', str(7 * 24 * 3600)) or (7 * 24 * 3600))
+        except Exception:
+            self.auto_optimizer_interval_seconds = float(7 * 24 * 3600)
+        try:
+            self.auto_optimizer_min_trades = int(float(os.getenv('AUTO_OPTIMIZER_MIN_TRADES', '25') or 25))
+        except Exception:
+            self.auto_optimizer_min_trades = 25
+        self.auto_optimizer_last_ts = 0.0
+        self.auto_optimizer_last_result = {}
+        self.auto_optimizer_profile_path = os.path.join('data', 'auto_optimizer_profile.json')
         self._configure_realistic_execution_profile()
+        self._load_auto_optimizer_profile()
         self.live_chart = None
         
         # Initialize real-time data manager
@@ -3959,6 +4010,107 @@ class LegendaryCryptoTitanBot:
         except Exception:
             return True, "Microstructure guard fallback"
 
+    def _cleanup_symbol_disable_registry(self):
+        try:
+            now_ts = float(time.time())
+            if not isinstance(getattr(self, 'symbol_disabled_until', None), dict):
+                self.symbol_disabled_until = {}
+                return
+            expired = [s for s, ts in self.symbol_disabled_until.items() if float(ts or 0.0) <= now_ts]
+            for s in expired:
+                self.symbol_disabled_until.pop(s, None)
+        except Exception:
+            pass
+
+    def _is_symbol_disabled(self, symbol: str) -> Tuple[bool, float]:
+        try:
+            self._cleanup_symbol_disable_registry()
+            until_ts = float((getattr(self, 'symbol_disabled_until', {}) or {}).get(str(symbol), 0.0) or 0.0)
+            now_ts = float(time.time())
+            if until_ts > now_ts:
+                return True, float(until_ts - now_ts)
+            return False, 0.0
+        except Exception:
+            return False, 0.0
+
+    def _get_session_profile(self, current_hour_utc: int = None) -> Dict[str, Any]:
+        try:
+            h = int(datetime.utcnow().hour if current_hour_utc is None else current_hour_utc)
+        except Exception:
+            h = 12
+        if 12 <= h < 20:
+            return {'name': 'NY_LIQUID', 'confidence_boost': 0.00, 'quality_bonus': 0.0, 'size_mult': 1.00, 'max_symbols': max(self.universe_top_n, 8), 'min_gap_mult': 0.90}
+        if 7 <= h < 12:
+            return {'name': 'EU_OPEN', 'confidence_boost': 0.01, 'quality_bonus': 1.5, 'size_mult': 0.95, 'max_symbols': max(6, self.universe_top_n - 1), 'min_gap_mult': 1.00}
+        if 0 <= h < 7:
+            return {'name': 'ASIA_THIN', 'confidence_boost': 0.03, 'quality_bonus': 3.0, 'size_mult': 0.85, 'max_symbols': max(5, self.universe_top_n - 2), 'min_gap_mult': 1.25}
+        return {'name': 'TRANSITION', 'confidence_boost': 0.02, 'quality_bonus': 2.0, 'size_mult': 0.90, 'max_symbols': max(5, self.universe_top_n - 2), 'min_gap_mult': 1.15}
+
+    def _apply_session_profile(self):
+        try:
+            profile = self._get_session_profile()
+            prev = str(getattr(self, 'session_profile_name', '') or '')
+            self.session_profile_name = str(profile.get('name', 'GLOBAL') or 'GLOBAL')
+            self.session_confidence_boost = float(profile.get('confidence_boost', 0.0) or 0.0)
+            self.session_quality_bonus = float(profile.get('quality_bonus', 0.0) or 0.0)
+            self.session_size_multiplier = float(profile.get('size_mult', 1.0) or 1.0)
+            self.session_max_symbols = int(profile.get('max_symbols', self.universe_top_n) or self.universe_top_n)
+            self.session_min_gap_multiplier = float(profile.get('min_gap_mult', 1.0) or 1.0)
+            if prev != self.session_profile_name:
+                print(f"   🌐 Session Profile: {self.session_profile_name} | size x{self.session_size_multiplier:.2f} | quality +{self.session_quality_bonus:.1f}")
+        except Exception:
+            pass
+
+    async def _refresh_active_symbol_universe(self, cycle: int):
+        try:
+            if int(cycle or 0) > 1 and (int(cycle or 0) - int(getattr(self, 'universe_last_refresh_cycle', 0) or 0)) < int(getattr(self, 'universe_reselect_interval_cycles', 3) or 3):
+                return
+            self._cleanup_symbol_disable_registry()
+            base_symbols = list(getattr(self, 'symbols', []) or [])
+            scored = []
+            for sym in base_symbols[:25]:
+                disabled, _ = self._is_symbol_disabled(sym)
+                if disabled:
+                    continue
+                prices = list((getattr(self, 'price_history', {}) or {}).get(sym, []))
+                last_px = float(prices[-1]) if prices else 0.0
+                momentum = 0.0
+                trend = 0.3
+                if len(prices) >= 6:
+                    try:
+                        momentum = abs((prices[-1] - prices[-4]) / max(1e-9, prices[-4]))
+                    except Exception:
+                        momentum = 0.0
+                    try:
+                        trend = float(self._calculate_trend_strength(sym))
+                    except Exception:
+                        trend = 0.3
+                eq = await self._get_execution_quality_snapshot(sym, last_px, float(getattr(self, 'min_trade_size', 1.0) or 1.0))
+                liq = float((eq or {}).get('liquidity_score', 0.5) or 0.5)
+                spread_bps = float((eq or {}).get('spread_bps', 40.0) or 40.0)
+                spread_score = max(0.0, min(1.0, 1.0 - (spread_bps / 120.0)))
+                perf_stats = (getattr(self, 'symbol_execution_stats', {}) or {}).get(sym, {})
+                trades_n = int(perf_stats.get('trades', 0) or 0)
+                wins_n = int(perf_stats.get('wins', 0) or 0)
+                wr = (wins_n / trades_n) if trades_n > 0 else 0.5
+                perf_boost = (wr - 0.5) * 0.25
+                score = (liq * 0.42) + (spread_score * 0.28) + (min(1.0, trend) * 0.20) + (min(1.0, momentum * 18.0) * 0.10) + perf_boost
+                scored.append((score, sym))
+            if not scored:
+                return
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top_n = int(getattr(self, 'session_max_symbols', self.universe_top_n) or self.universe_top_n)
+            top_n = max(4, min(20, top_n))
+            selected = [s for _, s in scored[:top_n]]
+            if selected:
+                prev_set = set(getattr(self, 'active_symbols', []) or [])
+                self.active_symbols = selected
+                self.universe_last_refresh_cycle = int(cycle or 0)
+                if prev_set != set(selected):
+                    print(f"   🧭 Universe refreshed: {len(selected)} symbols | Top: {', '.join(selected[:5])}")
+        except Exception as e:
+            print(f"   ⚠️ Universe refresh skipped: {e}")
+
     def _update_adaptive_capital_mode(self, current_value: float):
         try:
             base = float(getattr(self, 'daily_start_capital', self.initial_capital) or self.initial_capital or 0.0)
@@ -4042,6 +4194,181 @@ class LegendaryCryptoTitanBot:
             return output
         except Exception:
             return {}
+
+    def _load_auto_optimizer_profile(self):
+        try:
+            path = str(getattr(self, 'auto_optimizer_profile_path', '') or '').strip()
+            if not path:
+                return
+            if not os.path.exists(path):
+                return
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f) or {}
+            if not isinstance(data, dict):
+                return
+            params = data.get('params', {})
+            if not isinstance(params, dict):
+                params = {}
+            if 'min_trade_quality_score' in params:
+                self.min_trade_quality_score = float(params.get('min_trade_quality_score') or self.min_trade_quality_score)
+            if 'min_confidence_for_trade' in params:
+                self.min_confidence_for_trade = float(params.get('min_confidence_for_trade') or self.min_confidence_for_trade)
+            if 'min_edge_bps' in params:
+                self.min_edge_bps = float(params.get('min_edge_bps') or self.min_edge_bps)
+            if 'universe_top_n' in params:
+                self.universe_top_n = int(float(params.get('universe_top_n') or self.universe_top_n))
+            if 'symbol_guard_min_win_rate' in params:
+                self.symbol_guard_min_win_rate = float(params.get('symbol_guard_min_win_rate') or self.symbol_guard_min_win_rate)
+            self.universe_top_n = max(4, min(20, int(self.universe_top_n)))
+            self.min_trade_quality_score = max(50.0, min(92.0, float(self.min_trade_quality_score)))
+            self.min_confidence_for_trade = max(0.20, min(0.90, float(self.min_confidence_for_trade)))
+            self.min_edge_bps = max(3.0, min(40.0, float(self.min_edge_bps)))
+            self.symbol_guard_min_win_rate = max(0.20, min(0.70, float(self.symbol_guard_min_win_rate)))
+            self.auto_optimizer_last_ts = float(data.get('last_optimized_ts', 0.0) or 0.0)
+            self.auto_optimizer_last_result = data.get('last_result', {}) if isinstance(data.get('last_result', {}), dict) else {}
+            print(f"🧠 Auto-optimizer profile loaded | quality≥{self.min_trade_quality_score:.1f} conf≥{self.min_confidence_for_trade:.1%} edge≥{self.min_edge_bps:.1f}bps universe={self.universe_top_n}")
+        except Exception as e:
+            print(f"⚠️ Auto-optimizer profile load skipped: {e}")
+
+    def _save_auto_optimizer_profile(self):
+        try:
+            path = str(getattr(self, 'auto_optimizer_profile_path', '') or '').strip()
+            if not path:
+                return
+            folder = os.path.dirname(path)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            payload = {
+                'saved_at': datetime.now().isoformat(),
+                'last_optimized_ts': float(getattr(self, 'auto_optimizer_last_ts', 0.0) or 0.0),
+                'params': {
+                    'min_trade_quality_score': float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0),
+                    'min_confidence_for_trade': float(getattr(self, 'min_confidence_for_trade', 0.30) or 0.30),
+                    'min_edge_bps': float(getattr(self, 'min_edge_bps', 6.0) or 6.0),
+                    'universe_top_n': int(getattr(self, 'universe_top_n', 8) or 8),
+                    'symbol_guard_min_win_rate': float(getattr(self, 'symbol_guard_min_win_rate', 0.34) or 0.34),
+                },
+                'last_result': getattr(self, 'auto_optimizer_last_result', {}) if isinstance(getattr(self, 'auto_optimizer_last_result', {}), dict) else {},
+            }
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, indent=2)
+        except Exception:
+            pass
+
+    def _run_auto_optimizer(self, force: bool = False) -> Optional[Dict[str, Any]]:
+        try:
+            if not bool(getattr(self, 'auto_optimizer_enabled', True)):
+                return None
+            now_ts = float(time.time())
+            if not bool(force):
+                last_ts = float(getattr(self, 'auto_optimizer_last_ts', 0.0) or 0.0)
+                interval = max(300.0, float(getattr(self, 'auto_optimizer_interval_seconds', float(7 * 24 * 3600)) or float(7 * 24 * 3600)))
+                if last_ts > 0 and (now_ts - last_ts) < interval:
+                    return None
+
+            history = list(getattr(self, 'trade_quality_history', []) or [])
+            if not history:
+                return None
+
+            recent = []
+            lookback_seconds = float(14 * 24 * 3600)
+            for row in reversed(history[-1200:]):
+                if not isinstance(row, dict):
+                    continue
+                ts_str = str(row.get('timestamp', '') or '')
+                ts_val = None
+                try:
+                    ts_val = datetime.fromisoformat(ts_str).timestamp() if ts_str else None
+                except Exception:
+                    ts_val = None
+                if ts_val is not None and (now_ts - ts_val) > lookback_seconds:
+                    continue
+                recent.append(row)
+                if len(recent) >= 300:
+                    break
+            if len(recent) < int(getattr(self, 'auto_optimizer_min_trades', 25) or 25):
+                return None
+
+            pnls = []
+            wins = 0
+            gross_win = 0.0
+            gross_loss = 0.0
+            for r in recent:
+                try:
+                    p = float(r.get('profit_loss', 0.0) or 0.0)
+                except Exception:
+                    p = 0.0
+                pnls.append(p)
+                if p > 0:
+                    wins += 1
+                    gross_win += p
+                elif p < 0:
+                    gross_loss += abs(p)
+            trades_n = len(pnls)
+            if trades_n <= 0:
+                return None
+            win_rate = float(wins) / float(trades_n)
+            avg_pnl = float(sum(pnls) / trades_n)
+            profit_factor = (gross_win / gross_loss) if gross_loss > 1e-9 else (2.0 if gross_win > 0 else 0.0)
+
+            q = float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0)
+            c = float(getattr(self, 'min_confidence_for_trade', 0.30) or 0.30)
+            e = float(getattr(self, 'min_edge_bps', 6.0) or 6.0)
+            u = int(getattr(self, 'universe_top_n', 8) or 8)
+            sgr = float(getattr(self, 'symbol_guard_min_win_rate', 0.34) or 0.34)
+
+            mode = "stable"
+            if win_rate < 0.48 or avg_pnl < 0 or profit_factor < 1.05:
+                mode = "tighten"
+                q += 2.5
+                c += 0.02
+                e += 1.0
+                u -= 1
+                sgr += 0.01
+            elif win_rate > 0.62 and avg_pnl > 0 and profit_factor > 1.20:
+                mode = "expand"
+                q -= 1.2
+                c -= 0.01
+                e -= 0.6
+                u += 1
+                sgr -= 0.005
+
+            q = max(52.0, min(88.0, q))
+            c = max(0.24, min(0.82, c))
+            e = max(4.0, min(30.0, e))
+            u = max(4, min(20, int(u)))
+            sgr = max(0.25, min(0.60, sgr))
+
+            self.min_trade_quality_score = float(q)
+            self.min_confidence_for_trade = float(c)
+            self.min_edge_bps = float(e)
+            self.universe_top_n = int(u)
+            self.symbol_guard_min_win_rate = float(sgr)
+            self.session_max_symbols = min(int(getattr(self, 'session_max_symbols', self.universe_top_n) or self.universe_top_n), int(self.universe_top_n))
+
+            self.auto_optimizer_last_ts = now_ts
+            result = {
+                'optimized_at': datetime.now().isoformat(),
+                'sample_trades': trades_n,
+                'win_rate': win_rate,
+                'avg_pnl': avg_pnl,
+                'profit_factor': profit_factor,
+                'mode': mode,
+                'new_params': {
+                    'min_trade_quality_score': self.min_trade_quality_score,
+                    'min_confidence_for_trade': self.min_confidence_for_trade,
+                    'min_edge_bps': self.min_edge_bps,
+                    'universe_top_n': self.universe_top_n,
+                    'symbol_guard_min_win_rate': self.symbol_guard_min_win_rate,
+                }
+            }
+            self.auto_optimizer_last_result = result
+            self._save_auto_optimizer_profile()
+            print(f"🧠 Auto-optimizer {mode}: WR {win_rate:.1%} | PF {profit_factor:.2f} | quality≥{self.min_trade_quality_score:.1f} conf≥{self.min_confidence_for_trade:.1%} edge≥{self.min_edge_bps:.1f}bps universe={self.universe_top_n}")
+            return result
+        except Exception as e:
+            print(f"⚠️ Auto-optimizer skipped: {e}")
+            return None
     
     def _calculate_trade_quality_score(self, signal: 'AITradingSignal', market_data: Dict = None) -> float:
         """🎯 Calculate comprehensive trade quality score (0-100) for 90% win rate filtering"""
@@ -4242,8 +4569,27 @@ class LegendaryCryptoTitanBot:
             print(f"   ⚠️ Quality score calculation error: {e}")
             return 50.0  # Default moderate score on error
     
-    def _should_take_trade(self, quality_score: float, signal_confidence: float, forced: bool = False) -> Tuple[bool, str]:
+    def _should_take_trade(self, quality_score: float, signal_confidence: float, forced: bool = False, strategy_name: str = "", symbol: str = "") -> Tuple[bool, str]:
         """🎯 PROFESSIONAL TRADER - Quality-focused with mode flexibility"""
+        try:
+            sym = str(symbol or '').strip()
+            if sym:
+                disabled, ttl = self._is_symbol_disabled(sym)
+                if disabled:
+                    return False, f"Symbol cooling down ({ttl:.0f}s)"
+        except Exception:
+            pass
+        try:
+            regime = str(getattr(self, 'current_market_regime', 'UNKNOWN') or 'UNKNOWN').upper()
+            strat_u = str(strategy_name or '').upper()
+            if regime in ['SIDEWAYS', 'CONSOLIDATION', 'RANGING', 'VOLATILE_SIDEWAYS']:
+                if any(k in strat_u for k in ['TREND', 'BREAKOUT']) and (float(quality_score or 0.0) < 78.0 or float(signal_confidence or 0.0) < 0.65):
+                    return False, "Regime/strategy mismatch in range market"
+            if regime in ['TRENDING', 'BULL', 'BEAR', 'BULLISH', 'BEARISH']:
+                if ('MEAN' in strat_u and 'REVERSION' in strat_u) and (float(quality_score or 0.0) < 80.0 or float(signal_confidence or 0.0) < 0.70):
+                    return False, "Regime/strategy mismatch in trend market"
+        except Exception:
+            pass
         # AGGRESSIVE MODE: ACTIVE TRADING - Frequent trades!
         if self.trading_mode == 'AGGRESSIVE':
             import time as _time
@@ -4458,6 +4804,29 @@ class LegendaryCryptoTitanBot:
                             self.strategy_cooldowns[str(strategy)] = until_ts
                         except Exception:
                             pass
+        except Exception:
+            pass
+
+        try:
+            if bool(getattr(self, 'symbol_performance_guard_enabled', True)):
+                if not isinstance(getattr(self, 'symbol_execution_stats', None), dict):
+                    self.symbol_execution_stats = {}
+                s = self.symbol_execution_stats.get(symbol) or {'wins': 0, 'losses': 0, 'trades': 0, 'total_pnl': 0.0}
+                if pnl > 0:
+                    s['wins'] = int(s.get('wins', 0) or 0) + 1
+                else:
+                    s['losses'] = int(s.get('losses', 0) or 0) + 1
+                s['trades'] = int(s.get('trades', 0) or 0) + 1
+                s['total_pnl'] = float(s.get('total_pnl', 0.0) or 0.0) + float(pnl or 0.0)
+                self.symbol_execution_stats[symbol] = s
+                tn = int(s.get('trades', 0) or 0)
+                if tn >= int(getattr(self, 'symbol_guard_min_trades', 6) or 6):
+                    wr = float(s.get('wins', 0) or 0) / max(1, tn)
+                    total_pnl = float(s.get('total_pnl', 0.0) or 0.0)
+                    if wr < float(getattr(self, 'symbol_guard_min_win_rate', 0.34) or 0.34) and total_pnl < 0:
+                        until = float(time.time()) + float(getattr(self, 'symbol_guard_cooldown_seconds', 3600.0) or 3600.0)
+                        self.symbol_disabled_until[str(symbol)] = until
+                        print(f"   🚫 Symbol guard: {symbol} disabled for {int(float(getattr(self, 'symbol_guard_cooldown_seconds', 3600.0) or 3600.0))}s (WR {wr:.1%})")
         except Exception:
             pass
 
@@ -4690,6 +5059,8 @@ class LegendaryCryptoTitanBot:
                 
                 print(f"\n📊 CYCLE {cycle}/{cycles}")
                 print("-" * 40)
+                self._apply_session_profile()
+                await self._refresh_active_symbol_universe(cycle)
                 
                 # Display active positions every cycle
                 await self._display_active_positions()
@@ -4697,7 +5068,7 @@ class LegendaryCryptoTitanBot:
                 # STEP 1: Collect price data
                 print(f"📡 Collecting market data for {len(self.active_symbols)} active markets...")
                 # Use active symbols from market filter (dashboard controlled)
-                symbols_to_track = self.active_symbols[:8]  # Track up to 8 active symbols for efficiency
+                symbols_to_track = self.active_symbols[:max(4, int(getattr(self, 'session_max_symbols', 8) or 8))]
 
                 live_prices_snapshot = {}
                 
@@ -4791,6 +5162,10 @@ class LegendaryCryptoTitanBot:
                 # STEP 2: Manage existing positions (close if TP/SL hit)
                 print("\n🔄 Managing positions...")
                 await self._manage_micro_positions()
+                try:
+                    self._run_auto_optimizer(force=False)
+                except Exception:
+                    pass
                 
                 # STEP 3: Generate signals
                 print("\n🔮 Generating trading signals...")
@@ -5001,6 +5376,14 @@ class LegendaryCryptoTitanBot:
                 print(f"   {streak_emoji} Current Streak: {current_streak:+d}")
                 try:
                     print(f"   🛡️ Capital Mode: {self.capital_mode_state} (size x{float(getattr(self, 'capital_mode_size_multiplier', 1.0) or 1.0):.2f})")
+                except Exception:
+                    pass
+                try:
+                    if bool(getattr(self, 'auto_optimizer_enabled', True)):
+                        last_opt = float(getattr(self, 'auto_optimizer_last_ts', 0.0) or 0.0)
+                        if last_opt > 0:
+                            age_h = (float(time.time()) - last_opt) / 3600.0
+                            print(f"   🧠 Auto-Optimizer: quality≥{float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0):.1f} conf≥{float(getattr(self, 'min_confidence_for_trade', 0.30) or 0.30):.1%} edge≥{float(getattr(self, 'min_edge_bps', 6.0) or 6.0):.1f}bps | last {age_h:.1f}h ago")
                 except Exception:
                     pass
                 try:
@@ -10281,7 +10664,7 @@ class LegendaryCryptoTitanBot:
                 try:
                     quality_score = float(self._calculate_trade_quality_score(s, md) or 0.0)
                     forced_flag = 'FORCED' in str(getattr(s, 'strategy_name', '') or '')
-                    take, reason = self._should_take_trade(quality_score, conf, forced=forced_flag)
+                    take, reason = self._should_take_trade(quality_score, conf, forced=forced_flag, strategy_name=str(getattr(s, 'strategy_name', '') or ''), symbol=str(sym))
                 except Exception:
                     pass
 
@@ -10358,6 +10741,10 @@ class LegendaryCryptoTitanBot:
                         min_gap = 300.0
                 except Exception:
                     pass
+            try:
+                min_gap = float(min_gap or 0.0) * float(getattr(self, 'session_min_gap_multiplier', 1.0) or 1.0)
+            except Exception:
+                pass
             if min_gap > 0 and now_ts - last_ts < min_gap:
                 print(f"   ⏳ Entry throttle: waiting {min_gap - (now_ts - last_ts):.0f}s before next trade")
                 return
@@ -10455,7 +10842,11 @@ class LegendaryCryptoTitanBot:
 
                 quality_score = self._calculate_trade_quality_score(signal, md)
                 forced_flag = 'FORCED' in str(getattr(signal, 'strategy_name', '') or '')
-                should_take, reason = self._should_take_trade(quality_score, signal.confidence, forced=forced_flag)
+                try:
+                    eff_conf = float(signal.confidence or 0.0) + float(getattr(self, 'session_confidence_boost', 0.0) or 0.0)
+                except Exception:
+                    eff_conf = float(getattr(signal, 'confidence', 0.0) or 0.0)
+                should_take, reason = self._should_take_trade(quality_score, eff_conf, forced=forced_flag, strategy_name=str(getattr(signal, 'strategy_name', '') or ''), symbol=str(getattr(signal, 'symbol', '') or ''))
                 
                 if not should_take:
                     try:
@@ -10479,7 +10870,7 @@ class LegendaryCryptoTitanBot:
                 else:
                     print(f"   🎯 {signal.symbol}: {reason}")
                 try:
-                    quality_hard_floor = float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0) + float(getattr(self, 'capital_mode_quality_bonus', 0.0) or 0.0)
+                    quality_hard_floor = float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0) + float(getattr(self, 'capital_mode_quality_bonus', 0.0) or 0.0) + float(getattr(self, 'session_quality_bonus', 0.0) or 0.0)
                     if float(quality_score or 0.0) < quality_hard_floor:
                         print(f"   🚫 {signal.symbol}: SKIPPED - Capital mode quality floor ({quality_score:.1f} < {quality_hard_floor:.1f})")
                         continue
@@ -10516,6 +10907,7 @@ class LegendaryCryptoTitanBot:
                     size_adj = max(0.55, min(1.05, 0.55 + liq_score))
                     position_size = float(position_size or 0.0) * size_adj
                     position_size = float(position_size or 0.0) * float(getattr(self, 'capital_mode_size_multiplier', 1.0) or 1.0)
+                    position_size = float(position_size or 0.0) * float(getattr(self, 'session_size_multiplier', 1.0) or 1.0)
                     if position_size < float(self.min_trade_size or 0.0):
                         position_size = float(self.min_trade_size or 0.0)
                 except Exception:
@@ -10693,7 +11085,7 @@ class LegendaryCryptoTitanBot:
             if getattr(self, 'win_rate_optimizer_enabled', True):
                 quality_score = self._calculate_trade_quality_score(signal, {'price': signal.entry_price})
                 forced_flag = 'FORCED' in str(getattr(signal, 'strategy_name', '') or '')
-                should_take, reason = self._should_take_trade(quality_score, signal.confidence, forced=forced_flag)
+                should_take, reason = self._should_take_trade(quality_score, signal.confidence, forced=forced_flag, strategy_name=str(getattr(signal, 'strategy_name', '') or ''), symbol=str(getattr(signal, 'symbol', '') or ''))
                 
                 if not should_take:
                     print(f"   🚫 {signal.symbol}: LEGENDARY SKIPPED - {reason}")
