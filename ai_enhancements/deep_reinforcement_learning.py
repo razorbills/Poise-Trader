@@ -10,6 +10,7 @@ from collections import deque, defaultdict
 import json
 import os
 import random
+import shutil
 
 
 class NeuralNetwork:
@@ -167,7 +168,23 @@ class DeepReinforcementLearningAI:
     
     def __init__(self, state_size: int = 20, action_size: int = 3, 
                  state_file: str = "deep_rl_state.json"):
-        self.state_file = state_file
+        try:
+            base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+            if base:
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                self.state_file = os.path.join(base, os.path.basename(state_file))
+                try:
+                    if not os.path.exists(self.state_file) and os.path.exists(os.path.basename(self.state_file)):
+                        shutil.copyfile(os.path.basename(self.state_file), self.state_file)
+                except Exception:
+                    pass
+            else:
+                self.state_file = state_file
+        except Exception:
+            self.state_file = state_file
         self.state_size = state_size
         self.action_size = action_size
         

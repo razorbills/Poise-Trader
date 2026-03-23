@@ -9,6 +9,7 @@ from typing import Dict, List
 from collections import deque, defaultdict
 import json
 import os
+import shutil
 
 
 class AdaptiveParameterTuner:
@@ -19,7 +20,23 @@ class AdaptiveParameterTuner:
     """
     
     def __init__(self, tuning_file: str = "parameter_tuning.json"):
-        self.tuning_file = tuning_file
+        try:
+            base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+            if base:
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                self.tuning_file = os.path.join(base, os.path.basename(tuning_file))
+                try:
+                    if not os.path.exists(self.tuning_file) and os.path.exists(os.path.basename(self.tuning_file)):
+                        shutil.copyfile(os.path.basename(self.tuning_file), self.tuning_file)
+                except Exception:
+                    pass
+            else:
+                self.tuning_file = tuning_file
+        except Exception:
+            self.tuning_file = tuning_file
         
         # Current parameters
         self.parameters = {

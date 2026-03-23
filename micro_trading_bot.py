@@ -2022,9 +2022,9 @@ class LegendaryCryptoTitanBot:
 
         if initial_capital is None:
             try:
-                initial_capital = float(os.getenv('INITIAL_CAPITAL', '20.0') or 20.0)
+                initial_capital = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
             except Exception:
-                initial_capital = 20.0
+                initial_capital = 5.0
 
         self.initial_capital = float(initial_capital)
         self.current_capital = float(initial_capital)
@@ -3549,6 +3549,8 @@ class LegendaryCryptoTitanBot:
         if GUI_AVAILABLE:
             self.trading_gui = TradingGUI(self)
             print("🖥️ Interactive trading GUI dashboard initialized!")
+
+        self.apply_micro_account_profile()
         
         print("🏆 LEGENDARY CRYPTO TITAN BOT INITIALIZED 🏆")
         print(f"💎 Channeling the power of crypto legends:")
@@ -3575,6 +3577,29 @@ class LegendaryCryptoTitanBot:
             print(f"      🕵️ Market manipulation detection")
             print(f"      🧠 Psychological opponent modeling")
             print(f"      📈 AI portfolio diversification (15+ assets)")
+
+    def apply_micro_account_profile(self):
+        if float(getattr(self, 'initial_capital', 0.0) or 0.0) > 10.0:
+            return
+        cap = float(getattr(self, 'initial_capital', 0.0) or 0.0)
+        self.min_trade_size = max(0.25, round(cap * 0.05, 2))
+        self.position_size = self.min_trade_size
+        self.max_position_size = max(self.min_trade_size, cap * 0.15)
+        self.max_risk_per_trade = min(float(getattr(self, 'max_risk_per_trade', 0.01) or 0.01), 0.008)
+        self.max_portfolio_risk = min(float(getattr(self, 'max_portfolio_risk', 0.05) or 0.05), 0.03)
+        self.max_daily_drawdown = min(float(getattr(self, 'max_daily_drawdown', 0.20) or 0.20), 0.08)
+        self.max_concurrent_positions = 1
+        self.max_positions = 2
+        self.take_profit = 0.8
+        self.stop_loss = 0.4
+        self.partial_profit_levels = [0.6, 1.0]
+        self.min_seconds_between_entries = max(float(getattr(self, 'min_seconds_between_entries', 180.0) or 180.0), 420.0)
+        self.force_trade_after_seconds = max(float(getattr(self, 'force_trade_after_seconds', 300.0) or 300.0), 900.0)
+        self.mode_config['AGGRESSIVE']['min_confidence'] = max(float(self.mode_config['AGGRESSIVE'].get('min_confidence', 0.10) or 0.10), 0.20)
+        self.mode_config['PRECISION']['min_confidence'] = max(float(self.mode_config['PRECISION'].get('min_confidence', 0.30) or 0.30), 0.35)
+        self.mode_config['AGGRESSIVE']['risk_multiplier'] = min(float(self.mode_config['AGGRESSIVE'].get('risk_multiplier', 1.2) or 1.2), 0.9)
+        self.mode_config['PRECISION']['risk_multiplier'] = min(float(self.mode_config['PRECISION'].get('risk_multiplier', 0.8) or 0.8), 0.7)
+        print(f"🛡️ MICRO CAPITAL PROFILE ACTIVE | Capital=${cap:.2f} | Size=${self.min_trade_size:.2f} | TP={self.take_profit:.2f}% | SL={self.stop_loss:.2f}%")
         
     def _init_cz_strategy(self):
         """Initialize Changpeng Zhao's global vision strategy"""
@@ -12618,6 +12643,8 @@ async def main(legendary_bot):
         legendary_bot.cycle_sleep_override = 10.0
         legendary_bot.win_rate_optimizer_enabled = False
         legendary_bot.force_trade_mode = True
+
+    legendary_bot.apply_micro_account_profile()
 
     # Bot is ready - Dashboard is already running (started earlier)
     print("\n✅ Bot initialized and ready")

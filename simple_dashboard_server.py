@@ -47,9 +47,9 @@ ASSISTANT_STATE_PATH = os.path.join('data', 'assistant_state.json')
 ASSISTANT_STATE_MAX_BYTES = 200_000
 
 try:
-    DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '20.0') or 20.0)
+    DEFAULT_STARTING_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '5.0') or 5.0)
 except Exception:
-    DEFAULT_STARTING_CAPITAL = 20.0
+    DEFAULT_STARTING_CAPITAL = 5.0
 
 @app.route('/')
 def index():
@@ -2360,6 +2360,11 @@ def set_mode():
             bot_instance.min_trade_quality_score = 25.0
             bot_instance.min_confidence_for_trade = 0.30
             print(f"🎯 NORMAL MODE ACTIVATED")
+
+        try:
+            bot_instance.apply_micro_account_profile()
+        except Exception:
+            pass
     
     return jsonify({'success': True, 'mode': mode})
 
@@ -2535,7 +2540,7 @@ def update_markets():
 
 @app.route('/api/reset', methods=['POST'])
 def reset_trading():
-    """Reset trading to fresh $20.00 start"""
+    """Reset trading to fresh $5.00 start"""
     global bot_instance
     
     try:

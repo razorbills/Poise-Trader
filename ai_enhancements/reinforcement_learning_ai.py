@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple
 from collections import deque, defaultdict
 import json
 import os
+import shutil
 
 
 class ReinforcementLearningAI:
@@ -20,7 +21,23 @@ class ReinforcementLearningAI:
     """
     
     def __init__(self, state_file: str = "rl_state.json"):
-        self.state_file = state_file
+        try:
+            base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+            if base:
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                self.state_file = os.path.join(base, os.path.basename(state_file))
+                try:
+                    if not os.path.exists(self.state_file) and os.path.exists(os.path.basename(self.state_file)):
+                        shutil.copyfile(os.path.basename(self.state_file), self.state_file)
+                except Exception:
+                    pass
+            else:
+                self.state_file = state_file
+        except Exception:
+            self.state_file = state_file
         
         # Q-Table: Q[state][action] = expected reward
         self.q_table = defaultdict(lambda: defaultdict(float))

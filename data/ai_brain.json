@@ -1,0 +1,113 @@
+{
+  "version": "3.0",
+  "created": "2025-10-21T11:54:00.000000",
+  "last_updated": "2026-03-18T12:48:13.846986",
+  "total_trades": 4,
+  "total_profit_loss": 0.002653714941070806,
+  "win_rate": 0.5,
+  "sharpe_ratio": 0.0,
+  "learning_sessions": 0,
+  "strategy_performance": {
+    "technical": {
+      "wins": 2,
+      "losses": 2,
+      "total_return": 0.002653714941070806
+    },
+    "sentiment": {
+      "wins": 2,
+      "losses": 2,
+      "total_return": 0.002653714941070806
+    },
+    "momentum": {
+      "wins": 2,
+      "losses": 2,
+      "total_return": 0.002653714941070806
+    },
+    "mean_reversion": {
+      "wins": 0,
+      "losses": 0,
+      "total_return": 0.0
+    },
+    "breakout": {
+      "wins": 0,
+      "losses": 0,
+      "total_return": 0.0
+    }
+  },
+  "market_patterns": {
+    "bull_market": {
+      "trades": 0,
+      "success_rate": 0.6
+    },
+    "bear_market": {
+      "trades": 0,
+      "success_rate": 0.6
+    },
+    "sideways": {
+      "trades": 0,
+      "success_rate": 0.55
+    },
+    "high_volatility": {
+      "trades": 0,
+      "success_rate": 0.65
+    },
+    "low_volatility": {
+      "trades": 4,
+      "success_rate": 1.0
+    }
+  },
+  "symbol_knowledge": {
+    "BTC/USDT": {
+      "trades": 2,
+      "profit_loss": 0.0031732320013138082,
+      "best_strategies": {},
+      "volatility_preference": 0.0,
+      "execution_quality": 0.704755
+    },
+    "ETH/USDT": {
+      "trades": 2,
+      "profit_loss": -0.0005195170602430021,
+      "best_strategies": {},
+      "volatility_preference": 0.0,
+      "execution_quality": 0.67195
+    }
+  },
+  "time_patterns": {
+    "hour_performance": {},
+    "day_performance": {}
+  },
+  "confidence_adjustments": {
+    "high_confidence_accuracy": 0.7,
+    "medium_confidence_accuracy": 0.54756,
+    "low_confidence_accuracy": 0.5
+  },
+  "risk_learnings": {
+    "optimal_position_sizes": {},
+    "stop_loss_effectiveness": {},
+    "take_profit_levels": {}
+  },
+  "recent_trades": [],
+  "ml_performance": {
+    "neural_accuracy": 0.0,
+    "pattern_success": 0.0,
+    "rl_reward": 0.0
+  },
+  "position_tracking": {},
+  "execution_metrics": {
+    "slippage": [],
+    "fill_rate": 1.0,
+    "avg_execution_time": 0.0
+  },
+  "knowledge_sessions": [],
+  "execution_stats": {
+    "total_executions": 4,
+    "successful_executions": 4,
+    "failed_executions": 0,
+    "confidence_vs_success": {
+      "0.5": {
+        "successes": 4,
+        "failures": 0
+      }
+    }
+  }
+}

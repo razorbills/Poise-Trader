@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from collections import deque, defaultdict
 from dataclasses import dataclass, asdict
+import shutil
 
 _IS_RENDER = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
 
@@ -25,6 +26,41 @@ def _file_too_large_for_render(path: str, max_mb: float = 5.0) -> bool:
         return size > float(max_mb) * 1024 * 1024
     except Exception:
         return False
+
+def _resolve_state_path(name: str) -> str:
+    try:
+        base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        if not base:
+            return name
+        try:
+            os.makedirs(base, exist_ok=True)
+        except Exception:
+            pass
+        return os.path.join(base, os.path.basename(name))
+    except Exception:
+        return name
+
+def _migrate_state_if_needed(target_path: str) -> None:
+    try:
+        base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        if not base:
+            return
+        if os.path.exists(target_path):
+            return
+        src = os.path.basename(target_path)
+        if src and os.path.exists(src):
+            try:
+                parent = os.path.dirname(target_path)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+            except Exception:
+                pass
+            try:
+                shutil.copyfile(src, target_path)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 @dataclass
 class TradeLesson:
@@ -59,8 +95,19 @@ class UltraAIOptimizer:
     """Ultra-advanced AI optimizer for 90% win rate"""
     
     def __init__(self):
-        self.learning_file = "ultra_ai_learning.json"
-        self.winning_patterns_file = "winning_patterns.json"
+        try:
+            self.learning_file = _resolve_state_path("ultra_ai_learning.json")
+        except Exception:
+            self.learning_file = "ultra_ai_learning.json"
+        try:
+            self.winning_patterns_file = _resolve_state_path("winning_patterns.json")
+        except Exception:
+            self.winning_patterns_file = "winning_patterns.json"
+        try:
+            _migrate_state_if_needed(self.learning_file)
+            _migrate_state_if_needed(self.winning_patterns_file)
+        except Exception:
+            pass
         
         # Performance tracking
         self.recent_trades = deque(maxlen=100)

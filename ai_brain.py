@@ -13,6 +13,7 @@ from typing import Dict, List, Any, Tuple
 from collections import defaultdict, deque
 from ml_components import neural_predictor, rl_optimizer, pattern_engine, TradingSignalML
 from ultra_ai_optimizer import UltraAIOptimizer
+import shutil
 
 _IS_RENDER = bool(os.getenv('RENDER_EXTERNAL_URL') or os.getenv('RENDER_SERVICE_NAME'))
 
@@ -28,12 +29,58 @@ def _file_too_large_for_render(path: str, max_mb: float = 5.0) -> bool:
     except Exception:
         return False
 
+def _resolve_state_path(name: str) -> str:
+    try:
+        base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        if not base:
+            return name
+        try:
+            os.makedirs(base, exist_ok=True)
+        except Exception:
+            pass
+        return os.path.join(base, os.path.basename(name))
+    except Exception:
+        return name
+
+def _migrate_state_if_needed(target_path: str) -> None:
+    try:
+        base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        if not base:
+            return
+        if os.path.exists(target_path):
+            return
+        src = os.path.basename(target_path)
+        if src and os.path.exists(src):
+            try:
+                parent = os.path.dirname(target_path)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+            except Exception:
+                pass
+            try:
+                shutil.copyfile(src, target_path)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 class AIBrain:
     """Persistent AI brain that learns and remembers across sessions"""
     
     def __init__(self, brain_file: str = "ai_brain.json"):
-        self.brain_file = brain_file
-        self.backup_file = "ai_brain_backup.json"
+        try:
+            self.brain_file = _resolve_state_path(brain_file)
+        except Exception:
+            self.brain_file = brain_file
+        try:
+            self.backup_file = _resolve_state_path("ai_brain_backup.json")
+        except Exception:
+            self.backup_file = "ai_brain_backup.json"
+        try:
+            _migrate_state_if_needed(self.brain_file)
+            _migrate_state_if_needed(self.backup_file)
+        except Exception:
+            pass
 
         try:
             self.learning_min_seconds_between_updates = float(os.getenv('AI_LEARNING_MIN_SECONDS_BETWEEN_UPDATES', '0') or 0)

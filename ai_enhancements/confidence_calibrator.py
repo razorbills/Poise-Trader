@@ -9,6 +9,7 @@ from typing import Dict, List
 from collections import defaultdict, deque
 import json
 import os
+import shutil
 
 
 class ConfidenceCalibratorAI:
@@ -20,7 +21,23 @@ class ConfidenceCalibratorAI:
     """
     
     def __init__(self, calibration_file: str = "confidence_calibration.json"):
-        self.calibration_file = calibration_file
+        try:
+            base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+            if base:
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                self.calibration_file = os.path.join(base, os.path.basename(calibration_file))
+                try:
+                    if not os.path.exists(self.calibration_file) and os.path.exists(os.path.basename(self.calibration_file)):
+                        shutil.copyfile(os.path.basename(self.calibration_file), self.calibration_file)
+                except Exception:
+                    pass
+            else:
+                self.calibration_file = calibration_file
+        except Exception:
+            self.calibration_file = calibration_file
         
         # Track actual win rates per confidence bucket
         self.confidence_buckets = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total': 0})

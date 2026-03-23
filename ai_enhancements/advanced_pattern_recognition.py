@@ -11,6 +11,7 @@ from scipy.stats import linregress
 from collections import deque
 import json
 import os
+import shutil
 
 
 class AdvancedPatternRecognitionAI:
@@ -28,7 +29,23 @@ class AdvancedPatternRecognitionAI:
     """
     
     def __init__(self, learning_file: str = "pattern_learning.json"):
-        self.learning_file = learning_file
+        try:
+            base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+            if base:
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                self.learning_file = os.path.join(base, os.path.basename(learning_file))
+                try:
+                    if not os.path.exists(self.learning_file) and os.path.exists(os.path.basename(self.learning_file)):
+                        shutil.copyfile(os.path.basename(self.learning_file), self.learning_file)
+                except Exception:
+                    pass
+            else:
+                self.learning_file = learning_file
+        except Exception:
+            self.learning_file = learning_file
         
         # Extended pattern win rates (from historical data + learning)
         self.pattern_stats = self._initialize_pattern_stats()

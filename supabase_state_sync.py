@@ -53,7 +53,7 @@ class SupabaseStateSync:
         keys_env = str(
             os.getenv(
                 "STATE_SYNC_KEYS",
-                "./ai_brain.json,./ai_brain_backup.json,./shared_ai_knowledge.json,./ultra_ai_learning.json,./winning_patterns.json,./trading_state.json,data/trading_state.json,data/learned_knowledge.json,data/strategy_learning_data.pkl,./rl_state.json,./deep_rl_state.json,./confidence_calibration.json,./parameter_tuning.json",
+                "./ai_brain.json,./ai_brain_backup.json,./shared_ai_knowledge.json,./ultra_ai_learning.json,./winning_patterns.json,./pattern_learning.json,./trading_state.json,./rl_state.json,./deep_rl_state.json,./confidence_calibration.json,./parameter_tuning.json,data/ai_brain.json,data/ai_brain_backup.json,data/shared_ai_knowledge.json,data/ultra_ai_learning.json,data/winning_patterns.json,data/pattern_learning.json,data/trading_state.json,data/learned_knowledge.json,data/strategy_learning_data.pkl,data/rl_state.json,data/deep_rl_state.json,data/confidence_calibration.json,data/parameter_tuning.json",
             )
             or ""
         )

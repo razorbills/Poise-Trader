@@ -101,12 +101,29 @@ import json
 import os
 from datetime import datetime
 import logging
+import shutil
 
 class CrossBotLearningSystem:
     """Cross-bot learning system for shared AI knowledge"""
     
     def __init__(self, shared_brain_file: str = "shared_ai_knowledge.json"):
-        self.shared_brain_file = shared_brain_file
+        try:
+            base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+            if base:
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                self.shared_brain_file = os.path.join(base, os.path.basename(shared_brain_file))
+                try:
+                    if not os.path.exists(self.shared_brain_file) and os.path.exists(os.path.basename(self.shared_brain_file)):
+                        shutil.copyfile(os.path.basename(self.shared_brain_file), self.shared_brain_file)
+                except Exception:
+                    pass
+            else:
+                self.shared_brain_file = shared_brain_file
+        except Exception:
+            self.shared_brain_file = shared_brain_file
         self.load_shared_knowledge()
         
     def load_shared_knowledge(self):
