@@ -2252,6 +2252,30 @@ class LegendaryCryptoTitanBot:
             self.min_edge_bps = 6.0
         self.execution_edge_history = deque(maxlen=200)
         self.execution_quality_history = deque(maxlen=200)
+        self.session_start_ts = float(time.time())
+        try:
+            self.profit_lock_enabled = str(os.getenv('PROFIT_LOCK_ENABLED', '1') or '1').strip().lower() in ['1', 'true', 'yes', 'on']
+        except Exception:
+            self.profit_lock_enabled = True
+        try:
+            self.profit_lock_trigger_pct = float(os.getenv('PROFIT_LOCK_TRIGGER_PCT', '3.0') or 3.0)
+        except Exception:
+            self.profit_lock_trigger_pct = 3.0
+        try:
+            self.drawdown_defense_trigger_pct = float(os.getenv('DRAWDOWN_DEFENSE_TRIGGER_PCT', '2.5') or 2.5)
+        except Exception:
+            self.drawdown_defense_trigger_pct = 2.5
+        try:
+            self.profit_lock_size_scale = float(os.getenv('PROFIT_LOCK_SIZE_SCALE', '0.75') or 0.75)
+        except Exception:
+            self.profit_lock_size_scale = 0.75
+        try:
+            self.drawdown_defense_size_scale = float(os.getenv('DRAWDOWN_DEFENSE_SIZE_SCALE', '0.65') or 0.65)
+        except Exception:
+            self.drawdown_defense_size_scale = 0.65
+        self.capital_mode_state = 'NORMAL'
+        self.capital_mode_size_multiplier = 1.0
+        self.capital_mode_quality_bonus = 0.0
         self._configure_realistic_execution_profile()
         self.live_chart = None
         
@@ -3934,6 +3958,90 @@ class LegendaryCryptoTitanBot:
             return True, f"Microstructure OK (spread={spread_bps:.1f}bps liq={liq:.2f} imb={imbalance:.2f})"
         except Exception:
             return True, "Microstructure guard fallback"
+
+    def _update_adaptive_capital_mode(self, current_value: float):
+        try:
+            base = float(getattr(self, 'daily_start_capital', self.initial_capital) or self.initial_capital or 0.0)
+            if base <= 0:
+                return
+            pnl_pct = ((float(current_value or 0.0) / base) - 1.0) * 100.0
+            prev_state = str(getattr(self, 'capital_mode_state', 'NORMAL') or 'NORMAL')
+            state = 'NORMAL'
+            size_mult = 1.0
+            quality_bonus = 0.0
+            if bool(getattr(self, 'profit_lock_enabled', True)) and pnl_pct >= float(getattr(self, 'profit_lock_trigger_pct', 3.0) or 3.0):
+                state = 'PROTECT_PROFITS'
+                size_mult = max(0.45, min(1.0, float(getattr(self, 'profit_lock_size_scale', 0.75) or 0.75)))
+                quality_bonus = 4.0
+            elif pnl_pct <= -abs(float(getattr(self, 'drawdown_defense_trigger_pct', 2.5) or 2.5)):
+                state = 'DRAWDOWN_DEFENSE'
+                size_mult = max(0.35, min(1.0, float(getattr(self, 'drawdown_defense_size_scale', 0.65) or 0.65)))
+                quality_bonus = 6.0
+            self.capital_mode_state = state
+            self.capital_mode_size_multiplier = float(size_mult)
+            self.capital_mode_quality_bonus = float(quality_bonus)
+            if state != prev_state:
+                print(f"   🛡️ Capital Mode: {state} | size x{size_mult:.2f} | quality +{quality_bonus:.1f}")
+        except Exception:
+            pass
+
+    def _estimate_growth_timelines(self, current_value: float = None, target_values: List[float] = None) -> Dict[str, Any]:
+        try:
+            now = float(time.time())
+            current = float(current_value if current_value is not None else getattr(self, 'current_capital', self.initial_capital) or self.initial_capital)
+            current = max(0.01, current)
+            initial = max(0.01, float(getattr(self, 'initial_capital', current) or current))
+            elapsed_days = max((now - float(getattr(self, 'session_start_ts', now) or now)) / 86400.0, 1.0 / 24.0)
+            observed_daily = 0.0
+            try:
+                if current > 0 and initial > 0:
+                    observed_daily = (current / initial) ** (1.0 / elapsed_days) - 1.0
+            except Exception:
+                observed_daily = 0.0
+            conservative_r = 0.008
+            base_r = 0.02
+            aggressive_r = 0.04
+            if observed_daily > 0:
+                base_r = max(0.006, min(0.08, (base_r + observed_daily) / 2.0))
+                conservative_r = max(0.004, min(base_r * 0.6, 0.04))
+                aggressive_r = max(base_r * 1.6, 0.03)
+                aggressive_r = min(0.15, aggressive_r)
+            targets = target_values or [100.0, 1000.0]
+
+            def _days_needed(start_value: float, target_value: float, daily_rate: float) -> Optional[float]:
+                if daily_rate <= 0 or target_value <= start_value:
+                    return None
+                try:
+                    import math
+                    return float(math.log(target_value / start_value) / math.log(1.0 + daily_rate))
+                except Exception:
+                    return None
+
+            scenarios = {
+                'conservative': conservative_r,
+                'base': base_r,
+                'aggressive': aggressive_r,
+            }
+            output = {
+                'current_value': current,
+                'observed_daily_rate': observed_daily,
+                'assumptions': scenarios,
+                'targets': {}
+            }
+            for t in targets:
+                tv = float(t or 0.0)
+                if tv <= 0:
+                    continue
+                output['targets'][tv] = {}
+                for name, rate in scenarios.items():
+                    days = _days_needed(current, tv, rate)
+                    output['targets'][tv][name] = {
+                        'days': days,
+                        'months': (days / 30.0) if days is not None else None
+                    }
+            return output
+        except Exception:
+            return {}
     
     def _calculate_trade_quality_score(self, signal: 'AITradingSignal', market_data: Dict = None) -> float:
         """🎯 Calculate comprehensive trade quality score (0-100) for 90% win rate filtering"""
@@ -4846,6 +4954,7 @@ class LegendaryCryptoTitanBot:
                 current_value = portfolio.get('total_value', self.current_capital)
                 pnl = current_value - self.initial_capital
                 pnl_pct = (pnl / self.initial_capital) * 100 if self.initial_capital > 0 else 0
+                self._update_adaptive_capital_mode(current_value)
 
                 try:
                     if getattr(self, 'risk_engine', None) is not None:
@@ -4890,6 +4999,19 @@ class LegendaryCryptoTitanBot:
                 print(f"   📊 Total Trades: {self.total_completed_trades}")
                 print(f"   📍 Active Positions: {active_pos_count} {f'({', '.join(active_pos_list)})' if active_pos_list else ''}")
                 print(f"   {streak_emoji} Current Streak: {current_streak:+d}")
+                try:
+                    print(f"   🛡️ Capital Mode: {self.capital_mode_state} (size x{float(getattr(self, 'capital_mode_size_multiplier', 1.0) or 1.0):.2f})")
+                except Exception:
+                    pass
+                try:
+                    if int(cycle) % 20 == 0:
+                        timeline = self._estimate_growth_timelines(current_value=current_value, target_values=[100.0, 1000.0])
+                        t100 = timeline.get('targets', {}).get(100.0, {}).get('base', {}).get('days')
+                        t1000 = timeline.get('targets', {}).get(1000.0, {}).get('base', {}).get('days')
+                        if t100 is not None and t1000 is not None:
+                            print(f"   ⏱️ Base Projection: $100 in ~{t100:.0f} days | $1000 in ~{t1000:.0f} days")
+                except Exception:
+                    pass
                 
                 # STEP 6: Update dashboard metrics
                 if WEB_DASHBOARD_AVAILABLE and real_time_monitor:
@@ -10327,6 +10449,7 @@ class LegendaryCryptoTitanBot:
                         md['liquidity_score'] = eq.get('liquidity_score')
                         md['expected_slippage_bps'] = eq.get('expected_slippage_bps')
                         md['book_depth_usd'] = eq.get('book_depth_usd')
+                        md['orderbook_imbalance'] = eq.get('orderbook_imbalance')
                 except Exception:
                     pass
 
@@ -10355,6 +10478,13 @@ class LegendaryCryptoTitanBot:
                         continue
                 else:
                     print(f"   🎯 {signal.symbol}: {reason}")
+                try:
+                    quality_hard_floor = float(getattr(self, 'min_trade_quality_score', 55.0) or 55.0) + float(getattr(self, 'capital_mode_quality_bonus', 0.0) or 0.0)
+                    if float(quality_score or 0.0) < quality_hard_floor:
+                        print(f"   🚫 {signal.symbol}: SKIPPED - Capital mode quality floor ({quality_score:.1f} < {quality_hard_floor:.1f})")
+                        continue
+                except Exception:
+                    pass
 
                 edge_bps = self._estimate_expected_edge_bps(signal, md)
                 try:
@@ -10385,6 +10515,7 @@ class LegendaryCryptoTitanBot:
                     liq_score = float(md.get('liquidity_score', 0.5) or 0.5)
                     size_adj = max(0.55, min(1.05, 0.55 + liq_score))
                     position_size = float(position_size or 0.0) * size_adj
+                    position_size = float(position_size or 0.0) * float(getattr(self, 'capital_mode_size_multiplier', 1.0) or 1.0)
                     if position_size < float(self.min_trade_size or 0.0):
                         position_size = float(self.min_trade_size or 0.0)
                 except Exception:
