@@ -5000,11 +5000,21 @@ class LegendaryCryptoTitanBot:
             
             print("   ✅ Continuous learning activated!")
         
-        # Main trading loop - checks bot_running flag each cycle
+        self.auto_reset_min_balance = float(getattr(self, 'auto_reset_min_balance', 5.0) or 5.0)
+        infinite = False
+        try:
+            infinite = not cycles or int(cycles) <= 0
+        except Exception:
+            infinite = True
+        total_cycles_label = cycles if (not infinite and cycles is not None) else '∞'
+        cycle = 0
         waiting_printed = False
         last_pause_heartbeat_ts = 0.0
         last_safety_heartbeat_ts = 0.0
-        for cycle in range(1, cycles + 1):
+        while True:
+            cycle = cycle + 1
+            if not infinite and cycles and cycle > int(cycles):
+                break
             try:
                 # Check if bot should be running (controlled by dashboard)
                 if not self.bot_running:
@@ -5057,7 +5067,7 @@ class LegendaryCryptoTitanBot:
                 except Exception:
                     pass
                 
-                print(f"\n📊 CYCLE {cycle}/{cycles}")
+                print(f"\n📊 CYCLE {cycle}/{total_cycles_label}")
                 print("-" * 40)
                 self._apply_session_profile()
                 await self._refresh_active_symbol_universe(cycle)
@@ -5339,6 +5349,11 @@ class LegendaryCryptoTitanBot:
                 
                 # UPDATE CURRENT CAPITAL FOR DASHBOARD
                 self.current_capital = current_value
+                
+                try:
+                    await self._auto_recharge_if_needed(portfolio)
+                except Exception:
+                    pass
 
                 try:
                     rs = None
@@ -8995,6 +9010,77 @@ class LegendaryCryptoTitanBot:
             
         except Exception as e:
             pass  # Silent fail - don't spam logs
+    
+    async def _auto_recharge_if_needed(self, portfolio: Dict):
+        try:
+            min_balance = float(getattr(self, 'auto_reset_min_balance', 5.0) or 5.0)
+        except Exception:
+            min_balance = 5.0
+        try:
+            total_value = float(portfolio.get('total_value', 0) or 0.0)
+        except Exception:
+            total_value = 0.0
+        try:
+            cash_value = float(portfolio.get('cash', 0) or 0.0)
+        except Exception:
+            cash_value = 0.0
+        if total_value < min_balance or cash_value < min_balance:
+            try:
+                tb = getattr(self, 'trader', None)
+                if tb is not None:
+                    try:
+                        if hasattr(tb, 'positions') and isinstance(tb.positions, dict):
+                            tb.positions = {}
+                    except Exception:
+                        pass
+                    try:
+                        tb.cash_balance = float(min_balance)
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(tb, 'initial_capital'):
+                            tb.initial_capital = float(min_balance)
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(tb, '_save_state'):
+                            tb._save_state()
+                    except Exception:
+                        pass
+                try:
+                    self.initial_capital = float(min_balance)
+                except Exception:
+                    pass
+                try:
+                    self.current_capital = float(min_balance)
+                except Exception:
+                    pass
+                try:
+                    self.daily_start_capital = float(min_balance)
+                except Exception:
+                    pass
+                try:
+                    self.daily_pnl = 0.0
+                except Exception:
+                    pass
+                try:
+                    if isinstance(getattr(self, 'active_signals', None), dict):
+                        self.active_signals.clear()
+                except Exception:
+                    pass
+                try:
+                    if isinstance(getattr(self, 'position_cycles', None), dict):
+                        self.position_cycles.clear()
+                except Exception:
+                    pass
+                try:
+                    if isinstance(getattr(self, 'position_entry_time', None), dict):
+                        self.position_entry_time.clear()
+                except Exception:
+                    pass
+                print(f"\n🔄 Balance reset to ${min_balance:.2f} to continue trading")
+            except Exception:
+                pass
     
     def _generate_enhanced_micro_signal(self, symbol: str, strategy: TradingStrategy, 
                                        current_price: float, technical_indicators: Dict,
@@ -13421,7 +13507,7 @@ async def main(legendary_bot):
         print("="*70 + "\n")
         
         # Run infinite cycles - dashboard controls when to actually trade
-        await legendary_bot.run_micro_trading_cycle(cycles=999999)
+        await legendary_bot.run_micro_trading_cycle(cycles=0)
         
         # Keep charts open
         if PLOTTING_AVAILABLE and legendary_bot.live_chart:
