@@ -240,8 +240,19 @@ def get_ai_brain_status():
     import os
     
     try:
-        brain_file = 'ai_brain.json'
-        if not os.path.exists(brain_file):
+        brain_file = None
+        base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        if base:
+            p = os.path.join(base, 'ai_brain.json')
+            if os.path.exists(p):
+                brain_file = p
+        if not brain_file:
+            p = os.path.join('data', 'ai_brain.json')
+            if os.path.exists(p):
+                brain_file = p
+        if not brain_file and os.path.exists('ai_brain.json'):
+            brain_file = 'ai_brain.json'
+        if not brain_file:
             return jsonify({'error': 'AI brain not found', 'total_trades': 0})
         
         with open(brain_file, 'r') as f:

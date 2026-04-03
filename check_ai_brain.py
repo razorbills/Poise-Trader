@@ -7,12 +7,27 @@ import json
 import os
 from datetime import datetime
 
+def _resolve_brain_path():
+    base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+    if base:
+        p = os.path.join(base, 'ai_brain.json')
+        if os.path.exists(p):
+            return p
+    try:
+        p = os.path.join('data', 'ai_brain.json')
+        if os.path.exists(p):
+            return p
+    except Exception:
+        pass
+    if os.path.exists('ai_brain.json'):
+        return 'ai_brain.json'
+    return None
+
+
 def check_ai_brain():
     """Display current AI brain learning status"""
-    
-    brain_file = "ai_brain.json"
-    
-    if not os.path.exists(brain_file):
+    brain_file = _resolve_brain_path()
+    if not brain_file:
         print("❌ AI brain file not found!")
         return
     
@@ -23,6 +38,7 @@ def check_ai_brain():
         print("\n" + "="*80)
         print("🧠 AI BRAIN STATUS REPORT")
         print("="*80)
+        print(f"\nSource: {brain_file}")
         
         print(f"\n📊 OVERALL STATISTICS:")
         print(f"   • Total Trades Learned: {brain.get('total_trades', 0)}")

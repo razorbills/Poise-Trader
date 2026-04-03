@@ -30,6 +30,7 @@ import asyncio
 import numpy as np
 import json
 import os
+import shutil
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 from collections import deque
@@ -614,7 +615,34 @@ class CrossBotLearningSystem:
     """Cross-bot learning system for shared AI knowledge"""
     
     def __init__(self, shared_brain_file: str = "shared_ai_knowledge.json"):
-        self.shared_brain_file = shared_brain_file
+        try:
+            base_env = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+            base = base_env
+            if not base:
+                try:
+                    if os.path.isdir('/var/data'):
+                        base = '/var/data'
+                except Exception:
+                    base = ''
+            if not base:
+                try:
+                    os.makedirs('data', exist_ok=True)
+                except Exception:
+                    pass
+                self.shared_brain_file = os.path.join('data', os.path.basename(shared_brain_file))
+            else:
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                self.shared_brain_file = os.path.join(base, os.path.basename(shared_brain_file))
+            try:
+                if not os.path.exists(self.shared_brain_file) and os.path.exists(os.path.basename(self.shared_brain_file)):
+                    shutil.copyfile(os.path.basename(self.shared_brain_file), self.shared_brain_file)
+            except Exception:
+                pass
+        except Exception:
+            self.shared_brain_file = shared_brain_file
         self.load_shared_knowledge()
         
     def load_shared_knowledge(self):
@@ -683,6 +711,12 @@ class CrossBotLearningSystem:
     def save_shared_knowledge(self):
         """Save shared knowledge to file"""
         try:
+            try:
+                parent = os.path.dirname(self.shared_brain_file)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+            except Exception:
+                pass
             with open(self.shared_brain_file, 'w') as f:
                 json.dump(self.shared_knowledge, f, indent=2)
         except Exception as e:

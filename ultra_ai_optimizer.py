@@ -29,36 +29,57 @@ def _file_too_large_for_render(path: str, max_mb: float = 5.0) -> bool:
 
 def _resolve_state_path(name: str) -> str:
     try:
-        base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        base_env = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        base = base_env
         if not base:
-            return name
+            try:
+                if os.path.isdir('/var/data'):
+                    base = '/var/data'
+            except Exception:
+                base = ''
+        if not base:
+            try:
+                os.makedirs('data', exist_ok=True)
+            except Exception:
+                pass
+            return os.path.join('data', os.path.basename(name))
         try:
             os.makedirs(base, exist_ok=True)
         except Exception:
             pass
         return os.path.join(base, os.path.basename(name))
     except Exception:
-        return name
+        try:
+            os.makedirs('data', exist_ok=True)
+        except Exception:
+            pass
+        return os.path.join('data', os.path.basename(name))
 
 def _migrate_state_if_needed(target_path: str) -> None:
     try:
         base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
         if not base:
-            return
-        if os.path.exists(target_path):
-            return
+            try:
+                if os.path.isdir('/var/data'):
+                    base = '/var/data'
+            except Exception:
+                base = ''
+            if not base:
+                base = 'data'
+        exists_target = os.path.exists(target_path)
         src = os.path.basename(target_path)
         if src and os.path.exists(src):
-            try:
-                parent = os.path.dirname(target_path)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-            except Exception:
-                pass
-            try:
-                shutil.copyfile(src, target_path)
-            except Exception:
-                pass
+            if not exists_target:
+                try:
+                    parent = os.path.dirname(target_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                except Exception:
+                    pass
+                try:
+                    shutil.copyfile(src, target_path)
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -522,6 +543,12 @@ class UltraAIOptimizer:
     def save_learning_data(self):
         """Save all learning data to file"""
         try:
+            try:
+                parent = os.path.dirname(self.learning_file)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+            except Exception:
+                pass
             learning_data = {
                 'last_updated': datetime.now().isoformat(),
                 'current_win_rate': self.current_win_rate,
@@ -543,6 +570,12 @@ class UltraAIOptimizer:
                 'patterns': {k: asdict(v) for k, v in self.winning_patterns.items()},
                 'last_updated': datetime.now().isoformat()
             }
+            try:
+                parent2 = os.path.dirname(self.winning_patterns_file)
+                if parent2:
+                    os.makedirs(parent2, exist_ok=True)
+            except Exception:
+                pass
             
             with open(self.winning_patterns_file, 'w') as f:
                 json.dump(patterns_data, f, indent=2)

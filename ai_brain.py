@@ -31,36 +31,82 @@ def _file_too_large_for_render(path: str, max_mb: float = 5.0) -> bool:
 
 def _resolve_state_path(name: str) -> str:
     try:
-        base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        base_env = str(os.getenv('AI_STATE_DIR', '') or '').strip()
+        base = base_env
         if not base:
-            return name
+            try:
+                if os.path.isdir('/var/data'):
+                    base = '/var/data'
+            except Exception:
+                base = ''
+        if not base:
+            try:
+                os.makedirs('data', exist_ok=True)
+            except Exception:
+                pass
+            return os.path.join('data', os.path.basename(name))
         try:
             os.makedirs(base, exist_ok=True)
         except Exception:
             pass
         return os.path.join(base, os.path.basename(name))
     except Exception:
-        return name
+        try:
+            os.makedirs('data', exist_ok=True)
+        except Exception:
+            pass
+        return os.path.join('data', os.path.basename(name))
 
 def _migrate_state_if_needed(target_path: str) -> None:
     try:
         base = str(os.getenv('AI_STATE_DIR', '') or '').strip()
         if not base:
-            return
-        if os.path.exists(target_path):
-            return
+            try:
+                if os.path.isdir('/var/data'):
+                    base = '/var/data'
+            except Exception:
+                base = ''
+            if not base:
+                base = 'data'
+        exists_target = os.path.exists(target_path)
         src = os.path.basename(target_path)
         if src and os.path.exists(src):
-            try:
-                parent = os.path.dirname(target_path)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-            except Exception:
-                pass
-            try:
-                shutil.copyfile(src, target_path)
-            except Exception:
-                pass
+            if not exists_target:
+                try:
+                    parent = os.path.dirname(target_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                except Exception:
+                    pass
+                try:
+                    shutil.copyfile(src, target_path)
+                except Exception:
+                    pass
+            else:
+                try:
+                    with open(src, 'r') as f:
+                        src_obj = json.load(f)
+                except Exception:
+                    src_obj = {}
+                try:
+                    with open(target_path, 'r') as f:
+                        tgt_obj = json.load(f)
+                except Exception:
+                    tgt_obj = {}
+                try:
+                    src_tr = int((src_obj or {}).get('total_trades', 0) or 0)
+                except Exception:
+                    src_tr = 0
+                try:
+                    tgt_tr = int((tgt_obj or {}).get('total_trades', 0) or 0)
+                except Exception:
+                    tgt_tr = 0
+                if src_tr > tgt_tr:
+                    try:
+                        with open(target_path, 'w') as f:
+                            json.dump(src_obj, f, indent=2)
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -274,6 +320,45 @@ class AIBrain:
                 print(f"   📈 Win Rate: {self.brain.get('win_rate', 0):.1%}")
                 print(f"   🤖 ML Accuracy: {self.brain.get('ml_performance', {}).get('neural_accuracy', 0):.1%}")
                 
+                try:
+                    best = dict(self.brain)
+                    best_tr = int(best.get('total_trades', 0) or 0)
+                    candidates = []
+                    try:
+                        candidates.append(self.backup_file)
+                        candidates.append(os.path.join(os.path.dirname(self.brain_file), 'ai_brain_old_backup.json'))
+                    except Exception:
+                        pass
+                    candidates.extend([
+                        'ai_brain_backup.json',
+                        'ai_brain_old_backup.json',
+                        os.path.join('data', 'ai_brain_backup.json'),
+                        os.path.join('data', 'ai_brain_old_backup.json'),
+                    ])
+                    for path in candidates:
+                        try:
+                            if not path or not os.path.exists(path):
+                                continue
+                            with open(path, 'r') as f:
+                                obj = json.load(f)
+                            tr = int((obj or {}).get('total_trades', 0) or 0)
+                            if tr > best_tr:
+                                best = obj
+                                best_tr = tr
+                        except Exception:
+                            continue
+                    if best_tr > int(self.brain.get('total_trades', 0) or 0):
+                        try:
+                            self._merge_brain_data(best if isinstance(best, dict) else {})
+                        except Exception:
+                            self.brain = best
+                        try:
+                            self.save_brain()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                
                 # Check if we have winning patterns
                 if hasattr(self.ultra_optimizer, 'winning_patterns') and self.ultra_optimizer.winning_patterns:
                     print(f"   🎯 Winning Patterns: {len(self.ultra_optimizer.winning_patterns)}")
@@ -308,6 +393,13 @@ class AIBrain:
         """Save AI brain to file"""
         try:
             self.brain['last_updated'] = datetime.now().isoformat()
+            
+            try:
+                parent = os.path.dirname(self.brain_file)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+            except Exception:
+                pass
             
             # Create backup
             if os.path.exists(self.brain_file):
