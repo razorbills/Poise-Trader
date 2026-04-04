@@ -9058,7 +9058,21 @@ class LegendaryCryptoTitanBot:
             cash_value = float(portfolio.get('cash', 0) or 0.0)
         except Exception:
             cash_value = 0.0
-        if total_value < min_balance or cash_value < min_balance:
+        try:
+            positions = portfolio.get('positions', {}) or {}
+            active_positions = {
+                symbol: pos for symbol, pos in positions.items()
+                if isinstance(pos, dict) and float(pos.get('quantity', 0) or 0) > 0
+            }
+        except Exception:
+            active_positions = {}
+        has_open_positions = bool(active_positions)
+        should_reset = False
+        if total_value < min_balance and not has_open_positions:
+            should_reset = True
+        elif cash_value < min_balance and not has_open_positions and total_value <= (min_balance * 1.02):
+            should_reset = True
+        if should_reset:
             try:
                 tb = getattr(self, 'trader', None)
                 if tb is not None:
